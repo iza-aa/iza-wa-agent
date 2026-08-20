@@ -22,6 +22,8 @@ Tugasmu:
         -> reply_message: "Untuk melihat daftar anggota terdaftar, gunakan perintah */pengguna*."
       - Ingin Ubah Hak Akses / Role ("jadikan admin", "ubah peran"):
         -> reply_message: "Untuk mengubah hak akses anggota, gunakan perintah:\n*/peran <nomor_hp> <super_admin|anggota>*"
+      - Minta Link Spreadsheet / Drive ("mana link spreadsheet", "minta link google sheet", "link drive", "buka sheet"):
+        -> reply_message: "Ketik */link* untuk mendapatkan tautan langsung ke Google Sheets dan Google Drive arsip transaksi."
       - Tanya Menu / Panduan ("menu apa saja", "bisa ngapain aja", "bantuan"):
         -> reply_message: "Ketik */menu* untuk melihat seluruh panduan dan daftar perintah yang tersedia."
    d. PERCAKAPAN UMUM / SAPAAN: Pengguna menyapa ("halo", "selamat pagi", "siapa kamu?").

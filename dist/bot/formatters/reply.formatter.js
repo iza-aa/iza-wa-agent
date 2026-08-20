@@ -57,7 +57,8 @@ export function formatHelpMessage(isSuperAdmin) {
     msg += "1. 📸 *Kirim Foto Struk Belanja / File Dokumen PDF Invoice*\n";
     msg += "2. 🎙️ *Kirim Voice Note WhatsApp* (contoh: \"Beli bensin 50rb di Pertamina barusan\")\n";
     msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang warteg 25k\")\n";
-    msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n\n";
+    msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n";
+    msg += "5. 🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
     if (isSuperAdmin) {
         msg += "👑 *Menu Khusus Super Admin:*\n";
         msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";

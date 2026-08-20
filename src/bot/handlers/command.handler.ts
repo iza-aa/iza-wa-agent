@@ -12,6 +12,7 @@ import {
 import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
+import { config } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
 
 export class CommandHandler {
@@ -35,6 +36,16 @@ export class CommandHandler {
 
     if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
       return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
+    }
+
+    if (command === "/link" || command === "/sheet" || command === "/drive" || command === "/spreadsheet" || command === "/dasbor") {
+      let msg = "🔗 *LINK SISTEM PENCATATAN KEUANGAN*\n\n";
+      msg += "📊 *Google Sheets (Data Transaksi & Dasbor):*\n";
+      msg += "https://docs.google.com/spreadsheets/d/" + config.GOOGLE_SHEET_ID + "/edit\n\n";
+      msg += "📁 *Google Drive (Folder Arsip Struk):*\n";
+      msg += "https://drive.google.com/drive/folders/" + config.GOOGLE_DRIVE_FOLDER_ID + "\n\n";
+      msg += "💡 _Semua transaksi dan foto yang dikirimkan otomatis tersimpan secara real-time di link di atas._";
+      return { handled: true, responseMessage: msg };
     }
 
     if (command === "/detail" || command === "/rincian" || command === "/lihat") {
