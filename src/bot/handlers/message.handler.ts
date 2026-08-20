@@ -20,6 +20,7 @@ import { config } from "../../config/env.js";
 
 export class MessageHandler {
   private commandHandler: CommandHandler;
+  private processedMessageIds: Set<string> = new Set();
 
   constructor(
     private userRepo: UserRepository,
@@ -43,6 +44,17 @@ export class MessageHandler {
 
     const remoteJid = msg.key.remoteJid;
     if (!remoteJid || remoteJid.includes("status@broadcast")) return;
+
+    // Deduplication: prevent Baileys multi-device from processing the same message twice
+    const msgId = msg.key.id;
+    if (msgId) {
+      if (this.processedMessageIds.has(msgId)) {
+        return; // Already processed, skip
+      }
+      this.processedMessageIds.add(msgId);
+      // Auto-cleanup after 60 seconds to prevent memory leak
+      setTimeout(() => this.processedMessageIds.delete(msgId), 60_000);
+    }
 
     const senderPhone = this.cleanPhone(remoteJid);
     const pushName = msg.pushName || "User";

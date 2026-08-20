@@ -14,6 +14,7 @@ export class MessageHandler {
     trxRepo;
     chatRepo;
     commandHandler;
+    processedMessageIds = new Set();
     constructor(userRepo, trxRepo, chatRepo) {
         this.userRepo = userRepo;
         this.trxRepo = trxRepo;
@@ -37,6 +38,16 @@ export class MessageHandler {
         const remoteJid = msg.key.remoteJid;
         if (!remoteJid || remoteJid.includes("status@broadcast"))
             return;
+        // Deduplication: prevent Baileys multi-device from processing the same message twice
+        const msgId = msg.key.id;
+        if (msgId) {
+            if (this.processedMessageIds.has(msgId)) {
+                return; // Already processed, skip
+            }
+            this.processedMessageIds.add(msgId);
+            // Auto-cleanup after 60 seconds to prevent memory leak
+            setTimeout(() => this.processedMessageIds.delete(msgId), 60_000);
+        }
         const senderPhone = this.cleanPhone(remoteJid);
         const pushName = msg.pushName || "User";
         // Extract text body
