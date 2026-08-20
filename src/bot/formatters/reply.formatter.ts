@@ -13,26 +13,28 @@ export function formatTransactionSuccess(
   trx: TransactionRecord,
   items: TransactionItem[] = []
 ): string {
-  let reply = "✅ *TRANSAKSI BERHASIL DICATAT*\n\n";
-  reply += "🧾 *ID:* `" + trx.id + "`\n";
-  reply += "📅 *Tanggal:* " + trx.date + "\n";
-  reply += "🏪 *Merchant / Toko:* " + trx.merchant + "\n";
+  let reply = "✅ *Transaksi Berhasil Dicatat!*\n\n";
+  reply += "🏪 *Tempat / Toko:* " + trx.merchant + "\n";
+  reply += "💰 *Total Pengeluaran:* *" + formatRupiah(trx.total_amount) + "*\n";
   reply += "🏷️ *Kategori:* " + trx.category + "\n";
-  reply += "💳 *Metode Bayar:* " + (trx.payment_method || "Cash") + "\n";
-  reply += "💰 *Total Akhir:* *" + formatRupiah(trx.total_amount) + "*\n";
+  reply += "📅 *Tanggal:* " + trx.date + "\n";
+  if (trx.payment_method) {
+    reply += "💳 *Metode Bayar:* " + trx.payment_method + "\n";
+  }
 
   if (items && items.length > 0) {
-    reply += "\n📋 *Rincian Barang (" + items.length + " item):*\n";
-    items.forEach((it, idx) => {
-      reply += " " + (idx + 1) + ". " + it.item_name + " (" + (it.qty || 1) + "x) -> " + formatRupiah(it.price) + "\n";
+    reply += "\n📋 *Rincian Barang:*\n";
+    items.forEach((it) => {
+      const qtyStr = (it.qty && it.qty > 1) ? " (" + it.qty + "x)" : "";
+      reply += " • " + it.item_name + qtyStr + " - " + formatRupiah(it.price) + "\n";
     });
   }
 
   if (trx.gdrive_web_view_link) {
-    reply += "\n📁 *Link Bukti Foto (Drive):*\n" + trx.gdrive_web_view_link + "\n";
+    reply += "\n🔗 *Bukti Struk (Google Drive):*\n" + trx.gdrive_web_view_link + "\n";
   }
 
-  reply += "\n📊 *Tercatat di Supabase & Google Sheet!*";
+  reply += "\n📊 *Data telah otomatis tersimpan di Google Sheet Anda.*";
   return reply;
 }
 
