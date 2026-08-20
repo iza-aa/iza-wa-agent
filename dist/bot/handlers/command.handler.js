@@ -1,4 +1,6 @@
 import { formatUserList, formatHelpMessage, formatRupiah } from "../formatters/reply.formatter.js";
+import { googleDriveService } from "../../google/drive.service.js";
+import { logger } from "../../utils/logger.js";
 export class CommandHandler {
     userRepo;
     trxRepo;
@@ -30,12 +32,22 @@ export class CommandHandler {
             const targetPhone = isTargetingOther ? arg1.replace(/[^0-9]/g, "") : senderPhone;
             const newName = isTargetingOther ? parts.slice(2).join(" ") : parts.slice(1).join(" ");
             const user = await this.userRepo.getUser(targetPhone);
+            const oldName = user?.name;
             await this.userRepo.upsertUser({
                 phone_number: targetPhone,
                 name: newName,
                 role: user?.role || (this.userRepo.isSuperAdmin(targetPhone) ? "super_admin" : "member"),
                 status: user?.status || "active",
             });
+            // Auto-rename existing Google Drive folders if any
+            if (oldName && oldName !== newName) {
+                try {
+                    await googleDriveService.renameUserFolders(oldName, newName);
+                }
+                catch (renameErr) {
+                    logger.warn({ renameErr }, "Could not auto-rename Drive folders");
+                }
+            }
             return {
                 handled: true,
                 responseMessage: isTargetingOther

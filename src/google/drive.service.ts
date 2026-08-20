@@ -157,6 +157,34 @@ export class GoogleDriveService {
       return await this.uploadToSupabaseStorage(optimized.buffer, fileName);
     }
   }
+
+  async renameUserFolders(oldName: string, newName: string): Promise<number> {
+    if (!oldName || !newName || oldName === newName) return 0;
+    try {
+      const query = "name = \"" + oldName + "\" and mimeType = \"application/vnd.google-apps.folder\" and trashed = false";
+      const listRes = await this.driveClient.files.list({
+        q: query,
+        fields: "files(id, name)",
+        spaces: "drive",
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true,
+      });
+
+      const files = listRes.data.files || [];
+      for (const file of files) {
+        await this.driveClient.files.update({
+          fileId: file.id,
+          requestBody: { name: newName },
+          supportsAllDrives: true,
+        });
+        logger.info({ fileId: file.id, oldName, newName }, "Renamed Google Drive user folder");
+      }
+      return files.length;
+    } catch (err) {
+      logger.error({ err, oldName, newName }, "Failed to auto-rename Google Drive user folders");
+      return 0;
+    }
+  }
 }
 
 export const googleDriveService = new GoogleDriveService();
