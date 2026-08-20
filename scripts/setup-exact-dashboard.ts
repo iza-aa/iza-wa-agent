@@ -128,13 +128,13 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
     ["TOTAL PEMASUKAN", "", "TOTAL PENGELUARAN", "", "SALDO / SELISIH", "", "TRANSAKSI", "", "", "", "", ""],
     // Row 4 (Index 3): Top KPI Values
     [
-      '=SUMIF(Transaksi!D2:D; "Pemasukan"; Transaksi!G2:G)',
+      '=SUMIF(Transaksi!D:D; "Pemasukan"; Transaksi!G:G)',
       "",
-      '=SUMIF(Transaksi!D2:D; "Pengeluaran"; Transaksi!G2:G)',
+      '=SUMIF(Transaksi!D:D; "Pengeluaran"; Transaksi!G:G)',
       "",
       "=A4-C4",
       "",
-      "=COUNTA(Transaksi!A2:A)",
+      "=IF(COUNTA(Transaksi!A:A)>1; COUNTA(Transaksi!A:A)-1; 0)",
       "",
       "",
       "",
@@ -151,13 +151,13 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
     ["Pemasukan", "", "Pengeluaran", "", "Selisih", "", "Transaksi", "", "", "", "", ""],
     // Row 9 (Index 8): Monthly Values
     [
-      '=SUMIFS(Transaksi!G2:G; Transaksi!D2:D; "Pemasukan"; Transaksi!C2:C; ">="&TEXT(TODAY(); "YYYY-MM")&"-01"; Transaksi!C2:C; "<="&TEXT(TODAY(); "YYYY-MM")&"-31")',
+      '=SUMIFS(Transaksi!G:G; Transaksi!D:D; "Pemasukan"; Transaksi!C:C; ">="&DATE(YEAR(TODAY()); MONTH(TODAY()); 1); Transaksi!C:C; "<="&EOMONTH(TODAY(); 0))',
       "",
-      '=SUMIFS(Transaksi!G2:G; Transaksi!D2:D; "Pengeluaran"; Transaksi!C2:C; ">="&TEXT(TODAY(); "YYYY-MM")&"-01"; Transaksi!C2:C; "<="&TEXT(TODAY(); "YYYY-MM")&"-31")',
+      '=SUMIFS(Transaksi!G:G; Transaksi!D:D; "Pengeluaran"; Transaksi!C:C; ">="&DATE(YEAR(TODAY()); MONTH(TODAY()); 1); Transaksi!C:C; "<="&EOMONTH(TODAY(); 0))',
       "",
       "=A9-C9",
       "",
-      '=COUNTIFS(Transaksi!C2:C; ">="&TEXT(TODAY(); "YYYY-MM")&"-01"; Transaksi!C2:C; "<="&TEXT(TODAY(); "YYYY-MM")&"-31")',
+      '=COUNTIFS(Transaksi!C:C; ">="&DATE(YEAR(TODAY()); MONTH(TODAY()); 1); Transaksi!C:C; "<="&EOMONTH(TODAY(); 0))',
       "",
       "",
       "",
