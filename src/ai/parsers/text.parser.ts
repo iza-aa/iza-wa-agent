@@ -41,9 +41,16 @@ Ekstrak transaksi keuangan dari pesan di atas ke dalam format JSON.`;
 
     try {
       const parsedJson = JSON.parse(textResponse);
+      if (Array.isArray(parsedJson)) {
+        if (parsedJson.length === 0) return null;
+        return ExtractedTransactionSchema.parse(parsedJson[0]);
+      }
+      if (!parsedJson || typeof parsedJson !== "object" || Object.keys(parsedJson).length === 0) {
+        return null;
+      }
       return ExtractedTransactionSchema.parse(parsedJson);
     } catch (err) {
-      logger.error({ err, textResponse }, "Failed to validate extracted transaction JSON");
+      logger.debug({ err, textResponse }, "Non-transaction or malformed JSON returned");
       return null;
     }
   });
