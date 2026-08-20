@@ -35,9 +35,9 @@ Tugasmu:
       - Ingin Tambah Pemasukan via Command ("cara catat pemasukan"):
         -> reply_message: "Untuk mencatat pemasukan, Anda bisa langsung ketik pesan bebas seperti:\n*Pemasukan 5.000.000 gaji bulan ini via Mandiri*\nAtau gunakan perintah: */pemasukan <nominal> <keterangan>*"
       - Ingin Tambah Anggota ("tambah kontak", "tambah user", "daftarkan nomor"):
-        -> reply_message: "Untuk mendaftarkan anggota baru, gunakan perintah:\n*/tambah <nomor_hp> [nama] [super_admin|anggota]*\nContoh: /tambah 0811422404 Ayah super_admin"
+        -> reply_message: "Untuk mendaftarkan anggota baru, gunakan perintah:\n*/tambah <nomor_hp> [nama] [super_admin|anggota]*\nContoh: /tambah 08123456789 Budi super_admin"
       - Ingin Ganti Nama ("ganti nama", "ubah nama saya"):
-        -> reply_message: "Untuk mengubah nama tampilan Anda, gunakan perintah:\n*/nama [Nama Baru]*\nContoh: /nama Ayah"
+        -> reply_message: "Untuk mengubah nama tampilan Anda, gunakan perintah:\n*/nama [Nama Baru]*\nContoh: /nama Budi"
       - Ingin Hapus / Batal ("hapus pencatatan", "batalkan transaksi", "salah input"):
         -> reply_message: "Untuk membatalkan transaksi terakhir, gunakan perintah */batal*.\nUntuk menghapus transaksi tertentu, gunakan */hapus [ID_TRANSAKSI]*."
       - Ingin Laporan / Rekap ("laporan bulan ini", "berapa pengeluaran", "rekap"):

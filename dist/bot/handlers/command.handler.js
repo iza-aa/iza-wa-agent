@@ -156,7 +156,7 @@ export class CommandHandler {
             if (!arg1) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/nama Nama Baru Anda`\nContoh: `/nama Ayah` atau `/nama Rezky Haikal`",
+                    responseMessage: "❌ Format salah. Gunakan: `/nama Nama Baru Anda`\nContoh: `/nama Budi` atau `/nama Rezky Haikal`",
                 };
             }
             // Check if Super Admin is changing another user: /nama 628123456789 Budi
@@ -296,7 +296,7 @@ export class CommandHandler {
             if (!targetPhone || targetPhone.length < 8) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/tambah <nomor_hp> [NamaUser] [super_admin|anggota]`\nContoh: `/tambah 0811422404 Ayah super_admin` atau `/tambah +62811422404 Ayah`",
+                    responseMessage: "❌ Format salah. Gunakan: `/tambah <nomor_hp> [NamaUser] [super_admin|anggota]`\nContoh: `/tambah 08123456789 Budi super_admin` atau `/tambah +628123456789 Budi`",
                 };
             }
             let role = "member";

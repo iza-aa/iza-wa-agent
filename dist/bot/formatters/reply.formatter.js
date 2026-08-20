@@ -87,7 +87,7 @@ export function formatHelpMessage(isSuperAdmin) {
     msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang 25k\" atau \"Pemasukan 5jt gaji\")\n";
     msg += "4. 💵 *Catat Pemasukan Cepat*: Ketik `/pemasukan <nominal> <keterangan> [metode]` (contoh: `/pemasukan 100000 sumbangan BCA`)\n";
     msg += "5. 💳 *Cek Saldo Kas Dompet*: Ketik `/saldo` (atau `/dompet`)\n";
-    msg += "6. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n";
+    msg += "6. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Budi`)\n";
     msg += "7. 🔄 *Sinkronkan Spreadsheet*: Ketik `/sync`\n\n";
     if (isSuperAdmin) {
         msg += "🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
@@ -152,7 +152,7 @@ export function formatTransactionUpdated(trx, updatedFields) {
     if (updatedFields.length > 0) {
         msg += "🔄 *Kolom yang diubah:* " + updatedFields.join(", ") + "\n";
     }
-    msg += "✅ Data telah diperbarui di Database Supabase & Google Sheets!";
+    msg += "✅ Data telah diperbarui di sistem & Google Sheets!";
     return msg;
 }
 export function formatDeletedTransaction(trx) {
@@ -162,7 +162,7 @@ export function formatDeletedTransaction(trx) {
     msg += "🏪 *Tempat / Sumber:* " + trx.merchant + "\n";
     msg += "💰 *Nominal:* *" + formatRupiah(trx.total_amount) + "*\n";
     msg += "👤 *Penginput:* " + trx.user_name + "\n\n";
-    msg += "✅ Data telah dihapus dari Supabase & Google Sheets.";
+    msg += "✅ Data telah dihapus dari sistem & Google Sheets.";
     return msg;
 }
 export function formatMonthlyReport(summary, monthLabel) {
