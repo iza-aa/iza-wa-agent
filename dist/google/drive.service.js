@@ -81,8 +81,11 @@ export class GoogleDriveService {
         logger.info({ folderName, folderId: createRes.data.id }, "Created Google Drive folder");
         return createRes.data.id;
     }
-    async uploadReceipt(imageBuffer, fileName, userName = "User") {
-        const optimized = await compressReceiptImage(imageBuffer);
+    async uploadReceipt(imageBuffer, fileName, userName = "User", isPdf = false) {
+        const bufferToUpload = isPdf ? imageBuffer : (await compressReceiptImage(imageBuffer)).buffer;
+        const finalMimeType = isPdf ? "application/pdf" : "image/webp";
+        const extension = isPdf ? ".pdf" : ".webp";
+        const finalFileName = fileName.endsWith(extension) ? fileName : fileName + extension;
         // Try Google Drive first
         try {
             const now = new Date();
@@ -92,15 +95,14 @@ export class GoogleDriveService {
             const yearFolderId = await this.getOrCreateFolder(year, rootFolderId);
             const monthFolderId = await this.getOrCreateFolder(month, yearFolderId);
             const targetFolderId = await this.getOrCreateFolder(userName, monthFolderId);
-            const fileStream = Readable.from(optimized.buffer);
-            const finalFileName = fileName.endsWith(".webp") ? fileName : fileName + ".webp";
+            const fileStream = Readable.from(bufferToUpload);
             const res = await this.driveClient.files.create({
                 requestBody: {
                     name: finalFileName,
                     parents: [targetFolderId],
                 },
                 media: {
-                    mimeType: "image/webp",
+                    mimeType: finalMimeType,
                     body: fileStream,
                 },
                 fields: "id, name, webViewLink, webContentLink",
@@ -128,7 +130,7 @@ export class GoogleDriveService {
         }
         catch (driveError) {
             logger.warn({ error: driveError.message }, "Google Drive upload failed, falling back to Supabase Storage");
-            return await this.uploadToSupabaseStorage(optimized.buffer, fileName);
+            return await this.uploadToSupabaseStorage(bufferToUpload, fileName);
         }
     }
     async renameUserFolders(oldName, newName) {

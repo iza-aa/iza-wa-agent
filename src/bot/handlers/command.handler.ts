@@ -1,7 +1,8 @@
 import { UserRepository } from "../../db/repositories/user.repository.js";
 import { TransactionRepository } from "../../db/repositories/transaction.repository.js";
-import { formatUserList, formatHelpMessage, formatRupiah } from "../formatters/reply.formatter.js";
+import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction } from "../formatters/reply.formatter.js";
 import { googleDriveService } from "../../google/drive.service.js";
+import { googleSheetsService } from "../../google/sheets.service.js";
 import { logger } from "../../utils/logger.js";
 
 export class CommandHandler {
@@ -120,20 +121,67 @@ export class CommandHandler {
       };
     }
 
-    if (command === "/rekap" || command === "/summary") {
-      const recent = await this.trxRepo.getRecentTransactions(senderPhone, 10);
-      if (recent.length === 0) {
-        return { handled: true, responseMessage: "ℹ️ Belum ada transaksi tercatat." };
+    if (command === "/batal" || command === "/cancel") {
+      const latest = await this.trxRepo.getLatestTransaction();
+      if (!latest) {
+        return { handled: true, responseMessage: "ℹ️ Tidak ada transaksi terakhir yang dapat dibatalkan." };
       }
 
-      let summary = "📊 *REKAP 10 TRANSAKSI TERAKHIR*\n\n";
-      let total = 0;
-      recent.forEach((t, i) => {
-        total += Number(t.total_amount);
-        summary += (i + 1) + ". " + t.date + " - *" + t.merchant + "* (" + t.category + "): " + formatRupiah(t.total_amount) + "\n";
-      });
-      summary += "\n💰 *Total:* " + formatRupiah(total);
-      return { handled: true, responseMessage: summary };
+      await this.trxRepo.deleteTransaction(latest.id);
+      try {
+        await googleSheetsService.deleteTransactionRow(latest.id);
+      } catch (sheetErr) {
+        logger.error({ sheetErr }, "Failed to delete row from Google Sheet");
+      }
+
+      return {
+        handled: true,
+        responseMessage: formatDeletedTransaction(latest),
+      };
+    }
+
+    if (command === "/hapus" || command === "/delete") {
+      const targetId = parts[1];
+      if (!targetId) {
+        return {
+          handled: true,
+          responseMessage: "❌ Format salah. Gunakan: `/hapus TRX-XXXX`\nContoh: `/hapus TRX-20260820-LX8Y`\n\nAtau ketik `/batal` untuk membatalkan transaksi paling akhir.",
+        };
+      }
+
+      const deleted = await this.trxRepo.deleteTransaction(targetId.trim());
+      if (!deleted) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Transaksi dengan ID `" + targetId + "` tidak ditemukan di database.",
+        };
+      }
+
+      try {
+        await googleSheetsService.deleteTransactionRow(deleted.id);
+      } catch (sheetErr) {
+        logger.error({ sheetErr }, "Failed to delete row from Google Sheet");
+      }
+
+      return {
+        handled: true,
+        responseMessage: formatDeletedTransaction(deleted),
+      };
+    }
+
+    if (command === "/laporan" || command === "/bulanini" || command === "/report") {
+      const now = new Date();
+      let targetMonth = parts[1] || `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+
+      if (/^\d{1,2}$/.test(targetMonth)) {
+        targetMonth = `${now.getFullYear()}-${targetMonth.padStart(2, "0")}`;
+      }
+
+      const summary = await this.trxRepo.getMonthlySummary(targetMonth);
+      return {
+        handled: true,
+        responseMessage: formatMonthlyReport(summary, targetMonth),
+      };
     }
 
     return {

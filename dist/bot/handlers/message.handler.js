@@ -105,27 +105,28 @@ export class MessageHandler {
         const userName = user?.name || pushName;
         // 4. Handle Media Messages (Receipt Photos & Voice Notes)
         if (hasMedia) {
-            // CASE A: Image / Receipt / Nota
-            if (isImage) {
-                await sock.sendMessage(remoteJid, { text: "⏳ *Sedang membaca struk belanja dengan AI...*" }, { quoted: msg });
+            // CASE A: Image / Receipt / Nota / PDF Invoice
+            if (isImage || isDocument) {
+                const isPdf = isDocument && (messageContent.documentMessage?.mimetype?.includes("pdf") || (messageContent.documentMessage?.fileName || "").endsWith(".pdf"));
+                await sock.sendMessage(remoteJid, { text: isPdf ? "⏳ *Sedang membaca dokumen invoice / struk PDF dengan AI...*" : "⏳ *Sedang membaca struk belanja dengan AI...*" }, { quoted: msg });
                 const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage }));
-                const mimeType = messageContent.imageMessage?.mimetype || "image/jpeg";
+                const mimeType = isPdf ? "application/pdf" : (messageContent.imageMessage?.mimetype || "image/jpeg");
                 const parsed = await parseReceiptVision(mediaBuffer, mimeType);
                 if (!parsed || parsed.total_amount <= 0) {
-                    await sock.sendMessage(remoteJid, { text: "⚠️ AI tidak dapat mendeteksi total belanja dari foto struk ini. Pastikan foto jelas dan tidak buram." }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { text: isPdf ? "⚠️ AI tidak dapat mendeteksi transaksi dari dokumen PDF ini." : "⚠️ AI tidak dapat mendeteksi total belanja dari foto struk ini. Pastikan foto jelas dan tidak buram." }, { quoted: msg });
                     return;
                 }
                 const trxId = this.trxRepo.generateTransactionId();
-                // Upload to Google Drive (Compressed WebP) with Supabase Storage fallback
+                // Upload to Google Drive (Compressed WebP / PDF) with Supabase Storage fallback
                 let gdriveLink = "";
                 let gdriveFileId = "";
                 try {
-                    const uploadRes = await googleDriveService.uploadReceipt(mediaBuffer, trxId + "_" + parsed.merchant.replace(/[^a-zA-Z0-9]/g, "_"), userName);
+                    const uploadRes = await googleDriveService.uploadReceipt(mediaBuffer, trxId + "_" + parsed.merchant.replace(/[^a-zA-Z0-9]/g, "_"), userName, isPdf);
                     gdriveLink = uploadRes.webViewLink;
                     gdriveFileId = uploadRes.fileId;
                 }
                 catch (driveErr) {
-                    logger.error({ driveErr }, "Failed to upload receipt image");
+                    logger.error({ driveErr }, "Failed to upload receipt file");
                 }
                 // Save to Supabase
                 const transactionRecord = await this.trxRepo.createTransaction({

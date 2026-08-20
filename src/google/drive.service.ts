@@ -101,9 +101,13 @@ export class GoogleDriveService {
   async uploadReceipt(
     imageBuffer: Buffer,
     fileName: string,
-    userName: string = "User"
+    userName: string = "User",
+    isPdf: boolean = false
   ): Promise<{ fileId: string; webViewLink: string; downloadLink: string }> {
-    const optimized = await compressReceiptImage(imageBuffer);
+    const bufferToUpload = isPdf ? imageBuffer : (await compressReceiptImage(imageBuffer)).buffer;
+    const finalMimeType = isPdf ? "application/pdf" : "image/webp";
+    const extension = isPdf ? ".pdf" : ".webp";
+    const finalFileName = fileName.endsWith(extension) ? fileName : fileName + extension;
 
     // Try Google Drive first
     try {
@@ -116,8 +120,7 @@ export class GoogleDriveService {
       const monthFolderId = await this.getOrCreateFolder(month, yearFolderId);
       const targetFolderId = await this.getOrCreateFolder(userName, monthFolderId);
 
-      const fileStream = Readable.from(optimized.buffer);
-      const finalFileName = fileName.endsWith(".webp") ? fileName : fileName + ".webp";
+      const fileStream = Readable.from(bufferToUpload);
 
       const res = await this.driveClient.files.create({
         requestBody: {
@@ -125,7 +128,7 @@ export class GoogleDriveService {
           parents: [targetFolderId],
         },
         media: {
-          mimeType: "image/webp",
+          mimeType: finalMimeType,
           body: fileStream,
         },
         fields: "id, name, webViewLink, webContentLink",
@@ -154,7 +157,7 @@ export class GoogleDriveService {
       };
     } catch (driveError: any) {
       logger.warn({ error: driveError.message }, "Google Drive upload failed, falling back to Supabase Storage");
-      return await this.uploadToSupabaseStorage(optimized.buffer, fileName);
+      return await this.uploadToSupabaseStorage(bufferToUpload, fileName);
     }
   }
 

@@ -145,6 +145,51 @@ export class GoogleSheetsService {
     logger.info({ trxId: trx.id, updatedRange, rowIndex }, "Transaction appended to Google Sheet");
     return { updatedRange, rowIndex };
   }
+
+  async deleteTransactionRow(trxId: string, sheetId: string = config.GOOGLE_SHEET_ID): Promise<boolean> {
+    try {
+      const res = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: this.sheetTitle + "!A:A",
+      });
+
+      const rows = res.data.values || [];
+      const rowIndex = rows.findIndex((r: any[]) => r && r[0] === trxId);
+
+      if (rowIndex === -1) {
+        logger.warn({ trxId }, "Transaction ID not found in Google Sheet for deletion");
+        return false;
+      }
+
+      const meta = await this.sheetsClient.spreadsheets.get({ spreadsheetId: sheetId });
+      const sheet = meta.data.sheets?.find((s: any) => s.properties?.title === this.sheetTitle);
+      const sheetIdNum = sheet?.properties?.sheetId || 0;
+
+      await this.sheetsClient.spreadsheets.batchUpdate({
+        spreadsheetId: sheetId,
+        requestBody: {
+          requests: [
+            {
+              deleteDimension: {
+                range: {
+                  sheetId: sheetIdNum,
+                  dimension: "ROWS",
+                  startIndex: rowIndex,
+                  endIndex: rowIndex + 1,
+                },
+              },
+            },
+          ],
+        },
+      });
+
+      logger.info({ trxId, rowIndex: rowIndex + 1 }, "Deleted transaction row from Google Sheet");
+      return true;
+    } catch (err) {
+      logger.error({ err, trxId }, "Failed to delete transaction row from Google Sheet");
+      return false;
+    }
+  }
 }
 
 export const googleSheetsService = new GoogleSheetsService();

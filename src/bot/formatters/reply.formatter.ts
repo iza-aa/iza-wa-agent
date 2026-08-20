@@ -72,10 +72,65 @@ export function formatHelpMessage(isSuperAdmin: boolean): string {
 
   if (isSuperAdmin) {
     msg += "👑 *Menu Khusus Super Admin:*\n";
+    msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & breakdown kategori\n";
+    msg += "• `/batal` - Membatalkan / menghapus transaksi terakhir yang baru dicatat\n";
+    msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
     msg += "• `/approve <nomor> [nama]` - Mengaktifkan akses nomor baru\n";
     msg += "• `/block <nomor>` - Memblokir akses nomor\n";
     msg += "• `/users` - Melihat seluruh daftar pengguna aktif\n";
-    msg += "• `/rekap` - Melihat rekap pengeluaran\n";
+    msg += "• `/rekap` - Melihat 10 transaksi terakhir\n";
   }
+  return msg;
+}
+
+export function formatDeletedTransaction(trx: TransactionRecord): string {
+  let msg = "🗑️ *TRANSAKSI BERHASIL DIHAPUS / DIBATALKAN*\n\n";
+  msg += "🧾 *ID:* `" + trx.id + "`\n";
+  msg += "📅 *Tanggal:* " + trx.date + "\n";
+  msg += "🏪 *Merchant:* " + trx.merchant + "\n";
+  msg += "💰 *Nominal:* *" + formatRupiah(trx.total_amount) + "*\n";
+  msg += "👤 *Penginput:* " + trx.user_name + "\n\n";
+  msg += "✅ Data telah dihapus dari Supabase & Google Sheets.";
+  return msg;
+}
+
+export function formatMonthlyReport(
+  summary: {
+    total: number;
+    count: number;
+    byCategory: { [cat: string]: number };
+    byUser: { [user: string]: number };
+    topTransactions: TransactionRecord[];
+  },
+  monthLabel: string
+): string {
+  if (summary.count === 0) {
+    return "📊 *LAPORAN KEUANGAN (" + monthLabel + ")*\n\nℹ️ Belum ada transaksi yang tercatat pada periode ini.";
+  }
+
+  let msg = "📊 *LAPORAN KEUANGAN (" + monthLabel + ")*\n\n";
+  msg += "💰 *Total Pengeluaran:* *" + formatRupiah(summary.total) + "*\n";
+  msg += "🧾 *Total Transaksi:* *" + summary.count + " transaksi*\n\n";
+
+  msg += "🏷️ *Rincian per Kategori:*\n";
+  const sortedCategories = Object.entries(summary.byCategory).sort((a, b) => b[1] - a[1]);
+  sortedCategories.forEach(([cat, amount]) => {
+    const percentage = summary.total > 0 ? Math.round((amount / summary.total) * 100) : 0;
+    msg += " • *" + cat + "*: " + formatRupiah(amount) + " (" + percentage + "%)\n";
+  });
+
+  msg += "\n👥 *Rincian per Penginput:*\n";
+  const sortedUsers = Object.entries(summary.byUser).sort((a, b) => b[1] - a[1]);
+  sortedUsers.forEach(([user, amount]) => {
+    msg += " • *" + user + "*: " + formatRupiah(amount) + "\n";
+  });
+
+  if (summary.topTransactions && summary.topTransactions.length > 0) {
+    msg += "\n🔥 *Top Pengeluaran Terbesar:*\n";
+    summary.topTransactions.forEach((t, i) => {
+      msg += " " + (i + 1) + ". " + t.merchant + " (" + t.date + ") -> *" + formatRupiah(t.total_amount) + "*\n";
+    });
+  }
+
   return msg;
 }
