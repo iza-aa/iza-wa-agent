@@ -19,7 +19,7 @@ export class CommandHandler {
         }
         const parts = trimmed.split(" ");
         const command = parts[0].toLowerCase();
-        const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+        const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
         if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
             return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
         }
@@ -265,18 +265,29 @@ export class CommandHandler {
             if (!targetPhone || targetPhone.length < 8) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/tambah <nomor_hp> [NamaUser]`\nContoh: `/tambah 0811422404 Ayah` atau `/tambah +62811422404 Ayah`",
+                    responseMessage: "❌ Format salah. Gunakan: `/tambah <nomor_hp> [NamaUser] [super_admin|anggota]`\nContoh: `/tambah 0811422404 Ayah super_admin` atau `/tambah +62811422404 Ayah`",
                 };
+            }
+            let role = "member";
+            const lowerRemaining = remaining.toLowerCase();
+            if (lowerRemaining.includes("super_admin") || lowerRemaining.includes("superadmin") || lowerRemaining.includes("super admin")) {
+                role = "super_admin";
+                userName = userName.replace(/super_admin|superadmin|super admin/gi, "").trim() || "Super Admin";
+            }
+            else if (lowerRemaining.includes("admin")) {
+                role = "super_admin";
+                userName = userName.replace(/admin/gi, "").trim() || "Admin";
             }
             await this.userRepo.upsertUser({
                 phone_number: targetPhone,
                 name: userName,
-                role: "member",
+                role: role,
                 status: "active",
             });
+            const roleLabel = role === "super_admin" ? "Super Admin" : "Anggota";
             return {
                 handled: true,
-                responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai Anggota!",
+                responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai *" + roleLabel + "*!",
             };
         }
         if (command === "/blokir" || command === "/block") {

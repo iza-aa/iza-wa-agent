@@ -11,6 +11,7 @@ describe("E2E WhatsApp Flow Integration (Baileys)", () => {
   beforeEach(() => {
     mockUserRepo = {
       isSuperAdmin: vi.fn().mockReturnValue(true),
+      isSuperAdminAsync: vi.fn().mockResolvedValue(true),
       isWhitelisted: vi.fn().mockResolvedValue(true),
       getUser: vi.fn().mockResolvedValue({
         phone_number: "6281346367235",

@@ -96,7 +96,8 @@ export class MessageHandler {
         }
         // Get User Profile from DB (or auto-register Super Admin)
         let user = await this.userRepo.getUser(senderPhone);
-        if (!user && this.userRepo.isSuperAdmin(senderPhone)) {
+        const isSuperAdminUser = await this.userRepo.isSuperAdminAsync(senderPhone);
+        if (!user && isSuperAdminUser) {
             user = await this.userRepo.upsertUser({
                 phone_number: senderPhone,
                 name: "Super Admin (" + pushName + ")",
@@ -163,7 +164,7 @@ export class MessageHandler {
                     logger.error({ sheetErr }, "Failed to append row to Google Sheet");
                 }
                 // Reply Success
-                const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+                const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
                 const wallet = await this.trxRepo.getWalletBalance();
                 const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
                 await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
@@ -204,7 +205,7 @@ export class MessageHandler {
                 catch (sheetErr) {
                     logger.error({ sheetErr }, "Failed to append row to Google Sheet");
                 }
-                const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+                const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
                 const wallet = await this.trxRepo.getWalletBalance();
                 let replyText = "🗣️ *Transkrip:* \"" + transcription + "\"\n\n";
                 replyText += formatTransactionSuccess(transactionRecord, transaction.items, isSuperAdmin, wallet.balance);
@@ -226,7 +227,7 @@ export class MessageHandler {
                 return;
             }
             if (!textResult.is_complete || !textResult.transaction || textResult.transaction.total_amount <= 0) {
-                const reply = textResult.reply_message || "💬 Pesan Anda diterima! Ketik transaksi (contoh: *Beli makan 25rb* atau *Pemasukan 5jt*) atau kirim foto struk/voice note untuk dicatat otomatis.";
+                const reply = textResult.reply_message || "💬 Pesan Anda diterima! Ketik transaksi (contoh: *Beli makan 25rb cash* atau *Pemasukan 5jt mandiri*) atau kirim foto struk/voice note untuk dicatat otomatis.";
                 await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
                 await this.chatRepo.logMessage({
                     user_phone: senderPhone,
@@ -261,7 +262,7 @@ export class MessageHandler {
             catch (sheetErr) {
                 logger.error({ sheetErr }, "Failed to append row to Google Sheet");
             }
-            const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+            const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
             const wallet = await this.trxRepo.getWalletBalance();
             const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
             await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });

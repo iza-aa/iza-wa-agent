@@ -9,6 +9,7 @@ describe("WhatsApp Bot Handlers", () => {
   beforeEach(() => {
     mockUserRepo = {
       isSuperAdmin: vi.fn().mockImplementation((p: string) => p === "6281346367235"),
+      isSuperAdminAsync: vi.fn().mockImplementation(async (p: string) => p === "6281346367235"),
       getUser: vi.fn().mockResolvedValue({ phone_number: "6281346367235", name: "Ayah", role: "super_admin", status: "active" }),
       listActiveUsers: vi.fn().mockResolvedValue([
         { phone_number: "6281346367235", name: "Ayah", role: "super_admin", status: "active" },
@@ -46,13 +47,13 @@ describe("WhatsApp Bot Handlers", () => {
 
     it("should allow Super Admin to add a new user with /tambah and formatted phone", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281346367235", "/tambah +62 811-422-404 Ayah");
+      const res = await handler.handleCommand("6281346367235", "/tambah +62 811-422-404 Ayah super_admin");
       expect(res.handled).toBe(true);
-      expect(res.responseMessage).toContain("berhasil didaftarkan & diaktifkan");
+      expect(res.responseMessage).toContain("berhasil didaftarkan & diaktifkan sebagai *Super Admin*");
       expect(mockUserRepo.upsertUser).toHaveBeenCalledWith({
         phone_number: "62811422404",
         name: "Ayah",
-        role: "member",
+        role: "super_admin",
         status: "active",
       });
     });

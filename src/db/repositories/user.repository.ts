@@ -53,6 +53,21 @@ export class UserRepository {
     return this.superAdminList.includes(cleaned);
   }
 
+  async isSuperAdminAsync(identifier: string): Promise<boolean> {
+    const cleaned = this.cleanIdentifier(identifier);
+    if (this.superAdminList.includes(cleaned)) {
+      return true;
+    }
+
+    const user = await this.getUser(cleaned);
+    if (user && user.role === "super_admin") {
+      this.addSuperAdminIdentifier(cleaned);
+      return true;
+    }
+
+    return false;
+  }
+
   addSuperAdminIdentifier(identifier: string): void {
     const cleaned = this.cleanIdentifier(identifier);
     if (cleaned && !this.superAdminList.includes(cleaned)) {
@@ -115,6 +130,13 @@ export class UserRepository {
       logger.error({ error, payload }, "Failed to upsert user");
       throw error;
     }
+
+    if (payload.role === "super_admin") {
+      this.addSuperAdminIdentifier(cleaned);
+    } else {
+      this.removeSuperAdminIdentifier(cleaned);
+    }
+
     return data as UserRecord;
   }
 

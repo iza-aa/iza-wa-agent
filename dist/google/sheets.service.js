@@ -4,8 +4,8 @@ import { logger } from "../utils/logger.js";
 import { isIncome } from "../db/repositories/transaction.repository.js";
 export class GoogleSheetsService {
     sheetsClient;
-    sheetTitle = "Data Transaksi";
-    dasborTitle = "Dasbor";
+    sheetTitle = "Transaksi";
+    dasborTitle = "Dashboard";
     constructor() {
         const auth = new google.auth.JWT({
             email: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -20,57 +20,100 @@ export class GoogleSheetsService {
                 spreadsheetId: sheetId,
             });
             const existingSheets = spreadsheet.data.sheets || [];
-            const hasTargetSheet = existingSheets.some((s) => s.properties?.title === this.sheetTitle);
-            if (!hasTargetSheet) {
-                await this.sheetsClient.spreadsheets.batchUpdate({
-                    spreadsheetId: sheetId,
-                    requestBody: {
-                        requests: [
-                            {
-                                addSheet: {
-                                    properties: {
-                                        title: this.sheetTitle,
-                                        gridProperties: {
-                                            frozenRowCount: 1,
+            // Check if 'Transaksi' or 'Data Transaksi' exists
+            let targetSheet = existingSheets.find((s) => s.properties?.title === this.sheetTitle);
+            if (!targetSheet) {
+                // If old 'Data Transaksi' exists, rename it to 'Transaksi'
+                const oldSheet = existingSheets.find((s) => s.properties?.title === "Data Transaksi");
+                if (oldSheet) {
+                    await this.sheetsClient.spreadsheets.batchUpdate({
+                        spreadsheetId: sheetId,
+                        requestBody: {
+                            requests: [
+                                {
+                                    updateSheetProperties: {
+                                        properties: {
+                                            sheetId: oldSheet.properties.sheetId,
+                                            title: this.sheetTitle,
+                                        },
+                                        fields: "title",
+                                    },
+                                },
+                            ],
+                        },
+                    });
+                }
+                else {
+                    await this.sheetsClient.spreadsheets.batchUpdate({
+                        spreadsheetId: sheetId,
+                        requestBody: {
+                            requests: [
+                                {
+                                    addSheet: {
+                                        properties: {
+                                            title: this.sheetTitle,
+                                            gridProperties: {
+                                                frozenRowCount: 1,
+                                            },
                                         },
                                     },
                                 },
-                            },
-                        ],
-                    },
-                });
+                            ],
+                        },
+                    });
+                }
             }
-            // Ensure Headers in Data Transaksi (A1:Q1)
+            // Check / rename old 'Dasbor' to 'Dashboard' if needed
+            const oldDasbor = existingSheets.find((s) => s.properties?.title === "Dasbor");
+            if (oldDasbor) {
+                try {
+                    await this.sheetsClient.spreadsheets.batchUpdate({
+                        spreadsheetId: sheetId,
+                        requestBody: {
+                            requests: [
+                                {
+                                    updateSheetProperties: {
+                                        properties: {
+                                            sheetId: oldDasbor.properties.sheetId,
+                                            title: this.dasborTitle,
+                                        },
+                                        fields: "title",
+                                    },
+                                },
+                            ],
+                        },
+                    });
+                }
+                catch (renameErr) {
+                    logger.debug({ renameErr }, "Dasbor tab rename skip");
+                }
+            }
+            // Ensure Headers in Transaksi (A1:L1 - Sesuai Foto 3)
             const headers = [
-                "ID Transaksi",
-                "Waktu Input",
-                "Tanggal Transaksi",
-                "Nama Penginput",
-                "Nomor WhatsApp",
-                "Tipe Transaksi",
-                "Nama Merchant / Sumber",
-                "Kategori",
-                "Rincian Barang / Keterangan",
-                "Subtotal (Rp)",
-                "Pajak / PB1 (Rp)",
-                "Diskon (Rp)",
-                "Nominal Transaksi (Rp)",
-                "Metode Pembayaran",
-                "Status Verifikasi",
-                "Catatan / Raw Text",
-                "Link Bukti / Struk",
+                "ID", // A
+                "Timestamp", // B
+                "Tanggal", // C
+                "Jenis", // D (Pemasukan / Pengeluaran)
+                "Kategori", // E
+                "Keterangan", // F
+                "Nominal", // G
+                "Metode", // H (Mandiri, Cash, BRI, BCA, QRIS, dll.)
+                "Nomor WhatsApp", // I
+                "Nama", // J
+                "Link Bukti", // K
+                "Pesan Asli", // L
             ];
             await this.sheetsClient.spreadsheets.values.update({
                 spreadsheetId: sheetId,
-                range: this.sheetTitle + "!A1:Q1",
+                range: this.sheetTitle + "!A1:L1",
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
                     values: [headers],
                 },
             });
-            // Setup or refresh Dasbor tab
+            // Setup or refresh Dashboard tab (Sesuai Foto 1 & 2)
             await this.setupDashboardTab(sheetId);
-            logger.info({ sheetId }, "Google Sheet initialized with Header Row and Dashboard");
+            logger.info({ sheetId }, "Google Sheet initialized with Transaksi (A:L) and Dashboard");
         }
         catch (error) {
             logger.error({ error, sheetId }, "Error ensuring Google Sheet initialized");
@@ -83,8 +126,8 @@ export class GoogleSheetsService {
                 spreadsheetId: sheetId,
             });
             const existingSheets = spreadsheet.data.sheets || [];
-            const hasDasbor = existingSheets.some((s) => s.properties?.title === this.dasborTitle);
-            if (!hasDasbor) {
+            const hasDashboard = existingSheets.some((s) => s.properties?.title === this.dasborTitle);
+            if (!hasDashboard) {
                 await this.sheetsClient.spreadsheets.batchUpdate({
                     spreadsheetId: sheetId,
                     requestBody: {
@@ -100,41 +143,59 @@ export class GoogleSheetsService {
                     },
                 });
             }
-            // Build formulas for Indonesian Google Sheet locale
-            const dasborRows = [
-                ["📊 DASBOR KEUANGAN & SALDO DOMPET KAS", "", "", "", "", ""],
-                ["", "", "", "", "", ""],
-                ["💰 TOTAL PEMASUKAN", "", "💸 TOTAL PENGELUARAN", "", "💵 SISA SALDO KAS (DOMPET)", ""],
+            // Build formulas and layout exactly matching Photo 1 & Photo 2
+            const dashboardRows = [
+                ["", "", "", "", "", "", "", ""],
+                ["DASHBOARD KEUANGAN", "", "", "", "", "", "", ""],
+                ["TOTAL PEMASUKAN", "", "TOTAL PENGELUARAN", "", "SALDO / SELISIH", "", "TRANSAKSI", ""],
                 [
-                    "=SUMIF('Data Transaksi'!F2:F; \"Pemasukan\"; 'Data Transaksi'!M2:M)",
+                    "=SUMIF(Transaksi!D2:D; \"Pemasukan\"; Transaksi!G2:G)",
                     "",
-                    "=SUMIF('Data Transaksi'!F2:F; \"Pengeluaran\"; 'Data Transaksi'!M2:M)",
+                    "=SUMIF(Transaksi!D2:D; \"Pengeluaran\"; Transaksi!G2:G)",
                     "",
                     "=A4-C4",
                     "",
+                    "=COUNTA(Transaksi!A2:A)",
+                    "",
                 ],
-                ["", "", "", "", "", ""],
-                ["📈 PEMASUKAN BULAN INI", "", "📉 PENGELUARAN BULAN INI", "", "🏦 ARUS KAS BERSIH BULAN INI", ""],
+                ["", "", "", "", "", "", "", ""],
+                ["", "", "", "", "", "", "", ""],
+                ["=CONCATENATE(\"RINGKASAN BULAN \"; UPPER(TEXT(TODAY(); \"MMMM YYYY\")))", "", "", "", "", "", "", ""],
+                ["Pemasukan", "", "Pengeluaran", "", "Selisih", "", "Transaksi", ""],
                 [
-                    "=SUMIFS('Data Transaksi'!M2:M; 'Data Transaksi'!F2:F; \"Pemasukan\"; 'Data Transaksi'!C2:C; \">=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01\"; 'Data Transaksi'!C2:C; \"<=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31\")",
+                    "=SUMIFS(Transaksi!G2:G; Transaksi!D2:D; \"Pemasukan\"; Transaksi!C2:C; \">=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01\"; Transaksi!C2:C; \"<=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31\")",
                     "",
-                    "=SUMIFS('Data Transaksi'!M2:M; 'Data Transaksi'!F2:F; \"Pengeluaran\"; 'Data Transaksi'!C2:C; \">=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01\"; 'Data Transaksi'!C2:C; \"<=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31\")",
+                    "=SUMIFS(Transaksi!G2:G; Transaksi!D2:D; \"Pengeluaran\"; Transaksi!C2:C; \">=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01\"; Transaksi!C2:C; \"<=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31\")",
                     "",
-                    "=A7-C7",
+                    "=A9-C9",
+                    "",
+                    "=COUNTIFS(Transaksi!C2:C; \">=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01\"; Transaksi!C2:C; \"<=\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31\")",
                     "",
                 ],
-                ["", "", "", "", "", ""],
-                ["💡 Catatan: Seluruh angka di dasbor ini terupdate secara otomatis dan real-time saat transaksi baru masuk via WhatsApp.", "", "", "", "", ""],
+                ["", "", "", "", "", "", "", ""],
+                ["", "", "", "", "", "", "", ""],
+                ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", ""],
+                ["Tanggal", "Keterangan", "Jenis", "Nominal", "Kategori", "Total (Rp)", "", ""],
+                [
+                    "=IFERROR(QUERY(Transaksi!A2:L; \"SELECT C, F, D, G ORDER BY B DESC LIMIT 15 LABEL C '', F '', D '', G ''\"; 0); \"Belum ada data transaksi\")",
+                    "",
+                    "",
+                    "",
+                    "=IFERROR(QUERY(Transaksi!A2:L; \"SELECT E, SUM(G) WHERE D = 'Pengeluaran' AND C >= '\"&TEXT(TODAY(); \"YYYY-MM\")&\"-01' AND C <= '\"&TEXT(TODAY(); \"YYYY-MM\")&\"-31' GROUP BY E LABEL E '', SUM(G) ''\"; 0); \"Belum ada pengeluaran\")",
+                    "",
+                    "",
+                    "",
+                ],
             ];
             await this.sheetsClient.spreadsheets.values.update({
                 spreadsheetId: sheetId,
-                range: this.dasborTitle + "!A1:F9",
+                range: this.dasborTitle + "!A1:H14",
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
-                    values: dasborRows,
+                    values: dashboardRows,
                 },
             });
-            logger.info({ sheetId }, "Dashboard tab setup completed");
+            logger.info({ sheetId }, "Dashboard tab setup completed matching reference design");
         }
         catch (err) {
             logger.warn({ err }, "Could not setup dashboard tab automatically");
@@ -144,33 +205,27 @@ export class GoogleSheetsService {
         await this.ensureSheetInitialized(sheetId);
         const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
-        const itemsSummary = items.length > 0
-            ? items.map((it) => it.item_name + " (" + (it.qty || 1) + "x @" + it.price + ")").join(", ")
-            : "-";
         const isInc = isIncome(trx);
         const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
+        const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
+        // Row format according to Photo 3 (Columns A:L)
         const rowData = [
-            trx.id, // A: ID Transaksi
-            nowWIB, // B: Waktu Input
-            trx.date, // C: Tanggal Transaksi
-            trx.user_name, // D: Nama Penginput
-            cleanPhone, // E: Nomor WhatsApp
-            typeLabel, // F: Tipe Transaksi
-            trx.merchant, // G: Nama Merchant / Sumber
-            trx.category, // H: Kategori
-            itemsSummary, // I: Rincian Barang / Keterangan
-            trx.subtotal || trx.total_amount, // J: Subtotal (Rp)
-            trx.tax || 0, // K: Pajak / PB1 (Rp)
-            trx.discount || 0, // L: Diskon (Rp)
-            trx.total_amount, // M: Nominal Transaksi (Rp)
-            trx.payment_method || (isInc ? "Transfer Bank" : "Cash"), // N: Metode Pembayaran
-            trx.status || (isInc ? "income" : "recorded"), // O: Status Verifikasi
-            trx.raw_text || "-", // P: Catatan / Raw Text
-            trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Foto Struk\")" : "-", // Q: Link Bukti / Struk
+            trx.id, // A: ID
+            nowWIB, // B: Timestamp
+            trx.date, // C: Tanggal
+            typeLabel, // D: Jenis (Pemasukan / Pengeluaran)
+            trx.category, // E: Kategori
+            trx.merchant, // F: Keterangan
+            trx.total_amount, // G: Nominal
+            paymentMethod, // H: Metode (Mandiri, Cash, BRI, BCA, QRIS, dll.)
+            cleanPhone, // I: Nomor WhatsApp
+            trx.user_name, // J: Nama
+            trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Bukti\")" : "-", // K: Link Bukti
+            trx.raw_text || "-", // L: Pesan Asli
         ];
         const response = await this.sheetsClient.spreadsheets.values.append({
             spreadsheetId: sheetId,
-            range: this.sheetTitle + "!A:Q",
+            range: this.sheetTitle + "!A:L",
             valueInputOption: "USER_ENTERED",
             insertDataOption: "INSERT_ROWS",
             requestBody: {
@@ -197,34 +252,27 @@ export class GoogleSheetsService {
             }
             const sheetRowNumber = rowIndex + 1;
             const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
-            const itemsSummary = items.length > 0
-                ? items.map((it) => it.item_name + " (" + (it.qty || 1) + "x @" + it.price + ")").join(", ")
-                : "-";
             const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
             const isInc = isIncome(trx);
             const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
+            const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
             const updatedRowData = [
-                trx.id, // A: ID Transaksi
-                nowWIB, // B: Waktu Input
-                trx.date, // C: Tanggal Transaksi
-                trx.user_name, // D: Nama Penginput
-                cleanPhone, // E: Nomor WhatsApp
-                typeLabel, // F: Tipe Transaksi
-                trx.merchant, // G: Nama Merchant / Sumber
-                trx.category, // H: Kategori
-                itemsSummary, // I: Rincian Barang / Keterangan
-                trx.subtotal || trx.total_amount, // J: Subtotal (Rp)
-                trx.tax || 0, // K: Pajak / PB1 (Rp)
-                trx.discount || 0, // L: Diskon (Rp)
-                trx.total_amount, // M: Nominal Transaksi (Rp)
-                trx.payment_method || (isInc ? "Transfer Bank" : "Cash"), // N: Metode Pembayaran
-                trx.status || (isInc ? "income" : "recorded"), // O: Status Verifikasi
-                trx.raw_text || "-", // P: Catatan / Raw Text
-                trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Foto Struk\")" : "-", // Q: Link Bukti / Struk
+                trx.id, // A: ID
+                nowWIB, // B: Timestamp
+                trx.date, // C: Tanggal
+                typeLabel, // D: Jenis
+                trx.category, // E: Kategori
+                trx.merchant, // F: Keterangan
+                trx.total_amount, // G: Nominal
+                paymentMethod, // H: Metode
+                cleanPhone, // I: Nomor WhatsApp
+                trx.user_name, // J: Nama
+                trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Bukti\")" : "-", // K: Link Bukti
+                trx.raw_text || "-", // L: Pesan Asli
             ];
             await this.sheetsClient.spreadsheets.values.update({
                 spreadsheetId: sheetId,
-                range: this.sheetTitle + "!A" + sheetRowNumber + ":Q" + sheetRowNumber,
+                range: this.sheetTitle + "!A" + sheetRowNumber + ":L" + sheetRowNumber,
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
                     values: [updatedRowData],
