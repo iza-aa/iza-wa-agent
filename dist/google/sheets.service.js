@@ -674,6 +674,76 @@ export class GoogleSheetsService {
                     },
                 });
             });
+            // --- Transaksi Sheet Header Formatting (Row 1) ---
+            formattingRequests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 12 },
+                    cell: {
+                        userEnteredFormat: {
+                            backgroundColor: { red: 0.16, green: 0.29, blue: 0.54 },
+                            horizontalAlignment: "CENTER",
+                            verticalAlignment: "MIDDLE",
+                            textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 1, green: 1, blue: 1 } },
+                        },
+                    },
+                    fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+                },
+            });
+            // --- Transaksi Sheet Data Formatting (Rows 2:1000) - CLEAR DARK TEXT ---
+            formattingRequests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 12 },
+                    cell: {
+                        userEnteredFormat: {
+                            backgroundColor: { red: 1, green: 1, blue: 1 },
+                            horizontalAlignment: "LEFT",
+                            verticalAlignment: "MIDDLE",
+                            textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+                        },
+                    },
+                    fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+                },
+            });
+            // Center alignments in Transaksi
+            [0, 1, 2, 3, 7, 8, 10].forEach((colIdx) => {
+                formattingRequests.push({
+                    repeatCell: {
+                        range: { sheetId: trxSheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: colIdx, endColumnIndex: colIdx + 1 },
+                        cell: {
+                            userEnteredFormat: {
+                                horizontalAlignment: "CENTER",
+                            },
+                        },
+                        fields: "userEnteredFormat(horizontalAlignment)",
+                    },
+                });
+            });
+            // Date format for Tanggal (Col 2)
+            formattingRequests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 2, endColumnIndex: 3 },
+                    cell: {
+                        userEnteredFormat: {
+                            horizontalAlignment: "CENTER",
+                            numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+                        },
+                    },
+                    fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                },
+            });
+            // Currency format for Nominal (Col 6)
+            formattingRequests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: 1, endRowIndex: 1000, startColumnIndex: 6, endColumnIndex: 7 },
+                    cell: {
+                        userEnteredFormat: {
+                            horizontalAlignment: "RIGHT",
+                            numberFormat: { type: "CURRENCY", pattern: '"Rp"#,##0' },
+                        },
+                    },
+                    fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                },
+            });
             await this.sheetsClient.spreadsheets.batchUpdate({
                 spreadsheetId: sheetId,
                 requestBody: { requests: formattingRequests },
