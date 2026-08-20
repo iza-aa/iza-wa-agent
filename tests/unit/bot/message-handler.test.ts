@@ -137,7 +137,7 @@ describe("WhatsApp Bot Handlers", () => {
       });
 
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281346367235", "/pemasukan 5000000 Gaji Bulanan");
+      const res = await handler.handleCommand("6281346367235", "/pemasukan 5000000 Gaji Bulanan Mandiri");
       expect(res.handled).toBe(true);
       expect(res.responseMessage).toContain("Pemasukan Berhasil Dicatat");
       expect(res.responseMessage).toContain("Gaji Bulanan");

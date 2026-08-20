@@ -35,15 +35,46 @@ export class CommandHandler {
             if (!nominal || isNaN(nominal) || nominal <= 0) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5000000 Gaji Bulanan`\n• `/pemasukan 500000 Transfer Masuk dari Klien`\n• `/pemasukan 250000 Penjualan Produk`",
+                    responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan] [metode]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5000000 Gaji Bulanan Mandiri`\n• `/pemasukan 500000 Transfer Masuk dari Klien BCA`\n• `/pemasukan 250000 Penjualan Produk Cash`",
                 };
             }
+            // Detect payment method from the full remaining text
+            const lowerText = keterangan.toLowerCase();
+            const methodKeywords = {
+                cash: "Cash", tunai: "Cash", kas: "Cash",
+                mandiri: "Mandiri", bca: "BCA", bri: "BRI", bni: "BNI", bsi: "BSI",
+                qris: "QRIS", gopay: "GoPay", ovo: "OVO", dana: "DANA",
+                shopeepay: "ShopeePay", "shopee pay": "ShopeePay",
+                transfer: "Transfer Bank", tf: "Transfer Bank",
+                debit: "Debit", kredit: "Kredit",
+            };
+            let detectedMethod = null;
+            for (const [keyword, method] of Object.entries(methodKeywords)) {
+                if (lowerText.includes(keyword)) {
+                    detectedMethod = method;
+                    break;
+                }
+            }
+            // If no payment method detected, ask the user
+            if (!detectedMethod) {
+                const formatRp = new Intl.NumberFormat("id-ID").format(nominal);
+                return {
+                    handled: true,
+                    responseMessage: "✅ Pemasukan *Rp" + formatRp + "* untuk *" + keterangan + "* dicatat sementara.\n\nMohon info, pemasukan ini melalui metode apa ya?\n_(Contoh: Cash, Transfer BCA, Mandiri, BRI, atau QRIS)_\n\n💡 Atau ketik langsung:\n`/pemasukan " + nominal + " " + keterangan + " Cash`",
+                };
+            }
+            // Remove the method keyword from keterangan for cleaner display
+            let cleanKeterangan = keterangan;
+            for (const keyword of Object.keys(methodKeywords)) {
+                cleanKeterangan = cleanKeterangan.replace(new RegExp("\\b" + keyword + "\\b", "gi"), "").trim();
+            }
+            cleanKeterangan = cleanKeterangan || "Pemasukan Kas";
             const user = await this.userRepo.getUser(senderPhone);
             const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
             const trxId = this.trxRepo.generateTransactionId();
             const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
             let category = "Pemasukan: Lain-lain";
-            const lowerKet = keterangan.toLowerCase();
+            const lowerKet = cleanKeterangan.toLowerCase();
             if (lowerKet.includes("gaji"))
                 category = "Pemasukan: Gaji";
             else if (lowerKet.includes("transfer") || lowerKet.includes("tf"))
@@ -57,13 +88,13 @@ export class CommandHandler {
                 user_phone: senderPhone,
                 user_name: userName,
                 date: today,
-                merchant: keterangan,
+                merchant: cleanKeterangan,
                 category: category,
                 subtotal: nominal,
                 tax: 0,
                 discount: 0,
                 total_amount: nominal,
-                payment_method: "Transfer Bank",
+                payment_method: detectedMethod,
                 raw_text: trimmed,
                 status: "income",
                 confidence_score: 1.0,
