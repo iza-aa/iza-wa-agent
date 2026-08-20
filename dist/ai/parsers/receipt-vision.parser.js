@@ -37,7 +37,7 @@ export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg") {
         logger.debug({ modelName, textResponse }, "Gemini Receipt Vision Raw Response");
         try {
             const parsedJson = JSON.parse(textResponse);
-            const todayStr = new Date().toISOString().slice(0, 10);
+            const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
             const normalizedTrx = {
                 merchant: parsedJson.merchant || "Toko / Merchant",
                 date: parsedJson.date || todayStr,

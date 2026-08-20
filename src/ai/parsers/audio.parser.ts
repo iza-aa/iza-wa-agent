@@ -92,7 +92,7 @@ Format JSON output wajib:
       }
 
       const rawTrx = parsed.transaction;
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
       const normalizedTrx = {
         merchant: rawTrx.merchant || "Penjual",
         date: rawTrx.date || todayStr,

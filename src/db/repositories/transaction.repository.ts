@@ -36,7 +36,9 @@ export class TransactionRepository {
   constructor(private supabase: SupabaseClient) {}
 
   generateTransactionId(): string {
-    const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" })
+      .format(new Date())
+      .replace(/-/g, "");
     const randomHex = Math.random().toString(36).substring(2, 6).toUpperCase();
     return `TRX-${today}-${randomHex}`;
   }

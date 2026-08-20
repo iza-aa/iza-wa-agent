@@ -71,21 +71,17 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
     logger.debug({ modelName, textResponse }, "Gemini Text Parser Raw Response");
 
     try {
-      const parsed = JSON.parse(textResponse);
-      const isComplete = parsed.is_complete !== false && parsed.transaction?.total_amount > 0;
-
-      if (!isComplete || !parsed.transaction || parsed.transaction.total_amount <= 0) {
+      const parsedJson = JSON.parse(textResponse);
+      if (!parsedJson.is_complete || !parsedJson.transaction) {
         return {
           is_complete: false,
-          reply_message:
-            parsed.reply_message ||
-            "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.",
+          reply_message: parsedJson.reply_message || "Boleh tolong jelaskan lebih rinci pengeluaran ini?",
           transaction: null,
         };
       }
 
-      const rawTrx = parsed.transaction;
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+      const rawTrx = parsedJson.transaction;
       const normalizedTrx = {
         merchant: rawTrx.merchant || "Penjual",
         date: rawTrx.date || todayStr,

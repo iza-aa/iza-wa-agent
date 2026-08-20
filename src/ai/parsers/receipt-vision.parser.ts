@@ -46,7 +46,7 @@ export async function parseReceiptVision(
 
     try {
       const parsedJson = JSON.parse(textResponse);
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
       const normalizedTrx = {
         merchant: parsedJson.merchant || "Toko / Merchant",
         date: parsedJson.date || todayStr,
