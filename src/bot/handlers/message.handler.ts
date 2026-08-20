@@ -30,7 +30,11 @@ export class MessageHandler {
   }
 
   cleanPhone(from: string): string {
-    return from.replace(/@s\.whatsapp\.net|@c\.us|@g\.us/g, "").replace(/[^0-9]/g, "");
+    const digits = from.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
+    if (this.userRepo.isSuperAdmin(digits)) {
+      return config.SUPER_ADMIN_PHONE[0];
+    }
+    return digits;
   }
 
   async processIncomingMessage(sock: WASocket, msg: WAMessage): Promise<void> {

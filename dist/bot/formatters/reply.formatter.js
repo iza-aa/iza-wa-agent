@@ -36,12 +36,15 @@ export function formatPendingApprovalNotification(phone, pushName = "User") {
     return msg;
 }
 export function formatUserList(users) {
-    if (users.length === 0) {
+    // Filter out internal WhatsApp LID identifiers so only human phone numbers are shown
+    const visibleUsers = users.filter((u) => !u.phone_number.startsWith("232") && u.phone_number.length <= 14);
+    const displayList = visibleUsers.length > 0 ? visibleUsers : users;
+    if (displayList.length === 0) {
         return "ℹ️ Belum ada user aktif yang terdaftar.";
     }
-    let msg = "👥 *DAFTAR USER TERDAFTAR (" + users.length + ")*\n\n";
-    users.forEach((u, i) => {
-        msg += (i + 1) + ". *" + u.name + "* (`" + u.phone_number + "`) - [" + u.role.toUpperCase() + "] - " + u.status + "\n";
+    let msg = "👥 *DAFTAR USER TERDAFTAR (" + displayList.length + ")*\n\n";
+    displayList.forEach((u, i) => {
+        msg += (i + 1) + ". *" + u.name + "* (`+" + u.phone_number + "`) - [" + u.role.toUpperCase() + "] - " + u.status + "\n";
     });
     return msg;
 }
