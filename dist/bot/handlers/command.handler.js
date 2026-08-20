@@ -11,12 +11,13 @@ export class CommandHandler {
     }
     async handleCommand(senderPhone, text) {
         let trimmed = text.trim();
-        const isKeyword = ["help", "menu", "bantuan", "panduan", "rekap", "laporan", "users"].includes(trimmed.toLowerCase());
-        if (!trimmed.startsWith("/") && !isKeyword) {
-            return { handled: false, responseMessage: "" };
-        }
-        if (isKeyword && !trimmed.startsWith("/")) {
+        const firstWord = trimmed.split(" ")[0].toLowerCase();
+        const isKeyword = ["help", "menu", "bantuan", "panduan", "rekap", "laporan", "users", "batal", "cancel", "hapus"].includes(firstWord);
+        if (!trimmed.startsWith("/") && isKeyword) {
             trimmed = "/" + trimmed;
+        }
+        else if (!trimmed.startsWith("/")) {
+            return { handled: false, responseMessage: "" };
         }
         const parts = trimmed.split(" ");
         const command = parts[0].toLowerCase();
