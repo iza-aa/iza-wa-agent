@@ -94,9 +94,14 @@ Format JSON output wajib:
 
       const rawTrx = parsed.transaction;
       const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+      let finalDate = rawTrx.date || todayStr;
+      if (finalDate.startsWith("2023") || finalDate.startsWith("2024") || finalDate.startsWith("2025")) {
+        finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
+      }
+
       const normalizedTrx = {
         merchant: rawTrx.merchant || "Penjual",
-        date: rawTrx.date || todayStr,
+        date: finalDate,
         category: rawTrx.category || "Makanan & Minuman",
         subtotal: Number(rawTrx.subtotal || rawTrx.total_amount || 0),
         tax: Number(rawTrx.tax || 0),

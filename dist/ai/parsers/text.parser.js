@@ -80,7 +80,11 @@ export async function parseTransactionText(userText, contextHistory = []) {
                 temperature: 0.1,
             },
         });
-        const prompt = `Riwayat Percakapan Sebelumnya:
+        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+        const prompt = `Hari ini adalah tanggal: ${todayStr} (Tahun 2026).
+Gunakan tanggal hari ini (${todayStr}) untuk field "date" kecuali pengguna secara spesifik menyebutkan tanggal transaksi lain. Jika pengguna menyebut tanggal/bulan tanpa tahun (contoh: "tanggal 6 Agustus"), gunakan tahun 2026.
+
+Riwayat Percakapan Sebelumnya:
 ${contextHistory.join("\n")}
 
 Pesan Pengguna Baru:
@@ -99,11 +103,14 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
                     transaction: null,
                 };
             }
-            const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
             const rawTrx = parsedJson.transaction;
+            let finalDate = rawTrx.date || todayStr;
+            if (finalDate.startsWith("2023") || finalDate.startsWith("2024") || finalDate.startsWith("2025")) {
+                finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
+            }
             const normalizedTrx = {
                 merchant: rawTrx.merchant || "Penjual",
-                date: rawTrx.date || todayStr,
+                date: finalDate,
                 category: rawTrx.category || "Lain-lain",
                 subtotal: Number(rawTrx.subtotal || rawTrx.total_amount || 0),
                 tax: Number(rawTrx.tax || 0),
