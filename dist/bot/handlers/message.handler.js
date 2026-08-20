@@ -138,7 +138,7 @@ export class MessageHandler {
                     await sock.sendMessage(remoteJid, { text: isPdf ? "⚠️ AI tidak dapat mendeteksi transaksi dari dokumen PDF ini." : "⚠️ AI tidak dapat mendeteksi total belanja dari foto struk ini. Pastikan foto jelas dan tidak buram." }, { quoted: msg });
                     return;
                 }
-                const trxId = this.trxRepo.generateTransactionId();
+                const trxId = await this.trxRepo.generateTransactionId(parsed.date);
                 // Upload to Google Drive (Compressed WebP / PDF) with Supabase Storage fallback
                 let gdriveLink = "";
                 let gdriveFileId = "";
@@ -209,7 +209,7 @@ export class MessageHandler {
                     });
                     return;
                 }
-                const trxId = this.trxRepo.generateTransactionId();
+                const trxId = await this.trxRepo.generateTransactionId(transaction.date);
                 const transactionRecord = await this.trxRepo.createTransaction({
                     id: trxId,
                     user_phone: senderPhone,
@@ -266,7 +266,7 @@ export class MessageHandler {
                 return;
             }
             const parsed = textResult.transaction;
-            const trxId = this.trxRepo.generateTransactionId();
+            const trxId = await this.trxRepo.generateTransactionId(parsed.date);
             const transactionRecord = await this.trxRepo.createTransaction({
                 id: trxId,
                 user_phone: senderPhone,

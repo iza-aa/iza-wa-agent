@@ -95,8 +95,8 @@ export class CommandHandler {
 
       const user = await this.userRepo.getUser(senderPhone);
       const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
-      const trxId = this.trxRepo.generateTransactionId();
       const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+      const trxId = await this.trxRepo.generateTransactionId(today);
 
       let category = "Pemasukan: Lain-lain";
       const lowerKet = cleanKeterangan.toLowerCase();
@@ -449,12 +449,29 @@ export class CommandHandler {
       };
     }
 
+    if (command === "/sync" || command === "/sinkron" || command === "/tariksheet") {
+      try {
+        const syncResult = await googleSheetsService.syncFromSheetToDatabase(this.trxRepo);
+        const wallet = await this.trxRepo.getWalletBalance();
+        return {
+          handled: true,
+          responseMessage: `🔄 *SINKRONISASI SELESAI!*\n\n📊 Total *${syncResult.syncedCount}* baris transaksi dari Google Sheets berhasil diselaraskan ke database.\n\n💵 *Saldo Kas Dompet Terkini:* *${formatRupiah(wallet.balance)}*`,
+        };
+      } catch (syncErr: any) {
+        logger.error({ syncErr }, "Manual /sync failed");
+        return {
+          handled: true,
+          responseMessage: "❌ Gagal menyinkronkan data dari Google Sheets: " + (syncErr?.message || "Terjadi kesalahan"),
+        };
+      }
+    }
+
     if (command === "/hapus" || command === "/delete") {
       const targetId = parts[1];
       if (!targetId) {
         return {
           handled: true,
-          responseMessage: "❌ Format salah. Gunakan: `/hapus TRX-XXXX`\nContoh: `/hapus TRX-20260820-LX8Y`\n\nAtau cukup ketik `batal` untuk membatalkan transaksi paling akhir.",
+          responseMessage: "❌ Format salah. Gunakan: `/hapus <ID_TRX>`\nContoh: `/hapus H001` atau `/hapus 1`\n\nAtau cukup ketik `/batal` untuk membatalkan transaksi paling akhir.",
         };
       }
 
@@ -462,7 +479,7 @@ export class CommandHandler {
       if (!deleted) {
         return {
           handled: true,
-          responseMessage: "⚠️ Transaksi dengan ID `" + targetId + "` tidak ditemukan di database.",
+          responseMessage: "⚠️ Transaksi `" + targetId + "` tidak ditemukan di database.",
         };
       }
 

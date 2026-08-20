@@ -648,6 +648,33 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
     },
   ];
 
+  // Column width adjustments for Transaksi tab
+  const trxSheetId = trxSheet?.properties?.sheetId ?? 0;
+  const trxColWidths = [
+    { start: 0, end: 1, size: 110 }, // A: ID
+    { start: 1, end: 2, size: 160 }, // B: Timestamp
+    { start: 2, end: 3, size: 110 }, // C: Tanggal
+    { start: 3, end: 4, size: 110 }, // D: Jenis
+    { start: 4, end: 5, size: 220 }, // E: Kategori (Expanded!)
+    { start: 5, end: 6, size: 230 }, // F: Keterangan (Expanded!)
+    { start: 6, end: 7, size: 130 }, // G: Nominal
+    { start: 7, end: 8, size: 130 }, // H: Metode
+    { start: 8, end: 9, size: 175 }, // I: Nomor WhatsApp (Expanded!)
+    { start: 9, end: 10, size: 150 }, // J: Nama
+    { start: 10, end: 11, size: 120 }, // K: Link Bukti
+    { start: 11, end: 12, size: 260 }, // L: Pesan Asli
+  ];
+
+  trxColWidths.forEach((col) => {
+    requests.push({
+      updateDimensionProperties: {
+        range: { sheetId: trxSheetId, dimension: "COLUMNS", startIndex: col.start, endIndex: col.end },
+        properties: { pixelSize: col.size },
+        fields: "pixelSize",
+      },
+    });
+  });
+
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: sheetId,
     requestBody: { requests },

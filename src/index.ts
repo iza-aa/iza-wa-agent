@@ -29,12 +29,27 @@ async function bootstrap() {
     "App configuration validated"
   );
 
-  // 1. Start Mini HTTP Server for Cloud Health Checks (Render / Koyeb / UptimeRobot)
+  // 1. Start Mini HTTP Server for Cloud Health Checks & Google Sheets Webhooks
   const port = process.env.PORT || config.PORT || 3000;
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     if (req.url === "/health" || req.url === "/") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ status: "online", service: "iza-wa-agent", timestamp: new Date().toISOString() }));
+    } else if (req.url === "/api/sheets-webhook" && (req.method === "POST" || req.method === "GET")) {
+      logger.info("Received realtime webhook trigger from Google Sheets");
+      try {
+        const { getSupabaseClient } = await import("./db/supabase.js");
+        const { TransactionRepository } = await import("./db/repositories/transaction.repository.js");
+        const supabase = getSupabaseClient();
+        const trxRepo = new TransactionRepository(supabase);
+        const result = await googleSheetsService.syncFromSheetToDatabase(trxRepo);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true, synced: result.syncedCount, timestamp: new Date().toISOString() }));
+      } catch (err: any) {
+        logger.error({ err }, "Error processing sheets webhook");
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: false, error: err?.message || "Sync failed" }));
+      }
     } else {
       res.writeHead(404);
       res.end();
@@ -42,7 +57,7 @@ async function bootstrap() {
   });
 
   server.listen(port, () => {
-    logger.info({ port }, "HTTP Health Check server is listening for keep-alive pings");
+    logger.info({ port }, "HTTP Server is listening for health checks and sheets webhooks");
   });
 
   // 2. Ensure Supabase Storage Bucket for Receipts

@@ -37,10 +37,43 @@ describe("Database Repositories", () => {
   });
 
   describe("TransactionRepository", () => {
-    it("should generate a valid short transaction ID", () => {
+    it("should generate a valid T026-A001 format transaction ID", async () => {
+      mockSupabase.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          like: vi.fn().mockReturnValue({
+            order: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue({
+                data: [{ id: "T026-H005" }],
+                error: null,
+              }),
+            }),
+          }),
+        }),
+      });
+
       const trxRepo = new TransactionRepository(mockSupabase);
-      const trxId = trxRepo.generateTransactionId();
-      expect(trxId).toMatch(/^TRX-\d{8}-[A-Z0-9]{4}$/);
+      const trxId = await trxRepo.generateTransactionId("2026-08-20");
+      expect(trxId).toBe("T026-H006");
+    });
+
+    it("should find transaction by short code H001 or 1", async () => {
+      mockSupabase.from.mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            maybeSingle: vi.fn().mockResolvedValue({
+              data: { id: "T026-H001", merchant: "Kopi", total_amount: 25000 },
+              error: null,
+            }),
+          }),
+        }),
+      });
+
+      const trxRepo = new TransactionRepository(mockSupabase);
+      const res1 = await trxRepo.findTransactionByIdOrShortCode("H001");
+      expect(res1?.id).toBe("T026-H001");
+
+      const res2 = await trxRepo.findTransactionByIdOrShortCode("1");
+      expect(res2?.id).toBe("T026-H001");
     });
   });
 });

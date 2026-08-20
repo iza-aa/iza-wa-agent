@@ -11,6 +11,8 @@ export function formatTransactionSuccess(trx, items = [], isSuperAdmin = false, 
     let reply = isInc
         ? "🟢 *Pemasukan Berhasil Dicatat!*\n\n"
         : "🔴 *Pengeluaran Berhasil Dicatat!*\n\n";
+    const shortCode = trx.id.includes("-") ? trx.id.split("-").slice(1).join("") : trx.id;
+    reply += "🧾 *ID:* `" + trx.id + "`\n";
     reply += (isInc ? "💵 *Sumber / Penerimaan:* " : "🏪 *Tempat / Toko:* ") + trx.merchant + "\n";
     reply += "💰 *Nominal:* *" + (isInc ? "+" : "-") + formatRupiah(trx.total_amount) + "*\n";
     reply += "🏷️ *Kategori:* " + trx.category + "\n";
@@ -33,12 +35,7 @@ export function formatTransactionSuccess(trx, items = [], isSuperAdmin = false, 
     if (isSuperAdmin && trx.gdrive_web_view_link) {
         reply += "\n🔗 *Bukti Dokumen (Google Drive):*\n" + trx.gdrive_web_view_link + "\n";
     }
-    if (isSuperAdmin) {
-        reply += "\n📊 *Data telah otomatis tersimpan di Google Sheet & Dasbor.*";
-    }
-    else {
-        reply += "\n✅ *Data telah berhasil tersimpan ke sistem.*";
-    }
+    reply += "\n💡 _Untuk membatalkan, ketik: `/hapus " + shortCode + "`_";
     return reply;
 }
 export function formatWalletBalance(wallet) {

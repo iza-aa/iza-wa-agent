@@ -101,7 +101,7 @@ export class WebhookProcessor {
             };
           }
 
-          const trxId = this.trxRepo.generateTransactionId();
+          const trxId = await this.trxRepo.generateTransactionId(parsed.date);
 
           // Upload to Storage (Google Drive / Supabase Storage)
           let storageLink = "";
@@ -172,7 +172,7 @@ export class WebhookProcessor {
             };
           }
 
-          const trxId = this.trxRepo.generateTransactionId();
+          const trxId = await this.trxRepo.generateTransactionId(transaction.date);
           const transactionRecord = await this.trxRepo.createTransaction(
             {
               id: trxId,
@@ -235,7 +235,7 @@ export class WebhookProcessor {
       }
 
       const parsed = textResult.transaction;
-      const trxId = this.trxRepo.generateTransactionId();
+      const trxId = await this.trxRepo.generateTransactionId(parsed.date);
       const transactionRecord = await this.trxRepo.createTransaction(
         {
           id: trxId,

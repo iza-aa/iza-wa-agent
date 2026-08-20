@@ -178,7 +178,7 @@ export class MessageHandler {
           return;
         }
 
-        const trxId = this.trxRepo.generateTransactionId();
+        const trxId = await this.trxRepo.generateTransactionId(parsed.date);
 
         // Upload to Google Drive (Compressed WebP / PDF) with Supabase Storage fallback
         let gdriveLink = "";
@@ -272,7 +272,7 @@ export class MessageHandler {
           return;
         }
 
-        const trxId = this.trxRepo.generateTransactionId();
+        const trxId = await this.trxRepo.generateTransactionId(transaction.date);
 
         const transactionRecord = await this.trxRepo.createTransaction(
           {
@@ -340,7 +340,7 @@ export class MessageHandler {
       }
 
       const parsed = textResult.transaction;
-      const trxId = this.trxRepo.generateTransactionId();
+      const trxId = await this.trxRepo.generateTransactionId(parsed.date);
 
       const transactionRecord = await this.trxRepo.createTransaction(
         {

@@ -628,6 +628,33 @@ export class GoogleSheetsService {
                     },
                 },
             ];
+            // Add column width adjustments for Transaksi tab
+            const meta = await this.sheetsClient.spreadsheets.get({ spreadsheetId: sheetId });
+            const trxSheet = meta.data.sheets?.find((s) => s.properties?.title === this.sheetTitle);
+            const trxSheetId = trxSheet?.properties?.sheetId || 0;
+            const trxColWidths = [
+                { start: 0, end: 1, size: 110 }, // A: ID
+                { start: 1, end: 2, size: 160 }, // B: Timestamp
+                { start: 2, end: 3, size: 110 }, // C: Tanggal
+                { start: 3, end: 4, size: 110 }, // D: Jenis
+                { start: 4, end: 5, size: 220 }, // E: Kategori (Expanded!)
+                { start: 5, end: 6, size: 230 }, // F: Keterangan (Expanded!)
+                { start: 6, end: 7, size: 130 }, // G: Nominal
+                { start: 7, end: 8, size: 130 }, // H: Metode
+                { start: 8, end: 9, size: 175 }, // I: Nomor WhatsApp (Expanded!)
+                { start: 9, end: 10, size: 150 }, // J: Nama
+                { start: 10, end: 11, size: 120 }, // K: Link Bukti
+                { start: 11, end: 12, size: 260 }, // L: Pesan Asli
+            ];
+            trxColWidths.forEach((col) => {
+                formattingRequests.push({
+                    updateDimensionProperties: {
+                        range: { sheetId: trxSheetId, dimension: "COLUMNS", startIndex: col.start, endIndex: col.end },
+                        properties: { pixelSize: col.size },
+                        fields: "pixelSize",
+                    },
+                });
+            });
             await this.sheetsClient.spreadsheets.batchUpdate({
                 spreadsheetId: sheetId,
                 requestBody: { requests: formattingRequests },
@@ -762,6 +789,55 @@ export class GoogleSheetsService {
             logger.error({ err, trxId }, "Failed to delete transaction row from Google Sheet");
             return false;
         }
+    }
+    async syncFromSheetToDatabase(trxRepo, sheetId = config.GOOGLE_SHEET_ID) {
+        const res = await this.sheetsClient.spreadsheets.values.get({
+            spreadsheetId: sheetId,
+            range: this.sheetTitle + "!A2:L",
+        });
+        const rows = res.data.values || [];
+        const validRows = rows.filter((r) => r && r[0] && r[0].toString().trim().length > 0);
+        const { getSupabaseClient } = await import("../db/supabase.js");
+        const supabase = getSupabaseClient();
+        await supabase.from("receipt_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
+        await supabase.from("transactions").delete().neq("id", "placeholder");
+        let syncedCount = 0;
+        for (let i = 0; i < validRows.length; i++) {
+            const r = validRows[i];
+            const id = r[0]?.toString().trim();
+            const date = r[2]?.toString().trim() || new Date().toISOString().slice(0, 10);
+            const typeStr = r[3]?.toString().toLowerCase().trim();
+            const isInc = typeStr === "pemasukan";
+            const category = r[4]?.toString().trim() || "Lain-lain";
+            const merchant = r[5]?.toString().trim() || "-";
+            const rawNominal = r[6]?.toString().replace(/[^0-9]/g, "");
+            const nominal = parseInt(rawNominal, 10) || 0;
+            const paymentMethod = r[7]?.toString().trim() || "-";
+            const userPhone = (r[8]?.toString().replace(/[^0-9]/g, "")) || config.SUPER_ADMIN_PHONE;
+            const userName = r[9]?.toString().trim() || "User";
+            const rawText = r[11]?.toString().trim() || "-";
+            await trxRepo.createTransaction({
+                id,
+                user_phone: userPhone,
+                user_name: userName,
+                date,
+                merchant,
+                category,
+                subtotal: nominal,
+                tax: 0,
+                discount: 0,
+                total_amount: nominal,
+                payment_method: paymentMethod,
+                raw_text: rawText,
+                status: isInc ? "income" : "recorded",
+                confidence_score: 1.0,
+                gsheet_row_index: i + 2,
+            });
+            syncedCount++;
+        }
+        await this.setupDashboardTab(sheetId);
+        logger.info({ syncedCount }, "Full 2-way sync from Google Sheets to database completed");
+        return { syncedCount };
     }
 }
 export const googleSheetsService = new GoogleSheetsService();
