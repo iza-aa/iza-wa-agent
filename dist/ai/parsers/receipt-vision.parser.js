@@ -37,7 +37,26 @@ export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg") {
         logger.debug({ modelName, textResponse }, "Gemini Receipt Vision Raw Response");
         try {
             const parsedJson = JSON.parse(textResponse);
-            return ExtractedTransactionSchema.parse(parsedJson);
+            const todayStr = new Date().toISOString().slice(0, 10);
+            const normalizedTrx = {
+                merchant: parsedJson.merchant || "Toko / Merchant",
+                date: parsedJson.date || todayStr,
+                category: parsedJson.category || "Makanan & Minuman",
+                subtotal: Number(parsedJson.subtotal || parsedJson.total_amount || 0),
+                tax: Number(parsedJson.tax || 0),
+                discount: Number(parsedJson.discount || 0),
+                total_amount: Number(parsedJson.total_amount || parsedJson.subtotal || 0),
+                payment_method: parsedJson.payment_method || "Cash",
+                confidence_score: Number(parsedJson.confidence_score || 1.0),
+                items: (parsedJson.items || []).map((it) => ({
+                    item_name: it.item_name || it.name || "Item",
+                    qty: Number(it.qty || it.quantity || 1),
+                    price: Number(it.price || it.unit_price || (it.total_price && it.qty ? it.total_price / it.qty : it.total_price) || 0),
+                    total_price: Number(it.total_price || (it.price && it.qty ? it.price * it.qty : it.price) || 0),
+                    category: it.category || undefined,
+                })),
+            };
+            return ExtractedTransactionSchema.parse(normalizedTrx);
         }
         catch (err) {
             logger.error({ err, textResponse }, "Failed to validate receipt vision JSON");
