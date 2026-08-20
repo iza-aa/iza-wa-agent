@@ -6,3 +6,5 @@ dist/
 .wwebjs_cache/
 *.log
 .DS_Store
+service-account.json
+baileys_auth_info/

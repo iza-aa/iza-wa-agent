@@ -3,7 +3,7 @@
 **Date:** 2026-08-19  
 **Status:** Approved for Implementation Planning  
 **Repository:** [github.com/iza-aa/iza-wa-agent](https://github.com/iza-aa/iza-wa-agent)  
-**Database:** Supabase (`sfezffjtxtueqckermxh`)  
+**Database:** Supabase (`ikqlyniyyfdtlyfdkmmv`)  
 
 ---
 
