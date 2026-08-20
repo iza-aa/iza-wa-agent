@@ -1,0 +1,97 @@
+import { logger } from "../../utils/logger.js";
+export class UserRepository {
+    supabase;
+    superAdminList;
+    constructor(supabase, superAdminPhones) {
+        this.supabase = supabase;
+        if (Array.isArray(superAdminPhones)) {
+            this.superAdminList = superAdminPhones.map((p) => this.cleanIdentifier(p));
+        }
+        else {
+            this.superAdminList = (superAdminPhones || "").split(",").map((p) => this.cleanIdentifier(p)).filter(Boolean);
+        }
+    }
+    cleanIdentifier(id) {
+        return id.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
+    }
+    isSuperAdmin(identifier) {
+        const cleaned = this.cleanIdentifier(identifier);
+        return this.superAdminList.includes(cleaned);
+    }
+    addSuperAdminIdentifier(identifier) {
+        const cleaned = this.cleanIdentifier(identifier);
+        if (cleaned && !this.superAdminList.includes(cleaned)) {
+            this.superAdminList.push(cleaned);
+            logger.info({ identifier: cleaned }, "Added Super Admin identifier to active whitelist");
+        }
+    }
+    async getUser(identifier) {
+        const cleaned = this.cleanIdentifier(identifier);
+        const { data, error } = await this.supabase
+            .from("users")
+            .select("*")
+            .eq("phone_number", cleaned)
+            .maybeSingle();
+        if (error) {
+            logger.error({ error, id: cleaned }, "Error fetching user from Supabase");
+            return null;
+        }
+        return data;
+    }
+    async isWhitelisted(identifier) {
+        const cleaned = this.cleanIdentifier(identifier);
+        if (this.isSuperAdmin(cleaned)) {
+            return true;
+        }
+        const user = await this.getUser(cleaned);
+        return !!(user && user.status === "active");
+    }
+    async upsertUser(user) {
+        const cleaned = this.cleanIdentifier(user.phone_number);
+        const payload = {
+            ...user,
+            phone_number: cleaned,
+            role: user.role || (this.isSuperAdmin(cleaned) ? "super_admin" : "member"),
+            status: user.status || "active",
+            updated_at: new Date().toISOString(),
+        };
+        const { data, error } = await this.supabase
+            .from("users")
+            .upsert(payload, { onConflict: "phone_number" })
+            .select()
+            .single();
+        if (error) {
+            logger.error({ error, payload }, "Failed to upsert user");
+            throw error;
+        }
+        return data;
+    }
+    async listActiveUsers() {
+        const { data, error } = await this.supabase
+            .from("users")
+            .select("*")
+            .eq("status", "active")
+            .order("created_at", { ascending: true });
+        if (error) {
+            logger.error({ error }, "Failed to list users");
+            return [];
+        }
+        return (data || []);
+    }
+    async setUserStatus(phone, status, name) {
+        const cleaned = this.cleanIdentifier(phone);
+        const updateData = { status, updated_at: new Date().toISOString() };
+        if (name)
+            updateData.name = name;
+        const { error } = await this.supabase
+            .from("users")
+            .update(updateData)
+            .eq("phone_number", cleaned);
+        if (error) {
+            logger.error({ error, phone: cleaned }, "Failed to set user status");
+            return false;
+        }
+        return true;
+    }
+}
+//# sourceMappingURL=user.repository.js.map
