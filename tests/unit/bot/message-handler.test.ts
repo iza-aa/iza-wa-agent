@@ -9,6 +9,7 @@ describe("WhatsApp Bot Handlers", () => {
   beforeEach(() => {
     mockUserRepo = {
       isSuperAdmin: vi.fn().mockImplementation((p: string) => p === "6281346367235"),
+      getUser: vi.fn().mockResolvedValue({ phone_number: "6281346367235", name: "Ayah", role: "super_admin", status: "active" }),
       listActiveUsers: vi.fn().mockResolvedValue([
         { phone_number: "6281346367235", name: "Ayah", role: "super_admin", status: "active" },
       ]),
@@ -18,6 +19,7 @@ describe("WhatsApp Bot Handlers", () => {
     mockTrxRepo = {
       getRecentTransactions: vi.fn().mockResolvedValue([]),
       generateTransactionId: vi.fn().mockReturnValue("TRX-TEST-001"),
+      updateGSheetRow: vi.fn().mockResolvedValue(undefined),
     };
   });
 
@@ -79,9 +81,56 @@ describe("WhatsApp Bot Handlers", () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
       const res = await handler.handleCommand("6281346367235", "/detail TRX-TEST-001");
       expect(res.handled).toBe(true);
-      expect(res.responseMessage).toContain("DETAIL LENGKAP TRANSAKSI");
+      expect(res.responseMessage).toContain("DETAIL PENGELUARAN");
       expect(res.responseMessage).toContain("Alfamart");
       expect(res.responseMessage).toContain("Susu");
+    });
+
+    it("should display wallet balance with /saldo", async () => {
+      mockTrxRepo.getWalletBalance = vi.fn().mockResolvedValue({
+        totalIncome: 10000000,
+        totalExpense: 2500000,
+        balance: 7500000,
+        monthIncome: 5000000,
+        monthExpense: 1000000,
+        monthBalance: 4000000,
+        currentMonth: "2026-08",
+      });
+
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand("6281346367235", "/saldo");
+      expect(res.handled).toBe(true);
+      expect(res.responseMessage).toContain("STATUS DOMPET & SALDO KAS");
+      expect(res.responseMessage).toContain("SISA SALDO KAS SAAT INI");
+    });
+
+    it("should allow recording income with /pemasukan", async () => {
+      mockTrxRepo.generateTransactionId = vi.fn().mockReturnValue("TRX-INC-001");
+      mockTrxRepo.createTransaction = vi.fn().mockResolvedValue({
+        id: "TRX-INC-001",
+        date: "2026-08-20",
+        merchant: "Gaji Bulanan",
+        category: "Pemasukan: Gaji",
+        total_amount: 5000000,
+        user_name: "Ayah",
+        user_phone: "6281346367235",
+        status: "income",
+      });
+      mockTrxRepo.getWalletBalance = vi.fn().mockResolvedValue({
+        totalIncome: 5000000,
+        totalExpense: 0,
+        balance: 5000000,
+        monthIncome: 5000000,
+        monthExpense: 0,
+        monthBalance: 5000000,
+        currentMonth: "2026-08",
+      });
+
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand("6281346367235", "/pemasukan 5000000 Gaji Bulanan");
+      expect(res.handled).toBe(true);
+      expect(res.responseMessage).toContain("Pemasukan Berhasil Dicatat");
+      expect(res.responseMessage).toContain("Gaji Bulanan");
     });
 
     it("should allow Super Admin to cancel latest transaction with /batal", async () => {
@@ -111,6 +160,9 @@ describe("WhatsApp Bot Handlers", () => {
     it("should allow Super Admin to generate monthly report with /laporan", async () => {
       mockTrxRepo.getMonthlySummary = vi.fn().mockResolvedValue({
         total: 1500000,
+        totalExpense: 1500000,
+        totalIncome: 5000000,
+        netCashflow: 3500000,
         count: 5,
         byCategory: { "Makanan & Minuman": 1000000, "Transportasi & Bensin": 500000 },
         byUser: { "Ayah": 1500000 },
@@ -120,7 +172,7 @@ describe("WhatsApp Bot Handlers", () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
       const res = await handler.handleCommand("6281346367235", "/laporan 2026-08");
       expect(res.handled).toBe(true);
-      expect(res.responseMessage).toContain("LAPORAN KEUANGAN");
+      expect(res.responseMessage).toContain("LAPORAN ARUS KAS DOMPET");
       expect(res.responseMessage).toContain("Makanan & Minuman");
       expect(mockTrxRepo.getMonthlySummary).toHaveBeenCalledWith("2026-08");
     });

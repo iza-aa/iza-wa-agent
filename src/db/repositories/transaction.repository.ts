@@ -14,6 +14,7 @@ export interface TransactionRecord {
   user_phone: string;
   user_name: string;
   date: string; // YYYY-MM-DD
+  type?: "income" | "expense";
   merchant: string;
   category: string;
   subtotal: number;
@@ -32,6 +33,14 @@ export interface TransactionRecord {
   updated_at?: string;
 }
 
+export function isIncome(trx: { type?: string; status?: string; category?: string }): boolean {
+  return (
+    trx.type === "income" ||
+    trx.status === "income" ||
+    !!(trx.category && trx.category.toLowerCase().startsWith("pemasukan"))
+  );
+}
+
 export class TransactionRepository {
   constructor(private supabase: SupabaseClient) {}
 
@@ -48,12 +57,16 @@ export class TransactionRepository {
     items: TransactionItem[] = []
   ): Promise<TransactionRecord> {
     const trxId = trx.id || this.generateTransactionId();
-    const payload: TransactionRecord = {
+    const isInc = isIncome(trx);
+    const payload: any = {
       ...trx,
+      status: isInc ? "income" : (trx.status || "recorded"),
       id: trxId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
+    // If Supabase schema does not have 'type', delete from raw payload or keep
+    delete payload.type;
 
     const { data, error } = await this.supabase
       .from("transactions")
@@ -217,8 +230,71 @@ export class TransactionRepository {
     return existing as TransactionRecord;
   }
 
+  async getWalletBalance(): Promise<{
+    totalIncome: number;
+    totalExpense: number;
+    balance: number;
+    monthIncome: number;
+    monthExpense: number;
+    monthBalance: number;
+    currentMonth: string;
+  }> {
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .select("*");
+
+    const currentMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" })
+      .format(new Date())
+      .substring(0, 7);
+
+    if (error || !data) {
+      logger.error({ error }, "Failed to fetch transactions for wallet balance");
+      return {
+        totalIncome: 0,
+        totalExpense: 0,
+        balance: 0,
+        monthIncome: 0,
+        monthExpense: 0,
+        monthBalance: 0,
+        currentMonth,
+      };
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+    let monthIncome = 0;
+    let monthExpense = 0;
+
+    for (const trx of data) {
+      const amount = Number(trx.total_amount) || 0;
+      const isInc = isIncome(trx);
+      const isThisMonth = trx.date && trx.date.startsWith(currentMonth);
+
+      if (isInc) {
+        totalIncome += amount;
+        if (isThisMonth) monthIncome += amount;
+      } else {
+        totalExpense += amount;
+        if (isThisMonth) monthExpense += amount;
+      }
+    }
+
+    return {
+      totalIncome,
+      totalExpense,
+      balance: totalIncome - totalExpense,
+      monthIncome,
+      monthExpense,
+      monthBalance: monthIncome - monthExpense,
+      currentMonth,
+    };
+  }
+
   async getMonthlySummary(yearMonth: string): Promise<{
     total: number;
+    totalExpense: number;
+    totalIncome: number;
+    netCashflow: number;
     count: number;
     byCategory: { [cat: string]: number };
     byUser: { [user: string]: number };
@@ -233,30 +309,37 @@ export class TransactionRepository {
 
     if (error || !data) {
       logger.error({ error, yearMonth }, "Failed to fetch monthly transactions");
-      return { total: 0, count: 0, byCategory: {}, byUser: {}, topTransactions: [] };
+      return { total: 0, totalExpense: 0, totalIncome: 0, netCashflow: 0, count: 0, byCategory: {}, byUser: {}, topTransactions: [] };
     }
 
-    let total = 0;
+    let totalExpense = 0;
+    let totalIncome = 0;
     const byCategory: { [cat: string]: number } = {};
     const byUser: { [user: string]: number } = {};
 
     for (const trx of data) {
       const amount = Number(trx.total_amount) || 0;
-      total += amount;
-
-      const cat = trx.category || "Lain-lain";
-      byCategory[cat] = (byCategory[cat] || 0) + amount;
+      if (isIncome(trx)) {
+        totalIncome += amount;
+      } else {
+        totalExpense += amount;
+        const cat = trx.category || "Lain-lain";
+        byCategory[cat] = (byCategory[cat] || 0) + amount;
+      }
 
       const user = trx.user_name || trx.user_phone;
       byUser[user] = (byUser[user] || 0) + amount;
     }
 
     return {
-      total,
+      total: totalExpense,
+      totalExpense,
+      totalIncome,
+      netCashflow: totalIncome - totalExpense,
       count: data.length,
       byCategory,
       byUser,
-      topTransactions: data.slice(0, 3) as TransactionRecord[],
+      topTransactions: data.filter((t) => !isIncome(t)).slice(0, 3) as TransactionRecord[],
     };
   }
 }

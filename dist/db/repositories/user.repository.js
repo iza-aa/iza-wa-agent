@@ -14,6 +14,24 @@ export class UserRepository {
     cleanIdentifier(id) {
         return id.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
     }
+    async syncSuperAdminsFromDB() {
+        try {
+            const { data, error } = await this.supabase
+                .from("users")
+                .select("phone_number")
+                .eq("role", "super_admin")
+                .eq("status", "active");
+            if (!error && data) {
+                data.forEach((u) => {
+                    this.addSuperAdminIdentifier(u.phone_number);
+                });
+                logger.info({ count: data.length, admins: this.superAdminList }, "Synced Super Admins from database");
+            }
+        }
+        catch (err) {
+            logger.warn({ err }, "Could not sync super admins from database");
+        }
+    }
     isSuperAdmin(identifier) {
         const cleaned = this.cleanIdentifier(identifier);
         return this.superAdminList.includes(cleaned);
@@ -36,6 +54,9 @@ export class UserRepository {
             logger.error({ error, id: cleaned }, "Error fetching user from Supabase");
             return null;
         }
+        if (data && data.role === "super_admin") {
+            this.addSuperAdminIdentifier(cleaned);
+        }
         return data;
     }
     async isWhitelisted(identifier) {
@@ -44,6 +65,10 @@ export class UserRepository {
             return true;
         }
         const user = await this.getUser(cleaned);
+        if (user && user.role === "super_admin") {
+            this.addSuperAdminIdentifier(cleaned);
+            return true;
+        }
         return !!(user && user.status === "active");
     }
     async upsertUser(user) {

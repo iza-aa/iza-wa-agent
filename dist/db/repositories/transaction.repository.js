@@ -1,4 +1,9 @@
 import { logger } from "../../utils/logger.js";
+export function isIncome(trx) {
+    return (trx.type === "income" ||
+        trx.status === "income" ||
+        !!(trx.category && trx.category.toLowerCase().startsWith("pemasukan")));
+}
 export class TransactionRepository {
     supabase;
     constructor(supabase) {
@@ -13,12 +18,16 @@ export class TransactionRepository {
     }
     async createTransaction(trx, items = []) {
         const trxId = trx.id || this.generateTransactionId();
+        const isInc = isIncome(trx);
         const payload = {
             ...trx,
+            status: isInc ? "income" : (trx.status || "recorded"),
             id: trxId,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
         };
+        // If Supabase schema does not have 'type', delete from raw payload or keep
+        delete payload.type;
         const { data, error } = await this.supabase
             .from("transactions")
             .insert(payload)
@@ -153,6 +162,54 @@ export class TransactionRepository {
         logger.info({ id }, "Transaction deleted from database");
         return existing;
     }
+    async getWalletBalance() {
+        const { data, error } = await this.supabase
+            .from("transactions")
+            .select("*");
+        const currentMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" })
+            .format(new Date())
+            .substring(0, 7);
+        if (error || !data) {
+            logger.error({ error }, "Failed to fetch transactions for wallet balance");
+            return {
+                totalIncome: 0,
+                totalExpense: 0,
+                balance: 0,
+                monthIncome: 0,
+                monthExpense: 0,
+                monthBalance: 0,
+                currentMonth,
+            };
+        }
+        let totalIncome = 0;
+        let totalExpense = 0;
+        let monthIncome = 0;
+        let monthExpense = 0;
+        for (const trx of data) {
+            const amount = Number(trx.total_amount) || 0;
+            const isInc = isIncome(trx);
+            const isThisMonth = trx.date && trx.date.startsWith(currentMonth);
+            if (isInc) {
+                totalIncome += amount;
+                if (isThisMonth)
+                    monthIncome += amount;
+            }
+            else {
+                totalExpense += amount;
+                if (isThisMonth)
+                    monthExpense += amount;
+            }
+        }
+        return {
+            totalIncome,
+            totalExpense,
+            balance: totalIncome - totalExpense,
+            monthIncome,
+            monthExpense,
+            monthBalance: monthIncome - monthExpense,
+            currentMonth,
+        };
+    }
     async getMonthlySummary(yearMonth) {
         const { data, error } = await this.supabase
             .from("transactions")
@@ -162,25 +219,34 @@ export class TransactionRepository {
             .order("total_amount", { ascending: false });
         if (error || !data) {
             logger.error({ error, yearMonth }, "Failed to fetch monthly transactions");
-            return { total: 0, count: 0, byCategory: {}, byUser: {}, topTransactions: [] };
+            return { total: 0, totalExpense: 0, totalIncome: 0, netCashflow: 0, count: 0, byCategory: {}, byUser: {}, topTransactions: [] };
         }
-        let total = 0;
+        let totalExpense = 0;
+        let totalIncome = 0;
         const byCategory = {};
         const byUser = {};
         for (const trx of data) {
             const amount = Number(trx.total_amount) || 0;
-            total += amount;
-            const cat = trx.category || "Lain-lain";
-            byCategory[cat] = (byCategory[cat] || 0) + amount;
+            if (isIncome(trx)) {
+                totalIncome += amount;
+            }
+            else {
+                totalExpense += amount;
+                const cat = trx.category || "Lain-lain";
+                byCategory[cat] = (byCategory[cat] || 0) + amount;
+            }
             const user = trx.user_name || trx.user_phone;
             byUser[user] = (byUser[user] || 0) + amount;
         }
         return {
-            total,
+            total: totalExpense,
+            totalExpense,
+            totalIncome,
+            netCashflow: totalIncome - totalExpense,
             count: data.length,
             byCategory,
             byUser,
-            topTransactions: data.slice(0, 3),
+            topTransactions: data.filter((t) => !isIncome(t)).slice(0, 3),
         };
     }
 }

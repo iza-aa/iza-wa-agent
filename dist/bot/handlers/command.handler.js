@@ -1,4 +1,5 @@
-import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction, formatTransactionDetail, formatTransactionUpdated, } from "../formatters/reply.formatter.js";
+import { isIncome } from "../../db/repositories/transaction.repository.js";
+import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction, formatTransactionDetail, formatTransactionUpdated, formatTransactionSuccess, formatWalletBalance, } from "../formatters/reply.formatter.js";
 import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
@@ -21,6 +22,62 @@ export class CommandHandler {
         const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
         if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
             return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
+        }
+        if (command === "/saldo" || command === "/dompet" || command === "/kas" || command === "/balance") {
+            const wallet = await this.trxRepo.getWalletBalance();
+            return { handled: true, responseMessage: formatWalletBalance(wallet) };
+        }
+        if (command === "/pemasukan" || command === "/masuk" || command === "/income" || command === "/tambahsaldo") {
+            const rawNominal = parts[1] || "";
+            const cleanedNominal = rawNominal.replace(/[^0-9]/g, "");
+            const nominal = parseInt(cleanedNominal, 10);
+            const keterangan = parts.slice(2).join(" ").trim() || "Pemasukan Kas";
+            if (!nominal || isNaN(nominal) || nominal <= 0) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5000000 Gaji Bulanan`\n• `/pemasukan 500000 Transfer Masuk dari Klien`\n• `/pemasukan 250000 Penjualan Produk`",
+                };
+            }
+            const user = await this.userRepo.getUser(senderPhone);
+            const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
+            const trxId = this.trxRepo.generateTransactionId();
+            const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+            let category = "Pemasukan: Lain-lain";
+            const lowerKet = keterangan.toLowerCase();
+            if (lowerKet.includes("gaji"))
+                category = "Pemasukan: Gaji";
+            else if (lowerKet.includes("transfer") || lowerKet.includes("tf"))
+                category = "Pemasukan: Transfer Masuk";
+            else if (lowerKet.includes("jual") || lowerKet.includes("proyek") || lowerKet.includes("order"))
+                category = "Pemasukan: Penjualan";
+            else if (lowerKet.includes("top up") || lowerKet.includes("kas"))
+                category = "Pemasukan: Top Up Kas";
+            const transactionRecord = await this.trxRepo.createTransaction({
+                id: trxId,
+                user_phone: senderPhone,
+                user_name: userName,
+                date: today,
+                merchant: keterangan,
+                category: category,
+                subtotal: nominal,
+                tax: 0,
+                discount: 0,
+                total_amount: nominal,
+                payment_method: "Transfer Bank",
+                raw_text: trimmed,
+                status: "income",
+                confidence_score: 1.0,
+            });
+            try {
+                const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, []);
+                await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
+            }
+            catch (sheetErr) {
+                logger.error({ sheetErr }, "Failed to append income row to Google Sheet");
+            }
+            const wallet = await this.trxRepo.getWalletBalance();
+            const reply = formatTransactionSuccess(transactionRecord, [], isSuperAdmin, wallet.balance);
+            return { handled: true, responseMessage: reply };
         }
         if (command === "/link" || command === "/sheet" || command === "/drive" || command === "/spreadsheet" || command === "/dasbor") {
             if (!isSuperAdmin) {
@@ -349,15 +406,23 @@ export class CommandHandler {
                 return { handled: true, responseMessage: "ℹ️ Belum ada transaksi tercatat." };
             }
             let summary = "📊 *REKAP " + recent.length + " TRANSAKSI TERAKHIR*\n\n";
-            let total = 0;
+            let totalExpense = 0;
+            let totalIncome = 0;
             recent.forEach((t, i) => {
-                total += Number(t.total_amount);
-                summary += (i + 1) + ". 🧾 `" + t.id + "`\n";
-                summary += "   📅 " + t.date + " | 🏪 *" + t.merchant + "* (" + t.category + ")\n";
-                summary += "   💰 *" + formatRupiah(t.total_amount) + "* | 👤 " + t.user_name + "\n\n";
+                const isInc = isIncome(t);
+                const sign = isInc ? "🟢 [+]" : "🔴 [-]";
+                if (isInc)
+                    totalIncome += Number(t.total_amount);
+                else
+                    totalExpense += Number(t.total_amount);
+                summary += (i + 1) + ". " + sign + " 🧾 `" + t.id + "`\n";
+                summary += "   📅 " + t.date + " | *" + t.merchant + "* (" + t.category + ")\n";
+                summary += "   💰 *" + (isInc ? "+" : "-") + formatRupiah(t.total_amount) + "* | 👤 " + t.user_name + "\n\n";
             });
-            summary += "💰 *Total (" + recent.length + " transaksi):* *" + formatRupiah(total) + "*\n\n";
-            summary += "💡 *Tips:* Ketik `/detail [ID]` untuk melihat rincian barang, atau `/edit [ID] [koreksi]` untuk mengubah.";
+            summary += "────────────────────────\n";
+            summary += "🟢 *Total Pemasukan:* *" + formatRupiah(totalIncome) + "*\n";
+            summary += "🔴 *Total Pengeluaran:* *" + formatRupiah(totalExpense) + "*\n\n";
+            summary += "💡 *Tips:* Ketik `/detail [ID]` untuk rincian, atau `/saldo` untuk status kas dompet.";
             return { handled: true, responseMessage: summary };
         }
         return {

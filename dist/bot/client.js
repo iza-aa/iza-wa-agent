@@ -35,6 +35,7 @@ export function createWhatsAppBot() {
         });
         const supabase = getSupabaseClient();
         const userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
+        await userRepo.syncSuperAdminsFromDB();
         const trxRepo = new TransactionRepository(supabase);
         const chatRepo = new ChatRepository(supabase);
         const messageHandler = new MessageHandler(userRepo, trxRepo, chatRepo);

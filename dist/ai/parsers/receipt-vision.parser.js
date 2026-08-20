@@ -13,7 +13,7 @@ Pedoman Ekstraksi Struk:
 6. discount: Potongan harga / diskon / voucher jika ada.
 7. total_amount: Total akhir (Grand Total / Net Total) yang wajib dibayarkan.
 8. payment_method: Deteksi dari baris pembayaran (Cash, Debit Card, QRIS, BCA, ShopeePay, dll.).
-9. category: Pilih kategori yang paling tepat dari: "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain".
+9. category: Pilih kategori yang paling tepat dari: "Pemasukan: Transfer Masuk", "Pemasukan: Gaji", "Pemasukan: Setoran Tunai", "Pemasukan: Penjualan", "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain". Jika gambar berupa bukti transfer masuk / setoran tunai / penerimaan dana, gunakan awalan "Pemasukan: ".
 10. confidence_score: Berikan skor 0.0 - 1.0 seberapa jelas gambar struk tersebut terbaca.`;
 export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg", userCaption = "") {
     return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
