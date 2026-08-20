@@ -697,6 +697,29 @@ export class GoogleSheetsService {
         { start: 11, end: 12, size: 260 }, // L: Pesan Asli
       ];
 
+      // Clean any banded ranges (alternating colors) that might bleed outside the table
+      const bandedRanges = trxSheet?.bandedRanges || [];
+      bandedRanges.forEach((b: any) => {
+        formattingRequests.push({
+          deleteBanding: {
+            bandedRangeId: b.bandedRangeId,
+          },
+        });
+      });
+
+      // Trim Transaksi columns to exactly 12 (A:L)
+      formattingRequests.push({
+        updateSheetProperties: {
+          properties: {
+            sheetId: trxSheetId,
+            gridProperties: {
+              columnCount: 12,
+            },
+          },
+          fields: "gridProperties.columnCount",
+        },
+      });
+
       trxColWidths.forEach((col) => {
         formattingRequests.push({
           updateDimensionProperties: {

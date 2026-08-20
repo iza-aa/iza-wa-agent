@@ -670,6 +670,27 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
 
   // Column width adjustments for Transaksi tab
   const trxSheetId = trxSheet?.properties?.sheetId ?? 0;
+  const bandedRanges = trxSheet?.bandedRanges || [];
+  bandedRanges.forEach((b: any) => {
+    requests.push({
+      deleteBanding: {
+        bandedRangeId: b.bandedRangeId,
+      },
+    });
+  });
+
+  requests.push({
+    updateSheetProperties: {
+      properties: {
+        sheetId: trxSheetId,
+        gridProperties: {
+          columnCount: 12,
+        },
+      },
+      fields: "gridProperties.columnCount",
+    },
+  });
+
   const trxColWidths = [
     { start: 0, end: 1, size: 110 }, // A: ID
     { start: 1, end: 2, size: 160 }, // B: Timestamp
