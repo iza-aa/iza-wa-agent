@@ -93,18 +93,23 @@ export class MessageHandler {
       content: body,
     });
 
-    // 2. Super Admin & Command Check
-    if (body.startsWith("/")) {
-      const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
-      if (handled) {
-        await sock.sendMessage(remoteJid, { text: responseMessage }, { quoted: msg });
+    // 2. Whitelist / Access Control Check (Must be BEFORE any command or message processing)
+    const isAllowed = await this.userRepo.isWhitelisted(senderPhone, pushName);
+    let user = await this.userRepo.getUser(senderPhone, pushName);
+
+    if (!isAllowed) {
+      if (user && user.status === "blocked") {
+        logger.warn({ senderPhone, pushName }, "Blocked user attempted to message bot");
+        await sock.sendMessage(
+          remoteJid,
+          {
+            text: "🚫 Nomor Anda telah diblokir dari sistem ini.",
+          },
+          { quoted: msg }
+        );
         return;
       }
-    }
 
-    // 3. Whitelist / Access Control Check
-    const isAllowed = await this.userRepo.isWhitelisted(senderPhone, pushName);
-    if (!isAllowed) {
       const superAdminPhone = config.SUPER_ADMIN_PHONE;
       logger.warn({ senderPhone, pushName }, "Unauthorized user attempted to message bot");
 
@@ -128,8 +133,15 @@ export class MessageHandler {
       return;
     }
 
-    // Get User Profile from DB (or auto-register Super Admin)
-    let user = await this.userRepo.getUser(senderPhone, pushName);
+    // 3. Super Admin & Command Check (Only for authorized users)
+    if (body.startsWith("/")) {
+      const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
+      if (handled) {
+        await sock.sendMessage(remoteJid, { text: responseMessage }, { quoted: msg });
+        return;
+      }
+    }
+
     const isSuperAdminUser = await this.userRepo.isSuperAdminAsync(senderPhone);
     if (!user && isSuperAdminUser) {
       user = await this.userRepo.upsertUser({

@@ -55,17 +55,21 @@ export class UserRepository {
 
   async isSuperAdminAsync(identifier: string): Promise<boolean> {
     const cleaned = this.cleanIdentifier(identifier);
-    if (this.superAdminList.includes(cleaned)) {
-      return true;
-    }
-
     const user = await this.getUser(cleaned);
-    if (user && user.role === "super_admin") {
-      this.addSuperAdminIdentifier(cleaned);
-      return true;
+    if (user) {
+      if (user.status === "blocked") {
+        this.removeSuperAdminIdentifier(cleaned);
+        return false;
+      }
+      if (user.role === "super_admin" && user.status === "active") {
+        this.addSuperAdminIdentifier(cleaned);
+        return true;
+      }
+      this.removeSuperAdminIdentifier(cleaned);
+      return false;
     }
 
-    return false;
+    return this.superAdminList.includes(cleaned);
   }
 
   addSuperAdminIdentifier(identifier: string): void {
@@ -91,6 +95,7 @@ export class UserRepository {
 
     if (data) {
       if (data.status === "blocked") {
+        this.removeSuperAdminIdentifier(cleaned);
         return data as UserRecord;
       }
       if (data.role === "super_admin") {
@@ -102,22 +107,19 @@ export class UserRepository {
     // If identifier is an unmapped WhatsApp LID (14-16 digits) and pushName is provided:
     // Search for a matching active user by comparing individual words of pushName against DB user names
     if (cleaned.length >= 14 && pushName && pushName.trim().length >= 2) {
-      // Fetch all active users with normal phone numbers (not LIDs)
-      const { data: activeUsers } = await this.supabase
+      // Fetch all users with normal phone numbers (< 15 digits)
+      const { data: dbUsers } = await this.supabase
         .from("users")
         .select("*")
-        .eq("status", "active")
-        .lt("phone_number", "100000000000000"); // Only real phone numbers (< 15 digits)
+        .lt("phone_number", "100000000000000");
 
-      if (activeUsers && activeUsers.length > 0) {
+      if (dbUsers && dbUsers.length > 0) {
         const pushNameLower = pushName.trim().toLowerCase();
         const pushNameWords = pushNameLower.split(/\s+/).filter((w) => w.length >= 2);
 
-        // Try to find a user whose DB name appears in pushName or vice versa
-        const match = activeUsers.find((u) => {
+        const match = dbUsers.find((u) => {
           const dbNameLower = u.name.toLowerCase().trim();
           const dbNameWords = dbNameLower.split(/\s+/).filter((w: string) => w.length >= 2);
-          // Check: DB name contained in pushName, or any DB name word matches a pushName word
           return (
             pushNameLower.includes(dbNameLower) ||
             dbNameLower.includes(pushNameLower) ||
@@ -127,15 +129,14 @@ export class UserRepository {
 
         if (match) {
           logger.info(
-            { lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number, role: match.role },
+            { lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number, status: match.status, role: match.role },
             "Auto-linking WhatsApp LID to registered user by name match"
           );
-          // Create a new user entry for this LID so future lookups are instant
           const linkedUser = await this.upsertUser({
             phone_number: cleaned,
             name: match.name,
             role: match.role,
-            status: "active",
+            status: match.status,
           });
           return linkedUser;
         }
@@ -147,19 +148,22 @@ export class UserRepository {
 
   async isWhitelisted(identifier: string, pushName?: string): Promise<boolean> {
     const cleaned = this.cleanIdentifier(identifier);
-    if (this.isSuperAdmin(cleaned)) {
-      return true;
-    }
-
     const user = await this.getUser(cleaned, pushName);
-    if (!user) return false;
-    if (user.status === "blocked") return false;
-
-    if (user.role === "super_admin") {
-      this.addSuperAdminIdentifier(cleaned);
-      return true;
+    if (user) {
+      if (user.status === "blocked") {
+        this.removeSuperAdminIdentifier(cleaned);
+        return false;
+      }
+      if (user.status === "active") {
+        if (user.role === "super_admin") {
+          this.addSuperAdminIdentifier(cleaned);
+        }
+        return true;
+      }
+      return false;
     }
-    return user.status === "active";
+
+    return this.superAdminList.includes(cleaned);
   }
 
   async upsertUser(user: Partial<UserRecord> & { phone_number: string; name: string }): Promise<UserRecord | null> {
@@ -183,7 +187,9 @@ export class UserRepository {
       throw error;
     }
 
-    if (payload.role === "super_admin") {
+    if (payload.status === "blocked") {
+      this.removeSuperAdminIdentifier(cleaned);
+    } else if (payload.role === "super_admin") {
       this.addSuperAdminIdentifier(cleaned);
     } else {
       this.removeSuperAdminIdentifier(cleaned);
@@ -239,15 +245,28 @@ export class UserRepository {
     const updateData: any = { status, updated_at: new Date().toISOString() };
     if (name) updateData.name = name;
 
-    const { error } = await this.supabase
-      .from("users")
-      .update(updateData)
-      .eq("phone_number", cleaned);
-
-    if (error) {
-      logger.error({ error, phone: cleaned }, "Failed to set user status");
-      return false;
+    if (status === "blocked") {
+      this.removeSuperAdminIdentifier(cleaned);
     }
+
+    const { data: targetUser } = await this.supabase
+      .from("users")
+      .select("*")
+      .eq("phone_number", cleaned)
+      .maybeSingle();
+
+    if (targetUser && status === "blocked") {
+      await this.supabase
+        .from("users")
+        .update(updateData)
+        .or(`phone_number.eq.${cleaned},name.eq."${targetUser.name}"`);
+    } else {
+      await this.supabase
+        .from("users")
+        .update(updateData)
+        .eq("phone_number", cleaned);
+    }
+
     return true;
   }
 }
