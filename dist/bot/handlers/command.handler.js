@@ -78,12 +78,26 @@ export class CommandHandler {
             return { handled: true, responseMessage: formatUserList(users) };
         }
         if (command === "/tambah" || command === "/izinkan" || command === "/setujui" || command === "/approve") {
-            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
-            const userName = parts.slice(2).join(" ") || "Anggota";
-            if (!targetPhone) {
+            const remaining = trimmed.substring(command.length).trim();
+            const match = remaining.match(/^([+0-9\s\-()]{7,25})(.*)$/);
+            let targetPhone = "";
+            let userName = "Anggota";
+            if (match) {
+                targetPhone = match[1].replace(/[^0-9]/g, "");
+                if (targetPhone.startsWith("0"))
+                    targetPhone = "62" + targetPhone.slice(1);
+                userName = match[2].trim() || "Anggota";
+            }
+            else {
+                targetPhone = (parts[1] || "").replace(/[^0-9]/g, "");
+                if (targetPhone.startsWith("0"))
+                    targetPhone = "62" + targetPhone.slice(1);
+                userName = parts.slice(2).join(" ") || "Anggota";
+            }
+            if (!targetPhone || targetPhone.length < 8) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/tambah 081234567890 NamaUser`\nContoh: `/tambah 08123456789 Budi Santoso`",
+                    responseMessage: "❌ Format salah. Gunakan: `/tambah <nomor_hp> [NamaUser]`\nContoh: `/tambah 0811422404 Ayah` atau `/tambah +62811422404 Ayah`",
                 };
             }
             await this.userRepo.upsertUser({
@@ -94,44 +108,61 @@ export class CommandHandler {
             });
             return {
                 handled: true,
-                responseMessage: "✅ Nomor `" + targetPhone + "` (" + userName + ") berhasil disetujui & diaktifkan sebagai Anggota!",
+                responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai Anggota!",
             };
         }
         if (command === "/blokir" || command === "/block") {
-            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
-            if (!targetPhone) {
+            const remaining = trimmed.substring(command.length).trim();
+            let targetPhone = remaining.replace(/[^0-9]/g, "");
+            if (targetPhone.startsWith("0"))
+                targetPhone = "62" + targetPhone.slice(1);
+            if (!targetPhone || targetPhone.length < 8) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/blokir 081234567890`",
+                    responseMessage: "❌ Format salah. Gunakan: `/blokir <nomor_hp>`\nContoh: `/blokir 0811422404`",
                 };
             }
             await this.userRepo.setUserStatus(targetPhone, "blocked");
             return {
                 handled: true,
-                responseMessage: "🚫 Nomor `" + targetPhone + "` berhasil diblokir.",
+                responseMessage: "🚫 Nomor `+" + targetPhone + "` berhasil diblokir.",
             };
         }
         if (command === "/peran" || command === "/role" || command === "/ubahperan" || command === "/setrole") {
-            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
-            const rawRole = parts[2]?.toLowerCase();
+            const remaining = trimmed.substring(command.length).trim();
+            const match = remaining.match(/^([+0-9\s\-()]{7,25})(.*)$/);
+            let targetPhone = "";
+            let rawRole = "";
+            if (match) {
+                targetPhone = match[1].replace(/[^0-9]/g, "");
+                if (targetPhone.startsWith("0"))
+                    targetPhone = "62" + targetPhone.slice(1);
+                rawRole = match[2].trim().toLowerCase();
+            }
+            else {
+                targetPhone = (parts[1] || "").replace(/[^0-9]/g, "");
+                if (targetPhone.startsWith("0"))
+                    targetPhone = "62" + targetPhone.slice(1);
+                rawRole = (parts[2] || "").toLowerCase();
+            }
             let mappedRole = null;
-            if (rawRole === "super_admin" || rawRole === "admin" || rawRole === "superadmin") {
+            if (rawRole.includes("super") || rawRole.includes("admin")) {
                 mappedRole = "super_admin";
             }
-            else if (rawRole === "member" || rawRole === "anggota" || rawRole === "user") {
+            else if (rawRole.includes("member") || rawRole.includes("anggota") || rawRole.includes("user")) {
                 mappedRole = "member";
             }
-            if (!targetPhone || !mappedRole) {
+            if (!targetPhone || targetPhone.length < 8 || !mappedRole) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/peran <nomor> <super_admin|anggota>`\n\nContoh:\n• `/peran 08123456789 super_admin`\n• `/peran 08123456789 anggota`",
+                    responseMessage: "❌ Format salah. Gunakan: `/peran <nomor_hp> <super_admin|anggota>`\n\nContoh:\n• `/peran 0811422404 super_admin`\n• `/peran 0811422404 anggota`",
                 };
             }
             const updated = await this.userRepo.setUserRole(targetPhone, mappedRole);
             if (!updated) {
                 return {
                     handled: true,
-                    responseMessage: "⚠️ Pengguna dengan nomor `" + targetPhone + "` tidak ditemukan di database. Pastikan nomor sudah pernah didaftarkan terlebih dahulu.",
+                    responseMessage: "⚠️ Pengguna dengan nomor `+" + targetPhone + "` tidak ditemukan di database. Pastikan nomor sudah pernah didaftarkan terlebih dahulu.",
                 };
             }
             const roleLabel = mappedRole === "super_admin" ? "SUPER_ADMIN" : "ANGGOTA";

@@ -29,14 +29,14 @@ describe("WhatsApp Bot Handlers", () => {
       expect(res.responseMessage).toContain("PANDUAN PENGGUNAAN BOT KEUANGAN");
     });
 
-    it("should allow Super Admin to add a new user with /tambah", async () => {
+    it("should allow Super Admin to add a new user with /tambah and formatted phone", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281346367235", "/tambah 08123456789 Budi");
+      const res = await handler.handleCommand("6281346367235", "tambah +62 811-422-404 Ayah");
       expect(res.handled).toBe(true);
-      expect(res.responseMessage).toContain("berhasil disetujui & diaktifkan");
+      expect(res.responseMessage).toContain("berhasil didaftarkan & diaktifkan");
       expect(mockUserRepo.upsertUser).toHaveBeenCalledWith({
-        phone_number: "08123456789",
-        name: "Budi",
+        phone_number: "62811422404",
+        name: "Ayah",
         role: "member",
         status: "active",
       });
