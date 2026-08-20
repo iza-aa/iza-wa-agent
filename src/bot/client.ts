@@ -1,10 +1,23 @@
 import * as Baileys from "@whiskeysockets/baileys";
-const makeWASocket = (Baileys as any).default || (Baileys as any).makeWASocket;
-const {
-  useMultiFileAuthState,
-  DisconnectReason,
-  fetchLatestBaileysVersion,
-} = Baileys as any;
+
+const makeWASocket =
+  typeof (Baileys as any).default === "function"
+    ? (Baileys as any).default
+    : (Baileys as any).default?.default ||
+      (Baileys as any).default?.makeWASocket ||
+      (Baileys as any).makeWASocket;
+
+const useMultiFileAuthState =
+  (Baileys as any).useMultiFileAuthState ||
+  (Baileys as any).default?.useMultiFileAuthState;
+
+const DisconnectReason =
+  (Baileys as any).DisconnectReason ||
+  (Baileys as any).default?.DisconnectReason;
+
+const fetchLatestBaileysVersion =
+  (Baileys as any).fetchLatestBaileysVersion ||
+  (Baileys as any).default?.fetchLatestBaileysVersion;
 
 import { Boom } from "@hapi/boom";
 import qrcode from "qrcode-terminal";

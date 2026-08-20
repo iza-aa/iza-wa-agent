@@ -1,6 +1,15 @@
 import * as Baileys from "@whiskeysockets/baileys";
-const makeWASocket = Baileys.default || Baileys.makeWASocket;
-const { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, } = Baileys;
+const makeWASocket = typeof Baileys.default === "function"
+    ? Baileys.default
+    : Baileys.default?.default ||
+        Baileys.default?.makeWASocket ||
+        Baileys.makeWASocket;
+const useMultiFileAuthState = Baileys.useMultiFileAuthState ||
+    Baileys.default?.useMultiFileAuthState;
+const DisconnectReason = Baileys.DisconnectReason ||
+    Baileys.default?.DisconnectReason;
+const fetchLatestBaileysVersion = Baileys.fetchLatestBaileysVersion ||
+    Baileys.default?.fetchLatestBaileysVersion;
 import qrcode from "qrcode-terminal";
 import pino from "pino";
 import { UserRepository } from "../db/repositories/user.repository.js";
