@@ -53,21 +53,22 @@ export function formatUserList(users) {
 export function formatHelpMessage(isSuperAdmin) {
     let msg = "🤖 *PANDUAN PENGGUNAAN BOT KEUANGAN*\n\n";
     msg += "Anda dapat mencatat pengeluaran dengan 3 cara mudah:\n";
-    msg += "1. 📸 *Kirim Foto Struk Belanja / Bukti Transfer*\n";
+    msg += "1. 📸 *Kirim Foto Struk Belanja / File Dokumen PDF Invoice*\n";
     msg += "2. 🎙️ *Kirim Voice Note WhatsApp* (contoh: \"Beli bensin 50rb di Pertamina barusan\")\n";
     msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang warteg 25k\")\n";
     msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n\n";
     if (isSuperAdmin) {
         msg += "👑 *Menu Khusus Super Admin:*\n";
-        msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & breakdown kategori\n";
+        msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & persentase kategori\n";
         msg += "• `/batal` - Membatalkan / menghapus transaksi terakhir yang baru dicatat\n";
         msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
-        msg += "• `/role <nomor> <super_admin|member>` - Mengubah hak akses user\n";
+        msg += "• `/role <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
         msg += "• `/approve <nomor> [nama]` - Mengaktifkan akses nomor baru\n";
         msg += "• `/block <nomor>` - Memblokir akses nomor\n";
         msg += "• `/users` - Melihat seluruh daftar pengguna aktif\n";
-        msg += "• `/rekap` - Melihat 10 transaksi terakhir\n";
+        msg += "• `/rekap` - Melihat 10 transaksi terakhir\n\n";
     }
+    msg += "💡 *Tips:* Anda bisa mengetik perintah langsung tanpa tanda `/` (contoh: cukup ketik *menu*, *laporan*, atau *batal*).";
     return msg;
 }
 export function formatDeletedTransaction(trx) {
