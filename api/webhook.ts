@@ -76,8 +76,13 @@ export default async function handler(req: any, res: any) {
       const mediaUrl = body.url || body.mediaUrl || body.file;
       const mediaType = body.mediaType || body.type;
 
-      if (!sender) {
-        return res.status(400).json({ error: "Missing sender in request payload" });
+      if (!sender || body.fromMe || body.self) {
+        return res.status(200).json({ status: "ignored_echo" });
+      }
+
+      // Ignore if sender is bot itself
+      if (sender.includes("881082854818")) {
+        return res.status(200).json({ status: "ignored_bot_self" });
       }
 
       const result = await webhookProcessor.process({
