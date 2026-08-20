@@ -44,8 +44,8 @@ export function formatPendingApprovalNotification(phone: string, pushName: strin
   msg += "📱 *Nomor:* `" + phone + "`\n";
   msg += "👤 *Nama WhatsApp:* " + pushName + "\n\n";
   msg += "Untuk mengizinkan, balas dengan perintah:\n";
-  msg += "*`/approve " + phone + " [NamaUser]`*\n";
-  msg += "Atau ketik *`/block " + phone + "`* untuk menolak.";
+  msg += "*`/tambah " + phone + " [NamaUser]`*\n";
+  msg += "Atau ketik *`/blokir " + phone + "`* untuk menolak.";
   return msg;
 }
 
@@ -57,9 +57,10 @@ export function formatUserList(users: UserRecord[]): string {
   if (displayList.length === 0) {
     return "ℹ️ Belum ada user aktif yang terdaftar.";
   }
-  let msg = "👥 *DAFTAR USER TERDAFTAR (" + displayList.length + ")*\n\n";
+  let msg = "👥 *DAFTAR PENGGUNA TERDAFTAR (" + displayList.length + ")*\n\n";
   displayList.forEach((u, i) => {
-    msg += (i + 1) + ". *" + u.name + "* (`+" + u.phone_number + "`) - [" + u.role.toUpperCase() + "] - " + u.status + "\n";
+    const roleLabel = u.role === "super_admin" ? "SUPER_ADMIN" : "ANGGOTA";
+    msg += (i + 1) + ". *" + u.name + "* (`+" + u.phone_number + "`) - [" + roleLabel + "] - " + u.status + "\n";
   });
   return msg;
 }
@@ -77,14 +78,14 @@ export function formatHelpMessage(isSuperAdmin: boolean): string {
     msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & persentase kategori\n";
     msg += "• `/batal` - Membatalkan / menghapus transaksi terakhir yang baru dicatat\n";
     msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
-    msg += "• `/role <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
-    msg += "• `/approve <nomor> [nama]` - Mengaktifkan akses nomor baru\n";
-    msg += "• `/block <nomor>` - Memblokir akses nomor\n";
-    msg += "• `/users` - Melihat seluruh daftar pengguna aktif\n";
-    msg += "• `/rekap` - Melihat 10 transaksi terakhir\n\n";
+    msg += "• `/tambah <nomor> [nama]` - Mendaftarkan/mengaktifkan akses anggota baru\n";
+    msg += "• `/blokir <nomor>` - Memblokir akses nomor tertentu\n";
+    msg += "• `/pengguna` - Melihat seluruh daftar anggota aktif\n";
+    msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
+    msg += "• `/rekap` - Melihat riwayat 10 transaksi terakhir\n\n";
   }
 
-  msg += "💡 *Tips:* Anda bisa mengetik perintah langsung tanpa tanda `/` (contoh: cukup ketik *menu*, *laporan*, atau *batal*).";
+  msg += "💡 *Tips:* Seluruh perintah bisa diketik langsung tanpa tanda slash `/` (contoh: cukup ketik *menu*, *tambah 08123... Budi*, *batal*, atau *laporan*).";
   return msg;
 }
 

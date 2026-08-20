@@ -1,4 +1,4 @@
-import { formatUserList, formatHelpMessage, formatMonthlyReport, formatDeletedTransaction } from "../formatters/reply.formatter.js";
+import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction } from "../formatters/reply.formatter.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
 import { logger } from "../../utils/logger.js";
@@ -12,7 +12,13 @@ export class CommandHandler {
     async handleCommand(senderPhone, text) {
         let trimmed = text.trim();
         const firstWord = trimmed.split(" ")[0].toLowerCase();
-        const isKeyword = ["help", "menu", "bantuan", "panduan", "rekap", "laporan", "users", "batal", "cancel", "hapus"].includes(firstWord);
+        const isKeyword = [
+            "help", "menu", "bantuan", "panduan", "rekap", "laporan", "riwayat",
+            "users", "user", "pengguna", "anggota", "daftar",
+            "batal", "batalkan", "cancel", "hapus", "delete",
+            "tambah", "izinkan", "setujui", "approve",
+            "blokir", "block", "peran", "role", "ubahperan", "nama", "gantinama",
+        ].includes(firstWord);
         if (!trimmed.startsWith("/") && isKeyword) {
             trimmed = "/" + trimmed;
         }
@@ -67,17 +73,17 @@ export class CommandHandler {
                 responseMessage: "⚠️ Perintah `" + command + "` hanya dapat dijalankan oleh Super Admin.",
             };
         }
-        if (command === "/users" || command === "/daftar_user") {
+        if (command === "/pengguna" || command === "/anggota" || command === "/daftar" || command === "/users" || command === "/user") {
             const users = await this.userRepo.listActiveUsers();
             return { handled: true, responseMessage: formatUserList(users) };
         }
-        if (command === "/approve" || command === "/izinkan") {
-            const targetPhone = parts[1];
+        if (command === "/tambah" || command === "/izinkan" || command === "/setujui" || command === "/approve") {
+            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
             const userName = parts.slice(2).join(" ") || "Anggota";
             if (!targetPhone) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/approve 6281234567890 NamaUser`",
+                    responseMessage: "❌ Format salah. Gunakan: `/tambah 081234567890 NamaUser`\nContoh: `/tambah 08123456789 Budi Santoso`",
                 };
             }
             await this.userRepo.upsertUser({
@@ -88,15 +94,15 @@ export class CommandHandler {
             });
             return {
                 handled: true,
-                responseMessage: "✅ Nomor `" + targetPhone + "` (" + userName + ") berhasil disetujui & diaktifkan!",
+                responseMessage: "✅ Nomor `" + targetPhone + "` (" + userName + ") berhasil disetujui & diaktifkan sebagai Anggota!",
             };
         }
-        if (command === "/block" || command === "/blokir") {
-            const targetPhone = parts[1];
+        if (command === "/blokir" || command === "/block") {
+            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
             if (!targetPhone) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/block 6281234567890`",
+                    responseMessage: "❌ Format salah. Gunakan: `/blokir 081234567890`",
                 };
             }
             await this.userRepo.setUserStatus(targetPhone, "blocked");
@@ -105,28 +111,36 @@ export class CommandHandler {
                 responseMessage: "🚫 Nomor `" + targetPhone + "` berhasil diblokir.",
             };
         }
-        if (command === "/role" || command === "/setrole" || command === "/ubahrole") {
+        if (command === "/peran" || command === "/role" || command === "/ubahperan" || command === "/setrole") {
             const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
-            const newRole = parts[2]?.toLowerCase();
-            if (!targetPhone || !newRole || !["super_admin", "admin", "member"].includes(newRole)) {
+            const rawRole = parts[2]?.toLowerCase();
+            let mappedRole = null;
+            if (rawRole === "super_admin" || rawRole === "admin" || rawRole === "superadmin") {
+                mappedRole = "super_admin";
+            }
+            else if (rawRole === "member" || rawRole === "anggota" || rawRole === "user") {
+                mappedRole = "member";
+            }
+            if (!targetPhone || !mappedRole) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/role <nomor> <super_admin|member>`\n\nContoh:\n• `/role 6281234567890 super_admin`\n• `/role 6281234567890 member`",
+                    responseMessage: "❌ Format salah. Gunakan: `/peran <nomor> <super_admin|anggota>`\n\nContoh:\n• `/peran 08123456789 super_admin`\n• `/peran 08123456789 anggota`",
                 };
             }
-            const updated = await this.userRepo.setUserRole(targetPhone, newRole);
+            const updated = await this.userRepo.setUserRole(targetPhone, mappedRole);
             if (!updated) {
                 return {
                     handled: true,
-                    responseMessage: "⚠️ Pengguna dengan nomor `" + targetPhone + "` tidak ditemukan di database. Pastikan nomor sudah pernah mendaftar/di-approve terlebih dahulu.",
+                    responseMessage: "⚠️ Pengguna dengan nomor `" + targetPhone + "` tidak ditemukan di database. Pastikan nomor sudah pernah didaftarkan terlebih dahulu.",
                 };
             }
+            const roleLabel = mappedRole === "super_admin" ? "SUPER_ADMIN" : "ANGGOTA";
             return {
                 handled: true,
-                responseMessage: "✅ Role untuk *" + (updated.name || targetPhone) + "* (`+" + targetPhone + "`) berhasil diubah menjadi: *" + newRole.toUpperCase() + "*!",
+                responseMessage: "✅ Hak akses / peran untuk *" + (updated.name || targetPhone) + "* (`+" + targetPhone + "`) berhasil diubah menjadi: *" + roleLabel + "*!",
             };
         }
-        if (command === "/batal" || command === "/cancel") {
+        if (command === "/batal" || command === "/batalkan" || command === "/cancel") {
             const latest = await this.trxRepo.getLatestTransaction();
             if (!latest) {
                 return { handled: true, responseMessage: "ℹ️ Tidak ada transaksi terakhir yang dapat dibatalkan." };
@@ -148,7 +162,7 @@ export class CommandHandler {
             if (!targetId) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/hapus TRX-XXXX`\nContoh: `/hapus TRX-20260820-LX8Y`\n\nAtau ketik `/batal` untuk membatalkan transaksi paling akhir.",
+                    responseMessage: "❌ Format salah. Gunakan: `/hapus TRX-XXXX`\nContoh: `/hapus TRX-20260820-LX8Y`\n\nAtau cukup ketik `batal` untuk membatalkan transaksi paling akhir.",
                 };
             }
             const deleted = await this.trxRepo.deleteTransaction(targetId.trim());
@@ -181,9 +195,23 @@ export class CommandHandler {
                 responseMessage: formatMonthlyReport(summary, targetMonth),
             };
         }
+        if (command === "/rekap" || command === "/riwayat" || command === "/summary") {
+            const recent = await this.trxRepo.getRecentTransactions(senderPhone, 10);
+            if (recent.length === 0) {
+                return { handled: true, responseMessage: "ℹ️ Belum ada transaksi tercatat." };
+            }
+            let summary = "📊 *REKAP 10 TRANSAKSI TERAKHIR*\n\n";
+            let total = 0;
+            recent.forEach((t, i) => {
+                total += Number(t.total_amount);
+                summary += (i + 1) + ". " + t.date + " - *" + t.merchant + "* (" + t.category + "): " + formatRupiah(t.total_amount) + "\n";
+            });
+            summary += "\n💰 *Total:* " + formatRupiah(total);
+            return { handled: true, responseMessage: summary };
+        }
         return {
             handled: true,
-            responseMessage: "❓ Perintah tidak dikenal. Ketik `/help` untuk melihat daftar perintah.",
+            responseMessage: "❓ Perintah tidak dikenal. Ketik `/menu` untuk melihat daftar panduan & perintah.",
         };
     }
 }

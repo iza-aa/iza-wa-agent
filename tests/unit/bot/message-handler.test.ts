@@ -29,17 +29,24 @@ describe("WhatsApp Bot Handlers", () => {
       expect(res.responseMessage).toContain("PANDUAN PENGGUNAAN BOT KEUANGAN");
     });
 
-    it("should allow Super Admin to approve a new user", async () => {
+    it("should allow Super Admin to add a new user with /tambah", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281346367235", "/approve 628999888777 Budi");
+      const res = await handler.handleCommand("6281346367235", "/tambah 08123456789 Budi");
       expect(res.handled).toBe(true);
-      expect(res.responseMessage).toContain("berhasil disetujui");
+      expect(res.responseMessage).toContain("berhasil disetujui & diaktifkan");
       expect(mockUserRepo.upsertUser).toHaveBeenCalledWith({
-        phone_number: "628999888777",
+        phone_number: "08123456789",
         name: "Budi",
         role: "member",
         status: "active",
       });
+    });
+
+    it("should allow Super Admin to list users with /pengguna or /anggota", async () => {
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand("6281346367235", "/pengguna");
+      expect(res.handled).toBe(true);
+      expect(res.responseMessage).toContain("DAFTAR PENGGUNA TERDAFTAR");
     });
 
     it("should allow Super Admin to cancel latest transaction with /batal", async () => {
