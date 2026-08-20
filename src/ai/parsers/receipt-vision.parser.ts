@@ -19,7 +19,8 @@ Pedoman Ekstraksi Struk:
 
 export async function parseReceiptVision(
   imageBuffer: Buffer,
-  mimeType: string = "image/jpeg"
+  mimeType: string = "image/jpeg",
+  userCaption: string = ""
 ): Promise<ExtractedTransaction | null> {
   return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
     const model = genAI.getGenerativeModel({
@@ -38,7 +39,8 @@ export async function parseReceiptVision(
       },
     };
 
-    const prompt = "Ekstrak seluruh informasi transaksi dan rincian belanja dari gambar struk ini ke format JSON.";
+    const captionContext = userCaption.trim() ? "\nCatatan/keterangan tambahan dari user: \"" + userCaption.trim() + "\"." : "";
+    const prompt = "Ekstrak seluruh informasi transaksi dan rincian belanja dari gambar/dokumen struk ini ke format JSON." + captionContext;
 
     const result = await model.generateContent([prompt, imagePart]);
     const textResponse = result.response.text();

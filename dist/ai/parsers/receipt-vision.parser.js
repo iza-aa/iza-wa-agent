@@ -15,7 +15,7 @@ Pedoman Ekstraksi Struk:
 8. payment_method: Deteksi dari baris pembayaran (Cash, Debit Card, QRIS, BCA, ShopeePay, dll.).
 9. category: Pilih kategori yang paling tepat dari: "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain".
 10. confidence_score: Berikan skor 0.0 - 1.0 seberapa jelas gambar struk tersebut terbaca.`;
-export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg") {
+export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg", userCaption = "") {
     return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
         const model = genAI.getGenerativeModel({
             model: modelName,
@@ -31,7 +31,8 @@ export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg") {
                 mimeType: mimeType,
             },
         };
-        const prompt = "Ekstrak seluruh informasi transaksi dan rincian belanja dari gambar struk ini ke format JSON.";
+        const captionContext = userCaption.trim() ? "\nCatatan/keterangan tambahan dari user: \"" + userCaption.trim() + "\"." : "";
+        const prompt = "Ekstrak seluruh informasi transaksi dan rincian belanja dari gambar/dokumen struk ini ke format JSON." + captionContext;
         const result = await model.generateContent([prompt, imagePart]);
         const textResponse = result.response.text();
         logger.debug({ modelName, textResponse }, "Gemini Receipt Vision Raw Response");

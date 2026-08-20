@@ -142,7 +142,7 @@ export class MessageHandler {
         const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
         const mimeType = isPdf ? "application/pdf" : (messageContent.imageMessage?.mimetype || "image/jpeg");
 
-        const parsed = await parseReceiptVision(mediaBuffer, mimeType);
+        const parsed = await parseReceiptVision(mediaBuffer, mimeType, body);
         if (!parsed || parsed.total_amount <= 0) {
           await sock.sendMessage(
             remoteJid,
@@ -290,6 +290,13 @@ export class MessageHandler {
       if (!textResult.is_complete || !textResult.transaction || textResult.transaction.total_amount <= 0) {
         const reply = textResult.reply_message || "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.";
         await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+        await this.chatRepo.logMessage({
+          user_phone: senderPhone,
+          user_name: "Bot",
+          message_type: "text",
+          direction: "outbound",
+          content: reply,
+        });
         return;
       }
 
@@ -327,6 +334,13 @@ export class MessageHandler {
 
       const replyText = formatTransactionSuccess(transactionRecord, parsed.items);
       await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+      await this.chatRepo.logMessage({
+        user_phone: senderPhone,
+        user_name: "Bot",
+        message_type: "text",
+        direction: "outbound",
+        content: replyText,
+      });
     }
   }
 }
