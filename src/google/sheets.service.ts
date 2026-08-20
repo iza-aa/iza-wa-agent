@@ -954,7 +954,12 @@ export class GoogleSheetsService {
     });
 
     const rows = res.data.values || [];
-    const validRows = rows.filter((r: any[]) => r && r[0] && r[0].toString().trim().length > 0);
+    const validRows = rows.filter((r: any[]) => {
+      if (!r || r.length === 0) return false;
+      const hasId = r[0] && r[0].toString().trim().length > 0;
+      const hasContent = (r[5] && r[5].toString().trim().length > 0) || (r[6] && r[6].toString().replace(/[^0-9]/g, "").length > 0);
+      return hasId || hasContent;
+    });
 
     const { getSupabaseClient } = await import("../db/supabase.js");
     const supabase = getSupabaseClient();
@@ -964,18 +969,33 @@ export class GoogleSheetsService {
     let syncedCount = 0;
     for (let i = 0; i < validRows.length; i++) {
       const r = validRows[i];
-      const id = r[0]?.toString().trim();
       const date = r[2]?.toString().trim() || new Date().toISOString().slice(0, 10);
+      let id = r[0]?.toString().trim();
+
+      if (!id) {
+        id = await trxRepo.generateTransactionId(date);
+        try {
+          await this.sheetsClient.spreadsheets.values.update({
+            spreadsheetId: sheetId,
+            range: this.sheetTitle + "!A" + (i + 2),
+            valueInputOption: "USER_ENTERED",
+            requestBody: { values: [[id]] },
+          });
+        } catch (idErr) {
+          logger.warn({ idErr }, "Could not write generated ID back to sheet");
+        }
+      }
+
       const typeStr = r[3]?.toString().toLowerCase().trim();
       const isInc = typeStr === "pemasukan";
-      const category = r[4]?.toString().trim() || "Lain-lain";
+      const category = r[4]?.toString().trim() || (isInc ? "Pemasukan: Lain-lain" : "Lain-lain");
       const merchant = r[5]?.toString().trim() || "-";
       const rawNominal = r[6]?.toString().replace(/[^0-9]/g, "");
       const nominal = parseInt(rawNominal, 10) || 0;
       const paymentMethod = r[7]?.toString().trim() || "-";
       const userPhone = (r[8]?.toString().replace(/[^0-9]/g, "")) || config.SUPER_ADMIN_PHONE;
       const userName = r[9]?.toString().trim() || "User";
-      const rawText = r[11]?.toString().trim() || "-";
+      const rawText = r[11]?.toString().trim() || "Input Manual Spreadsheet";
 
       await trxRepo.createTransaction({
         id,
