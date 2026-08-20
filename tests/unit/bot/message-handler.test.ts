@@ -31,7 +31,7 @@ describe("WhatsApp Bot Handlers", () => {
 
     it("should allow Super Admin to add a new user with /tambah and formatted phone", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281346367235", "tambah +62 811-422-404 Ayah");
+      const res = await handler.handleCommand("6281346367235", "/tambah +62 811-422-404 Ayah");
       expect(res.handled).toBe(true);
       expect(res.responseMessage).toContain("berhasil didaftarkan & diaktifkan");
       expect(mockUserRepo.upsertUser).toHaveBeenCalledWith({

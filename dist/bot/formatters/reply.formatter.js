@@ -67,9 +67,8 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/blokir <nomor>` - Memblokir akses nomor tertentu\n";
         msg += "• `/pengguna` - Melihat seluruh daftar anggota aktif\n";
         msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
-        msg += "• `/rekap` - Melihat riwayat 10 transaksi terakhir\n\n";
+        msg += "• `/rekap` - Melihat riwayat 10 transaksi terakhir\n";
     }
-    msg += "💡 *Tips:* Seluruh perintah bisa diketik langsung tanpa tanda slash `/` (contoh: cukup ketik *menu*, *tambah 08123... Budi*, *batal*, atau *laporan*).";
     return msg;
 }
 export function formatDeletedTransaction(trx) {

@@ -10,19 +10,8 @@ export class CommandHandler {
         this.trxRepo = trxRepo;
     }
     async handleCommand(senderPhone, text) {
-        let trimmed = text.trim();
-        const firstWord = trimmed.split(" ")[0].toLowerCase();
-        const isKeyword = [
-            "help", "menu", "bantuan", "panduan", "rekap", "laporan", "riwayat",
-            "users", "user", "pengguna", "anggota", "daftar",
-            "batal", "batalkan", "cancel", "hapus", "delete",
-            "tambah", "izinkan", "setujui", "approve",
-            "blokir", "block", "peran", "role", "ubahperan", "nama", "gantinama",
-        ].includes(firstWord);
-        if (!trimmed.startsWith("/") && isKeyword) {
-            trimmed = "/" + trimmed;
-        }
-        else if (!trimmed.startsWith("/")) {
+        const trimmed = text.trim();
+        if (!trimmed.startsWith("/")) {
             return { handled: false, responseMessage: "" };
         }
         const parts = trimmed.split(" ");
