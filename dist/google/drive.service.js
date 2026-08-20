@@ -86,11 +86,15 @@ export class GoogleDriveService {
         const finalMimeType = isPdf ? "application/pdf" : "image/webp";
         const extension = isPdf ? ".pdf" : ".webp";
         const finalFileName = fileName.endsWith(extension) ? fileName : fileName + extension;
-        // Try Google Drive first
+        // 1. Simultaneous upload to Supabase Storage
+        this.uploadToSupabaseStorage(bufferToUpload, fileName).catch((supaErr) => {
+            logger.warn({ supaErr }, "Background Supabase storage upload notice");
+        });
+        // 2. Upload to Google Drive (Primary)
         try {
             const now = new Date();
-            const year = now.getFullYear().toString();
-            const month = (now.getMonth() + 1).toString().padStart(2, "0");
+            const year = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(0, 4);
+            const month = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(5, 7);
             const rootFolderId = config.GOOGLE_DRIVE_FOLDER_ID;
             const yearFolderId = await this.getOrCreateFolder(year, rootFolderId);
             const monthFolderId = await this.getOrCreateFolder(month, yearFolderId);
@@ -122,9 +126,11 @@ export class GoogleDriveService {
             catch (permErr) {
                 logger.warn({ permErr, fileId }, "Could not set public permission on Drive file");
             }
+            const webViewLink = res.data.webViewLink || "https://drive.google.com/file/d/" + fileId + "/view";
+            logger.info({ fileId, webViewLink, targetFolder: userName }, "Receipt successfully uploaded to Google Drive");
             return {
                 fileId,
-                webViewLink: res.data.webViewLink || "https://drive.google.com/file/d/" + fileId + "/view",
+                webViewLink,
                 downloadLink: res.data.webContentLink || "",
             };
         }
