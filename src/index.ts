@@ -1,3 +1,6 @@
+import dns from "dns";
+dns.setDefaultResultOrder("ipv4first");
+
 // @ts-ignore
 import WebSocket from "ws";
 if (typeof (globalThis as any).WebSocket === "undefined") {

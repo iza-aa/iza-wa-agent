@@ -130,7 +130,7 @@ export class MessageHandler {
       if (isImage) {
         await sock.sendMessage(remoteJid, { text: "⏳ *Sedang membaca struk belanja dengan AI...*" }, { quoted: msg });
 
-        const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {})) as Buffer;
+        const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
         const mimeType = messageContent.imageMessage?.mimetype || "image/jpeg";
 
         const parsed = await parseReceiptVision(mediaBuffer, mimeType);
@@ -209,7 +209,7 @@ export class MessageHandler {
       if (isAudio) {
         await sock.sendMessage(remoteJid, { text: "🎧 *Mendengarkan rekaman suara & memproses transaksi...*" }, { quoted: msg });
 
-        const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {})) as Buffer;
+        const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
         const mimeType = messageContent.audioMessage?.mimetype || "audio/ogg";
 
         const { transcription, transaction } = await parseAudioVoiceNote(mediaBuffer, mimeType);
