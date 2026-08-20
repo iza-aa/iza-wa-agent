@@ -224,7 +224,7 @@ export class GoogleSheetsService {
         ],
         ["", "", "", "", "", "", "", "", "", "", "", ""],
         ["", "", "", "", "", "", "", "", "", "", "", ""],
-        ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", "", "", "Kategori", "Total Pengeluaran", ""],
+        ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", "", "", "", "", ""],
         [
           "Tanggal",
           "Keterangan",
@@ -235,12 +235,12 @@ export class GoogleSheetsService {
           "",
           "",
           "",
-          '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND C >= \'"&TEXT(TODAY(); "YYYY-MM")&"-01\' AND C <= \'"&TEXT(TODAY(); "YYYY-MM")&"-31\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain", 0})',
-          "",
+          "Kategori",
+          "Total Pengeluaran",
           "",
         ],
         [
-          '=IFERROR(QUERY(Transaksi!A2:L; "SELECT C, F, D, G ORDER BY B DESC LIMIT 20 LABEL C \'\', F \'\', D \'\', G \'\'"; 0); {"-", "Belum ada transaksi", "-", 0})',
+          '=IFERROR(SORT(FILTER(CHOOSECOLS(Transaksi!A2:L; 3; 6; 4; 7); Transaksi!A2:A<>""); 1; FALSE); "Belum ada transaksi")',
           "",
           "",
           "",
@@ -249,7 +249,7 @@ export class GoogleSheetsService {
           "",
           "",
           "",
-          "",
+          '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain"\\ 0})',
           "",
           "",
         ],
@@ -510,6 +510,19 @@ export class GoogleSheetsService {
               },
             },
             fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+          },
+        },
+        // Date Format in Transaksi Terbaru
+        {
+          repeatCell: {
+            range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 1 },
+            cell: {
+              userEnteredFormat: {
+                horizontalAlignment: "CENTER",
+                numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+              },
+            },
+            fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
           },
         },
         // Nominal Format in Transaksi Terbaru

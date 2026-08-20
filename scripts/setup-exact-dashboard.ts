@@ -169,8 +169,8 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
     // Row 11 (Index 10): Blank separator
     ["", "", "", "", "", "", "", "", "", "", "", ""],
     // Row 12 (Index 11): Section Titles
-    ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", "", "", "Kategori", "Total Pengeluaran", ""],
-    // Row 13 (Index 12): Table Headers & Helper Query
+    ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", "", "", "", "", ""],
+    // Row 13 (Index 12): Table Headers
     [
       "Tanggal",
       "Keterangan",
@@ -181,13 +181,13 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       "",
       "",
       "",
-      '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND C >= \'"&TEXT(TODAY(); "YYYY-MM")&"-01\' AND C <= \'"&TEXT(TODAY(); "YYYY-MM")&"-31\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain", 0})',
-      "",
+      "Kategori",
+      "Total Pengeluaran",
       "",
     ],
-    // Row 14 (Index 13): Live Query for Transaksi Terbaru
+    // Row 14 (Index 13): Live Query for Transaksi Terbaru and Category Query for Pie Chart
     [
-      '=IFERROR(QUERY(Transaksi!A2:L; "SELECT C, F, D, G ORDER BY B DESC LIMIT 20 LABEL C \'\', F \'\', D \'\', G \'\'"; 0); {"-", "Belum ada transaksi", "-", 0})',
+      '=IFERROR(SORT(FILTER(CHOOSECOLS(Transaksi!A2:L; 3; 6; 4; 7); Transaksi!A2:A<>""); 1; FALSE); "Belum ada transaksi")',
       "",
       "",
       "",
@@ -196,7 +196,7 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       "",
       "",
       "",
-      "",
+      '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain"\\ 0})',
       "",
       "",
     ],
@@ -484,6 +484,20 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
           },
         },
         fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+      },
+    },
+
+    // --- Styling Date Column in Transaksi Terbaru (Rows 13-35, Col 0) ---
+    {
+      repeatCell: {
+        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 1 },
+        cell: {
+          userEnteredFormat: {
+            horizontalAlignment: "CENTER",
+            numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+          },
+        },
+        fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
       },
     },
 
