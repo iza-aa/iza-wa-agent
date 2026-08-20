@@ -5,7 +5,7 @@ export function formatRupiah(amount) {
         maximumFractionDigits: 0,
     }).format(amount);
 }
-export function formatTransactionSuccess(trx, items = []) {
+export function formatTransactionSuccess(trx, items = [], isSuperAdmin = false) {
     let reply = "✅ *Transaksi Berhasil Dicatat!*\n\n";
     reply += "🏪 *Tempat / Toko:* " + trx.merchant + "\n";
     reply += "💰 *Total Pengeluaran:* *" + formatRupiah(trx.total_amount) + "*\n";
@@ -21,10 +21,16 @@ export function formatTransactionSuccess(trx, items = []) {
             reply += " • " + it.item_name + qtyStr + " - " + formatRupiah(it.price) + "\n";
         });
     }
-    if (trx.gdrive_web_view_link) {
+    // Google Drive proof link is strictly for Super Admin
+    if (isSuperAdmin && trx.gdrive_web_view_link) {
         reply += "\n🔗 *Bukti Struk (Google Drive):*\n" + trx.gdrive_web_view_link + "\n";
     }
-    reply += "\n📊 *Data telah otomatis tersimpan di Google Sheet Anda.*";
+    if (isSuperAdmin) {
+        reply += "\n📊 *Data telah otomatis tersimpan di Google Sheet.*";
+    }
+    else {
+        reply += "\n✅ *Data telah berhasil tersimpan ke sistem.*";
+    }
     return reply;
 }
 export function formatPendingApprovalNotification(phone, pushName = "User") {
@@ -53,13 +59,13 @@ export function formatUserList(users) {
 }
 export function formatHelpMessage(isSuperAdmin) {
     let msg = "🤖 *PANDUAN PENGGUNAAN BOT KEUANGAN*\n\n";
-    msg += "Anda dapat mencatat pengeluaran dengan 3 cara mudah:\n";
+    msg += "Halo! Anda dapat mencatat pengeluaran dengan 3 cara mudah:\n";
     msg += "1. 📸 *Kirim Foto Struk Belanja / File Dokumen PDF Invoice*\n";
     msg += "2. 🎙️ *Kirim Voice Note WhatsApp* (contoh: \"Beli bensin 50rb di Pertamina barusan\")\n";
     msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang warteg 25k\")\n";
-    msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n";
-    msg += "5. 🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
+    msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ibu`)\n\n";
     if (isSuperAdmin) {
+        msg += "5. 🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
         msg += "👑 *Menu Khusus Super Admin:*\n";
         msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";
         msg += "• `/edit <ID_TRX> [koreksi]` - Mengedit data transaksi (toko, nominal, tanggal, kategori, dll)\n";
@@ -71,6 +77,9 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/pengguna` - Melihat seluruh daftar anggota aktif\n";
         msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
         msg += "• `/rekap [jumlah]` - Melihat riwayat transaksi + ID transaksi (contoh: `/rekap 5`)\n";
+    }
+    else {
+        msg += "💡 _Seluruh nota dan transaksi yang Anda kirimkan akan otomatis dicatat rapi ke sistem keuangan._";
     }
     return msg;
 }

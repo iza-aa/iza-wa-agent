@@ -39,6 +39,12 @@ export class CommandHandler {
     }
 
     if (command === "/link" || command === "/sheet" || command === "/drive" || command === "/spreadsheet" || command === "/dasbor") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah ini hanya dapat diakses oleh Super Admin.",
+        };
+      }
       let msg = "🔗 *LINK SISTEM PENCATATAN KEUANGAN*\n\n";
       msg += "📊 *Google Sheets (Data Transaksi & Dasbor):*\n";
       msg += "https://docs.google.com/spreadsheets/d/" + config.GOOGLE_SHEET_ID + "/edit\n\n";
@@ -49,6 +55,12 @@ export class CommandHandler {
     }
 
     if (command === "/detail" || command === "/rincian" || command === "/lihat") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/detail` hanya dapat diakses oleh Super Admin.",
+        };
+      }
       const targetId = parts[1]?.trim();
       if (!targetId) {
         return {

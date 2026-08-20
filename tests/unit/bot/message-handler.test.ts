@@ -29,12 +29,17 @@ describe("WhatsApp Bot Handlers", () => {
       expect(res.responseMessage).toContain("PANDUAN PENGGUNAAN BOT KEUANGAN");
     });
 
-    it("should provide spreadsheet and drive links with /link", async () => {
+    it("should provide spreadsheet and drive links with /link for Super Admin only", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
       const res = await handler.handleCommand("6281346367235", "/link");
       expect(res.handled).toBe(true);
       expect(res.responseMessage).toContain("Google Sheets");
       expect(res.responseMessage).toContain("Google Drive");
+
+      // Block regular member
+      const memberRes = await handler.handleCommand("6281299998888", "/link");
+      expect(memberRes.handled).toBe(true);
+      expect(memberRes.responseMessage).toContain("hanya dapat diakses oleh Super Admin");
     });
 
     it("should allow Super Admin to add a new user with /tambah and formatted phone", async () => {

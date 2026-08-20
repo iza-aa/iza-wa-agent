@@ -210,7 +210,8 @@ export class MessageHandler {
         }
 
         // Reply Success
-        const replyText = formatTransactionSuccess(transactionRecord, parsed.items);
+        const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+        const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin);
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
       }
@@ -266,8 +267,9 @@ export class MessageHandler {
           logger.error({ sheetErr }, "Failed to append row to Google Sheet");
         }
 
+        const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
         let replyText = "🗣️ *Transkrip:* \"" + transcription + "\"\n\n";
-        replyText += formatTransactionSuccess(transactionRecord, transaction.items);
+        replyText += formatTransactionSuccess(transactionRecord, transaction.items, isSuperAdmin);
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
       }
@@ -332,7 +334,8 @@ export class MessageHandler {
         logger.error({ sheetErr }, "Failed to append row to Google Sheet");
       }
 
-      const replyText = formatTransactionSuccess(transactionRecord, parsed.items);
+      const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
+      const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin);
       await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
       await this.chatRepo.logMessage({
         user_phone: senderPhone,
