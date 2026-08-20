@@ -1,3 +1,9 @@
+// @ts-ignore
+import WebSocket from "ws";
+if (typeof (globalThis as any).WebSocket === "undefined") {
+  (globalThis as any).WebSocket = WebSocket;
+}
+
 import http from "http";
 import { createWhatsAppBot } from "./bot/client.js";
 import { config } from "./config/env.js";
