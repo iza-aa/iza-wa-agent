@@ -2,6 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { CommandHandler } from "../../../src/bot/handlers/command.handler.js";
 import { formatRupiah } from "../../../src/bot/formatters/reply.formatter.js";
 
+vi.mock("../../../src/google/sheets.service.js", () => ({
+  googleSheetsService: {
+    appendTransaction: vi.fn().mockResolvedValue({ updatedRange: "Transaksi!A2:L2", rowIndex: 2 }),
+    deleteTransactionRow: vi.fn().mockResolvedValue(true),
+    ensureSheetInitialized: vi.fn().mockResolvedValue(undefined),
+    setupDashboardTab: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 describe("WhatsApp Bot Handlers", () => {
   let mockUserRepo: any;
   let mockTrxRepo: any;
