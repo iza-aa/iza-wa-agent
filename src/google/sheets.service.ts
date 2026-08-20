@@ -144,6 +144,40 @@ export class GoogleSheetsService {
       });
 
       const existingSheets = spreadsheet.data.sheets || [];
+
+      // Ensure hidden 'Calc_Data' sheet for chart aggregations
+      let calcSheet = existingSheets.find((s: any) => s.properties?.title === "Calc_Data");
+      let calcSheetId = calcSheet?.properties?.sheetId;
+      if (!calcSheet) {
+        const addCalc = await this.sheetsClient.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: "Calc_Data",
+                    hidden: true,
+                  },
+                },
+              },
+            ],
+          },
+        });
+        calcSheetId = addCalc.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+      }
+
+      await this.sheetsClient.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: "Calc_Data!A1:B1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            ['=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND A IS NOT NULL GROUP BY E ORDER BY SUM(G) DESC LABEL E \'\', SUM(G) \'\'"); {"Belum ada pengeluaran"\\ 0})', ""]
+          ],
+        },
+      });
+
       const oldDash = existingSheets.find(
         (s: any) => s.properties?.title === this.dasborTitle || s.properties?.title === "Dasbor"
       );
@@ -235,8 +269,8 @@ export class GoogleSheetsService {
           "",
           "",
           "",
-          "Kategori",
-          "Total Pengeluaran",
+          "",
+          "",
           "",
         ],
         [
@@ -249,7 +283,7 @@ export class GoogleSheetsService {
           "",
           "",
           "",
-          '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain"\\ 0})',
+          "",
           "",
           "",
         ],
@@ -538,18 +572,6 @@ export class GoogleSheetsService {
             fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
           },
         },
-        // Hide Pie Chart source data (J13:K35) by making text white
-        {
-          repeatCell: {
-            range: { sheetId: dashSheetId, startRowIndex: 12, endRowIndex: 35, startColumnIndex: 9, endColumnIndex: 11 },
-            cell: {
-              userEnteredFormat: {
-                textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } },
-              },
-            },
-            fields: "userEnteredFormat(textFormat.foregroundColor)",
-          },
-        },
         {
           updateBorders: {
             range: { sheetId: dashSheetId, startRowIndex: 1, endRowIndex: 5, startColumnIndex: 0, endColumnIndex: 8 },
@@ -614,11 +636,11 @@ export class GoogleSheetsService {
                     sourceRange: {
                       sources: [
                         {
-                          sheetId: dashSheetId,
-                          startRowIndex: 12,
-                          endRowIndex: 35,
-                          startColumnIndex: 9,
-                          endColumnIndex: 10,
+                          sheetId: calcSheetId,
+                          startRowIndex: 0,
+                          endRowIndex: 30,
+                          startColumnIndex: 0,
+                          endColumnIndex: 1,
                         },
                       ],
                     },
@@ -627,11 +649,11 @@ export class GoogleSheetsService {
                     sourceRange: {
                       sources: [
                         {
-                          sheetId: dashSheetId,
-                          startRowIndex: 12,
-                          endRowIndex: 35,
-                          startColumnIndex: 10,
-                          endColumnIndex: 11,
+                          sheetId: calcSheetId,
+                          startRowIndex: 0,
+                          endRowIndex: 30,
+                          startColumnIndex: 1,
+                          endColumnIndex: 2,
                         },
                       ],
                     },

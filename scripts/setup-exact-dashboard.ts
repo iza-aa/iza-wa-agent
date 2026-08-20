@@ -77,7 +77,40 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
     requestBody: { values: [trxHeaders] },
   });
 
-  // 2. Recreate or ensure clean 'Dashboard' sheet
+  // 2. Ensure hidden 'Calc_Data' sheet for chart aggregations
+  let calcSheet = existingSheets.find((s: any) => s.properties?.title === "Calc_Data");
+  let calcSheetId = calcSheet?.properties?.sheetId;
+  if (!calcSheet) {
+    const addCalc = await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: sheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: "Calc_Data",
+                hidden: true,
+              },
+            },
+          },
+        ],
+      },
+    });
+    calcSheetId = addCalc.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+  }
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: sheetId,
+    range: "Calc_Data!A1:B1",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [
+        ['=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND A IS NOT NULL GROUP BY E ORDER BY SUM(G) DESC LABEL E \'\', SUM(G) \'\'"); {"Belum ada pengeluaran"\\ 0})', ""]
+      ],
+    },
+  });
+
+  // 3. Recreate or ensure clean 'Dashboard' sheet
   const oldDash = existingSheets.find(
     (s: any) => s.properties?.title === "Dashboard" || s.properties?.title === "Dasbor"
   );
@@ -118,7 +151,7 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
 
   const dashSheetId = addRes.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
 
-  // 3. Write Dashboard Values & Formulas (Indonesian Locale)
+  // 4. Write Dashboard Values & Formulas (Indonesian Locale)
   const dashboardValues = [
     // Row 1 (Index 0): Empty
     ["", "", "", "", "", "", "", "", "", "", "", ""],
@@ -164,13 +197,13 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       "",
       "",
     ],
-    // Row 10 (Index 9): Empty (part of merged monthly value row)
+    // Row 10 (Index 9): Empty (part of merged monthly row)
     ["", "", "", "", "", "", "", "", "", "", "", ""],
     // Row 11 (Index 10): Blank separator
     ["", "", "", "", "", "", "", "", "", "", "", ""],
     // Row 12 (Index 11): Section Titles
     ["TRANSAKSI TERBARU", "", "", "", "Pengeluaran per Kategori - Bulan Ini", "", "", "", "", "", "", ""],
-    // Row 13 (Index 12): Table Headers
+    // Row 13 (Index 12): Subheaders
     [
       "Tanggal",
       "Keterangan",
@@ -181,11 +214,11 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       "",
       "",
       "",
-      "Kategori",
-      "Total Pengeluaran",
+      "",
+      "",
       "",
     ],
-    // Row 14 (Index 13): Live Query for Transaksi Terbaru and Category Query for Pie Chart
+    // Row 14 (Index 13): Live Query for Transaksi Terbaru
     [
       '=IFERROR(SORT(FILTER(CHOOSECOLS(Transaksi!A2:L; 3; 6; 4; 7); Transaksi!A2:A<>""); 1; FALSE); "Belum ada transaksi")',
       "",
@@ -196,7 +229,7 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       "",
       "",
       "",
-      '=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' GROUP BY E LABEL E \'\', SUM(G) \'\'"; 0); {"Lain-lain"\\ 0})',
+      "",
       "",
       "",
     ],
@@ -515,19 +548,6 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       },
     },
 
-    // --- Hide Pie Chart source data (J13:K35) by making text white ---
-    {
-      repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 12, endRowIndex: 35, startColumnIndex: 9, endColumnIndex: 11 },
-        cell: {
-          userEnteredFormat: {
-            textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } },
-          },
-        },
-        fields: "userEnteredFormat(textFormat.foregroundColor)",
-      },
-    },
-
     // Borders for Top Cards
     {
       updateBorders: {
@@ -607,11 +627,11 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
                 sourceRange: {
                   sources: [
                     {
-                      sheetId: dashSheetId,
-                      startRowIndex: 12,
-                      endRowIndex: 35,
-                      startColumnIndex: 9,
-                      endColumnIndex: 10,
+                      sheetId: calcSheetId,
+                      startRowIndex: 0,
+                      endRowIndex: 30,
+                      startColumnIndex: 0,
+                      endColumnIndex: 1,
                     },
                   ],
                 },
@@ -620,11 +640,11 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
                 sourceRange: {
                   sources: [
                     {
-                      sheetId: dashSheetId,
-                      startRowIndex: 12,
-                      endRowIndex: 35,
-                      startColumnIndex: 10,
-                      endColumnIndex: 11,
+                      sheetId: calcSheetId,
+                      startRowIndex: 0,
+                      endRowIndex: 30,
+                      startColumnIndex: 1,
+                      endColumnIndex: 2,
                     },
                   ],
                 },
