@@ -788,8 +788,83 @@ export class GoogleSheetsService {
         const updatedRange = response.data.updates?.updatedRange || "";
         const rowMatch = updatedRange.match(/\d+$/);
         const rowIndex = rowMatch ? parseInt(rowMatch[0], 10) : 0;
+        if (rowIndex > 1) {
+            await this.formatTransactionRow(rowIndex, sheetId);
+        }
         logger.info({ trxId: trx.id, updatedRange, rowIndex }, "Transaction appended to Google Sheet");
         return { updatedRange, rowIndex };
+    }
+    async formatTransactionRow(rowIndex, sheetId = config.GOOGLE_SHEET_ID) {
+        try {
+            const meta = await this.sheetsClient.spreadsheets.get({ spreadsheetId: sheetId });
+            const trxSheet = meta.data.sheets?.find((s) => s.properties?.title === this.sheetTitle);
+            const trxSheetId = trxSheet?.properties?.sheetId || 0;
+            const rIdx = rowIndex - 1; // 0-indexed
+            const requests = [
+                // Base row formatting: Pure white background, dark text
+                {
+                    repeatCell: {
+                        range: { sheetId: trxSheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 12 },
+                        cell: {
+                            userEnteredFormat: {
+                                backgroundColor: { red: 1, green: 1, blue: 1 },
+                                horizontalAlignment: "LEFT",
+                                verticalAlignment: "MIDDLE",
+                                textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+                            },
+                        },
+                        fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+                    },
+                },
+            ];
+            // Center alignments (Col A, B, C, D, H, I, K)
+            [0, 1, 2, 3, 7, 8, 10].forEach((cIdx) => {
+                requests.push({
+                    repeatCell: {
+                        range: { sheetId: trxSheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: cIdx, endColumnIndex: cIdx + 1 },
+                        cell: {
+                            userEnteredFormat: {
+                                horizontalAlignment: "CENTER",
+                            },
+                        },
+                        fields: "userEnteredFormat(horizontalAlignment)",
+                    },
+                });
+            });
+            // Date formatting for Column C (Col 2)
+            requests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 2, endColumnIndex: 3 },
+                    cell: {
+                        userEnteredFormat: {
+                            horizontalAlignment: "CENTER",
+                            numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+                        },
+                    },
+                    fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                },
+            });
+            // Currency formatting for Column G (Col 6)
+            requests.push({
+                repeatCell: {
+                    range: { sheetId: trxSheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 6, endColumnIndex: 7 },
+                    cell: {
+                        userEnteredFormat: {
+                            horizontalAlignment: "RIGHT",
+                            numberFormat: { type: "CURRENCY", pattern: '"Rp"#,##0' },
+                        },
+                    },
+                    fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                },
+            });
+            await this.sheetsClient.spreadsheets.batchUpdate({
+                spreadsheetId: sheetId,
+                requestBody: { requests },
+            });
+        }
+        catch (err) {
+            logger.warn({ err, rowIndex }, "Could not format transaction row");
+        }
     }
     async updateTransactionRow(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
         try {
