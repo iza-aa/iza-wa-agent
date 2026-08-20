@@ -64,16 +64,19 @@ export function createWhatsAppBot() {
             else if (connection === "open") {
                 logger.info("Baileys WhatsApp Client is READY and CONNECTED!");
                 console.log("✅ BAILEYS WHATSAPP BOT BERHASIL TERSAMBUNG DAN SIAP DIGUNAKAN!");
-                // Ensure all Super Admin identifiers exist in DB
+                // Ensure Super Admin identifiers exist in DB if not already present
                 for (const phone of config.SUPER_ADMIN_PHONE) {
                     try {
-                        await userRepo.upsertUser({
-                            phone_number: phone,
-                            name: "Super Admin (Ayah / Owner)",
-                            role: "super_admin",
-                            status: "active",
-                        });
-                        logger.info({ phone }, "Super Admin identifier verified in database");
+                        const existing = await userRepo.getUser(phone);
+                        if (!existing) {
+                            await userRepo.upsertUser({
+                                phone_number: phone,
+                                name: "Super Admin",
+                                role: "super_admin",
+                                status: "active",
+                            });
+                            logger.info({ phone }, "Super Admin identifier registered in database");
+                        }
                     }
                     catch (err) {
                         logger.error({ err, phone }, "Could not verify Super Admin in DB");

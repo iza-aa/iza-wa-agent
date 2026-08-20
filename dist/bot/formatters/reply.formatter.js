@@ -39,7 +39,7 @@ export function formatPendingApprovalNotification(phone, pushName = "User") {
 }
 export function formatUserList(users) {
     // Filter out internal WhatsApp LID identifiers so only human phone numbers are shown
-    const visibleUsers = users.filter((u) => !u.phone_number.startsWith("232") && u.phone_number.length <= 14);
+    const visibleUsers = users.filter((u) => u.phone_number.length <= 14);
     const displayList = visibleUsers.length > 0 ? visibleUsers : users;
     if (displayList.length === 0) {
         return "ℹ️ Belum ada user aktif yang terdaftar.";

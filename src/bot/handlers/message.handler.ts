@@ -31,9 +31,9 @@ export class MessageHandler {
 
   cleanPhone(from: string): string {
     const digits = from.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
-    if (this.userRepo.isSuperAdmin(digits)) {
-      return config.SUPER_ADMIN_PHONE[0];
-    }
+    // Known WhatsApp multi-device LID mappings
+    if (digits === "232130131046571") return "6281346367235";
+    if (digits === "168096866255025") return "62811422404";
     return digits;
   }
 
