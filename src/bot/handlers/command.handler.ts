@@ -1,6 +1,15 @@
 import { UserRepository } from "../../db/repositories/user.repository.js";
-import { TransactionRepository } from "../../db/repositories/transaction.repository.js";
-import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction } from "../formatters/reply.formatter.js";
+import { TransactionRepository, TransactionRecord } from "../../db/repositories/transaction.repository.js";
+import {
+  formatUserList,
+  formatHelpMessage,
+  formatRupiah,
+  formatMonthlyReport,
+  formatDeletedTransaction,
+  formatTransactionDetail,
+  formatTransactionUpdated,
+} from "../formatters/reply.formatter.js";
+import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
 import { logger } from "../../utils/logger.js";
@@ -26,6 +35,29 @@ export class CommandHandler {
 
     if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
       return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
+    }
+
+    if (command === "/detail" || command === "/rincian" || command === "/lihat") {
+      const targetId = parts[1]?.trim();
+      if (!targetId) {
+        return {
+          handled: true,
+          responseMessage: "❌ Format salah. Gunakan: `/detail <ID_TRANSAKSI>`\nContoh: `/detail TRX-20260820-LX8Y`",
+        };
+      }
+
+      const data = await this.trxRepo.getTransactionWithItems(targetId);
+      if (!data) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Transaksi dengan ID `" + targetId + "` tidak ditemukan di database.",
+        };
+      }
+
+      return {
+        handled: true,
+        responseMessage: formatTransactionDetail(data.trx, data.items),
+      };
     }
 
     if (command === "/nama" || command === "/setnama" || command === "/gantinama") {
@@ -73,6 +105,93 @@ export class CommandHandler {
       return {
         handled: true,
         responseMessage: "⚠️ Perintah `" + command + "` hanya dapat dijalankan oleh Super Admin.",
+      };
+    }
+
+    if (command === "/edit" || command === "/ubah" || command === "/koreksi") {
+      const targetId = parts[1]?.trim();
+      const editInstruction = parts.slice(2).join(" ").trim();
+
+      if (!targetId || !editInstruction) {
+        return {
+          handled: true,
+          responseMessage: "❌ Format salah. Gunakan: `/edit <ID_TRX> <koreksi>`\n\n*Contoh Penggunaan:*\n• `/edit TRX-20260820-LX8Y 50000` (ubah total)\n• `/edit TRX-20260820-LX8Y toko: Indomaret, total: 45000`\n• `/edit TRX-20260820-LX8Y ganti tanggal 2026-08-19 dan kategori Makanan`",
+        };
+      }
+
+      const existing = await this.trxRepo.getTransactionWithItems(targetId);
+      if (!existing) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Transaksi dengan ID `" + targetId + "` tidak ditemukan di database.",
+        };
+      }
+
+      const parsedEdit = await parseTransactionEdit(existing.trx, editInstruction);
+      const changedFields: string[] = [];
+
+      const updates: Partial<TransactionRecord> = {};
+      if (parsedEdit.merchant && parsedEdit.merchant !== existing.trx.merchant) {
+        updates.merchant = parsedEdit.merchant;
+        changedFields.push("Merchant (" + parsedEdit.merchant + ")");
+      }
+      if (parsedEdit.category && parsedEdit.category !== existing.trx.category) {
+        updates.category = parsedEdit.category;
+        changedFields.push("Kategori (" + parsedEdit.category + ")");
+      }
+      if (parsedEdit.total_amount && parsedEdit.total_amount !== existing.trx.total_amount) {
+        updates.total_amount = parsedEdit.total_amount;
+        changedFields.push("Total (" + formatRupiah(parsedEdit.total_amount) + ")");
+      }
+      if (parsedEdit.subtotal && parsedEdit.subtotal !== existing.trx.subtotal) {
+        updates.subtotal = parsedEdit.subtotal;
+        changedFields.push("Subtotal");
+      }
+      if (parsedEdit.tax !== undefined && parsedEdit.tax !== existing.trx.tax) {
+        updates.tax = parsedEdit.tax;
+        changedFields.push("Pajak");
+      }
+      if (parsedEdit.discount !== undefined && parsedEdit.discount !== existing.trx.discount) {
+        updates.discount = parsedEdit.discount;
+        changedFields.push("Diskon");
+      }
+      if (parsedEdit.date && parsedEdit.date !== existing.trx.date) {
+        updates.date = parsedEdit.date;
+        changedFields.push("Tanggal (" + parsedEdit.date + ")");
+      }
+      if (parsedEdit.payment_method && parsedEdit.payment_method !== existing.trx.payment_method) {
+        updates.payment_method = parsedEdit.payment_method;
+        changedFields.push("Metode Bayar (" + parsedEdit.payment_method + ")");
+      }
+      if (parsedEdit.raw_text && parsedEdit.raw_text !== existing.trx.raw_text) {
+        updates.raw_text = parsedEdit.raw_text;
+        changedFields.push("Catatan");
+      }
+
+      if (changedFields.length === 0) {
+        return {
+          handled: true,
+          responseMessage: "ℹ️ Tidak ada perubahan yang terdeteksi dari instruksi: \"" + editInstruction + "\".",
+        };
+      }
+
+      const updatedTrx = await this.trxRepo.updateTransaction(targetId, updates);
+      if (!updatedTrx) {
+        return {
+          handled: true,
+          responseMessage: "❌ Gagal memperbarui transaksi di database.",
+        };
+      }
+
+      try {
+        await googleSheetsService.updateTransactionRow(updatedTrx, existing.items);
+      } catch (sheetErr) {
+        logger.error({ sheetErr }, "Failed to update Google Sheet row");
+      }
+
+      return {
+        handled: true,
+        responseMessage: formatTransactionUpdated(updatedTrx, changedFields),
       };
     }
 

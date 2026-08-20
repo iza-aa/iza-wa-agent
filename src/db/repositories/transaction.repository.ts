@@ -125,6 +125,54 @@ export class TransactionRepository {
     return data as TransactionRecord | null;
   }
 
+  async getTransactionWithItems(id: string): Promise<{ trx: TransactionRecord; items: TransactionItem[] } | null> {
+    const { data: trx, error: trxErr } = await this.supabase
+      .from("transactions")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (trxErr || !trx) {
+      logger.warn({ id, trxErr }, "Transaction not found");
+      return null;
+    }
+
+    const { data: items, error: itemsErr } = await this.supabase
+      .from("receipt_items")
+      .select("*")
+      .eq("transaction_id", id);
+
+    if (itemsErr) {
+      logger.error({ itemsErr, id }, "Failed to fetch transaction items");
+    }
+
+    return {
+      trx: trx as TransactionRecord,
+      items: (items || []) as TransactionItem[],
+    };
+  }
+
+  async updateTransaction(id: string, updates: Partial<TransactionRecord>): Promise<TransactionRecord | null> {
+    const payload = {
+      ...updates,
+      updated_at: new Date().toISOString(),
+    };
+
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .update(payload)
+      .eq("id", id)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      logger.error({ error, id, updates }, "Failed to update transaction in Supabase");
+      return null;
+    }
+
+    return data as TransactionRecord | null;
+  }
+
   async deleteTransaction(id: string): Promise<TransactionRecord | null> {
     const { data: existing, error: getErr } = await this.supabase
       .from("transactions")

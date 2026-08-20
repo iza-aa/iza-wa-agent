@@ -60,6 +60,8 @@ export function formatHelpMessage(isSuperAdmin) {
     msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n\n";
     if (isSuperAdmin) {
         msg += "👑 *Menu Khusus Super Admin:*\n";
+        msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";
+        msg += "• `/edit <ID_TRX> [koreksi]` - Mengedit data transaksi (toko, nominal, tanggal, kategori, dll)\n";
         msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & persentase kategori\n";
         msg += "• `/batal` - Membatalkan / menghapus transaksi terakhir yang baru dicatat\n";
         msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
@@ -69,6 +71,59 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
         msg += "• `/rekap` - Melihat riwayat 10 transaksi terakhir\n";
     }
+    return msg;
+}
+export function formatTransactionDetail(trx, items = []) {
+    let msg = "🔍 *DETAIL LENGKAP TRANSAKSI*\n\n";
+    msg += "🧾 *ID Transaksi:* `" + trx.id + "`\n";
+    msg += "📅 *Tanggal Transaksi:* " + trx.date + "\n";
+    msg += "⏰ *Waktu Input:* " + (trx.created_at ? new Date(trx.created_at).toLocaleString("id-ID", { timeZone: "Asia/Makassar" }) : "-") + " WITA\n";
+    msg += "👤 *Nama Penginput:* " + trx.user_name + " (`+" + trx.user_phone + "`)\n";
+    msg += "🏪 *Merchant / Tempat:* *" + trx.merchant + "*\n";
+    msg += "🏷️ *Kategori:* " + trx.category + "\n";
+    msg += "💳 *Metode Pembayaran:* " + (trx.payment_method || "Cash") + "\n";
+    msg += "📌 *Status Verifikasi:* " + (trx.status || "recorded") + "\n";
+    if (trx.raw_text && trx.raw_text !== "-") {
+        msg += "📝 *Catatan / Teks:* _" + trx.raw_text + "_\n";
+    }
+    if (items && items.length > 0) {
+        msg += "\n📋 *Rincian Barang (" + items.length + " item):*\n";
+        items.forEach((it, i) => {
+            const qty = it.qty || 1;
+            const price = Number(it.price) || 0;
+            const subtotal = price * qty;
+            msg += " " + (i + 1) + ". " + it.item_name + " (" + qty + "x @" + formatRupiah(price) + ") -> *" + formatRupiah(subtotal) + "*\n";
+        });
+    }
+    msg += "\n💰 *Rincian Pembayaran:*\n";
+    if (trx.subtotal && trx.subtotal !== trx.total_amount) {
+        msg += " • Subtotal: " + formatRupiah(trx.subtotal) + "\n";
+    }
+    if (trx.tax && trx.tax > 0) {
+        msg += " • Pajak / PB1: " + formatRupiah(trx.tax) + "\n";
+    }
+    if (trx.discount && trx.discount > 0) {
+        msg += " • Diskon: -" + formatRupiah(trx.discount) + "\n";
+    }
+    msg += " • *Total Akhir:* *" + formatRupiah(trx.total_amount) + "*\n";
+    if (trx.gdrive_web_view_link) {
+        msg += "\n📁 *Foto Bukti / Struk:* \n" + trx.gdrive_web_view_link + "\n";
+    }
+    return msg;
+}
+export function formatTransactionUpdated(trx, updatedFields) {
+    let msg = "✏️ *TRANSAKSI BERHASIL DIPERBARUI!*\n\n";
+    msg += "🧾 *ID:* `" + trx.id + "`\n";
+    msg += "📅 *Tanggal:* " + trx.date + "\n";
+    msg += "🏪 *Merchant:* *" + trx.merchant + "*\n";
+    msg += "🏷️ *Kategori:* " + trx.category + "\n";
+    msg += "💰 *Total Akhir:* *" + formatRupiah(trx.total_amount) + "*\n";
+    msg += "💳 *Metode Bayar:* " + (trx.payment_method || "Cash") + "\n";
+    msg += "👤 *Penginput:* " + trx.user_name + "\n\n";
+    if (updatedFields.length > 0) {
+        msg += "🔄 *Kolom yang diubah:* " + updatedFields.join(", ") + "\n";
+    }
+    msg += "✅ Data telah diperbarui di Database Supabase & Google Sheets!";
     return msg;
 }
 export function formatDeletedTransaction(trx) {

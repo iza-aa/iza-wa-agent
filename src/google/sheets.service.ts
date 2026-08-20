@@ -146,6 +146,69 @@ export class GoogleSheetsService {
     return { updatedRange, rowIndex };
   }
 
+  async updateTransactionRow(
+    trx: TransactionRecord,
+    items: TransactionItem[] = [],
+    sheetId: string = config.GOOGLE_SHEET_ID
+  ): Promise<boolean> {
+    try {
+      const res = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: this.sheetTitle + "!A:A",
+      });
+
+      const rows = res.data.values || [];
+      const rowIndex = rows.findIndex((r: any[]) => r && r[0] === trx.id);
+
+      if (rowIndex === -1) {
+        logger.warn({ trxId: trx.id }, "Transaction ID not found in Google Sheet for update");
+        return false;
+      }
+
+      const sheetRowNumber = rowIndex + 1;
+      const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
+      const itemsSummary = items.length > 0
+        ? items.map((it) => it.item_name + " (" + (it.qty || 1) + "x @" + it.price + ")").join(", ")
+        : "-";
+
+      const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+
+      const updatedRowData = [
+        trx.id, // A: ID Transaksi
+        nowWIB, // B: Waktu Input
+        trx.date, // C: Tanggal Transaksi
+        trx.user_name, // D: Nama Penginput
+        cleanPhone, // E: Nomor WhatsApp
+        trx.merchant, // F: Nama Merchant / Tempat
+        trx.category, // G: Kategori
+        itemsSummary, // H: Rincian Barang
+        trx.subtotal || trx.total_amount, // I: Subtotal (Rp)
+        trx.tax || 0, // J: Pajak / PB1 (Rp)
+        trx.discount || 0, // K: Diskon (Rp)
+        trx.total_amount, // L: Total Pengeluaran (Rp)
+        trx.payment_method || "Cash", // M: Metode Pembayaran
+        trx.status || "recorded", // N: Status Verifikasi
+        trx.raw_text || "-", // O: Catatan / Raw Text
+        trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Foto Struk\")" : "-", // P: Link Bukti / Struk
+      ];
+
+      await this.sheetsClient.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: this.sheetTitle + "!A" + sheetRowNumber + ":P" + sheetRowNumber,
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [updatedRowData],
+        },
+      });
+
+      logger.info({ trxId: trx.id, sheetRowNumber }, "Google Sheet row updated successfully");
+      return true;
+    } catch (err) {
+      logger.error({ err, trxId: trx.id }, "Failed to update transaction row in Google Sheet");
+      return false;
+    }
+  }
+
   async deleteTransactionRow(trxId: string, sheetId: string = config.GOOGLE_SHEET_ID): Promise<boolean> {
     try {
       const res = await this.sheetsClient.spreadsheets.values.get({

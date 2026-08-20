@@ -78,6 +78,45 @@ export class TransactionRepository {
         }
         return data;
     }
+    async getTransactionWithItems(id) {
+        const { data: trx, error: trxErr } = await this.supabase
+            .from("transactions")
+            .select("*")
+            .eq("id", id)
+            .maybeSingle();
+        if (trxErr || !trx) {
+            logger.warn({ id, trxErr }, "Transaction not found");
+            return null;
+        }
+        const { data: items, error: itemsErr } = await this.supabase
+            .from("receipt_items")
+            .select("*")
+            .eq("transaction_id", id);
+        if (itemsErr) {
+            logger.error({ itemsErr, id }, "Failed to fetch transaction items");
+        }
+        return {
+            trx: trx,
+            items: (items || []),
+        };
+    }
+    async updateTransaction(id, updates) {
+        const payload = {
+            ...updates,
+            updated_at: new Date().toISOString(),
+        };
+        const { data, error } = await this.supabase
+            .from("transactions")
+            .update(payload)
+            .eq("id", id)
+            .select()
+            .maybeSingle();
+        if (error) {
+            logger.error({ error, id, updates }, "Failed to update transaction in Supabase");
+            return null;
+        }
+        return data;
+    }
     async deleteTransaction(id) {
         const { data: existing, error: getErr } = await this.supabase
             .from("transactions")

@@ -49,6 +49,28 @@ describe("WhatsApp Bot Handlers", () => {
       expect(res.responseMessage).toContain("DAFTAR PENGGUNA TERDAFTAR");
     });
 
+    it("should display transaction detail with /detail", async () => {
+      mockTrxRepo.getTransactionWithItems = vi.fn().mockResolvedValue({
+        trx: {
+          id: "TRX-TEST-001",
+          date: "2026-08-20",
+          merchant: "Alfamart",
+          category: "Belanja Bulanan",
+          total_amount: 50000,
+          user_name: "Ayah",
+          user_phone: "6281346367235",
+          payment_method: "Cash",
+        },
+        items: [{ item_name: "Susu", qty: 2, price: 25000 }],
+      });
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand("6281346367235", "/detail TRX-TEST-001");
+      expect(res.handled).toBe(true);
+      expect(res.responseMessage).toContain("DETAIL LENGKAP TRANSAKSI");
+      expect(res.responseMessage).toContain("Alfamart");
+      expect(res.responseMessage).toContain("Susu");
+    });
+
     it("should allow Super Admin to cancel latest transaction with /batal", async () => {
       mockTrxRepo.getLatestTransaction = vi.fn().mockResolvedValue({
         id: "TRX-TEST-999",
