@@ -2,21 +2,30 @@ import { geminiKeyManager } from "../gemini-client.js";
 import { ExtractedTransaction, ExtractedTransactionSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
 
-const AUDIO_SYSTEM_INSTRUCTION = `Kamu adalah asisten AI yang mendengarkan rekaman suara (Voice Note WhatsApp) dan mengekstrak transaksi keuangan ke dalam format JSON yang valid.
+export interface AudioAnalysisResult {
+  transcription: string;
+  is_complete: boolean;
+  clarification_question?: string;
+  transaction: ExtractedTransaction | null;
+}
 
-Aturan Penting:
-1. Transkripsi suara apa adanya ke dalam "transcription".
-2. date: Tanggal transaksi (YYYY-MM-DD). Wajib string tanggal hari ini jika tidak disebutkan di audio (${new Date().toISOString().slice(0, 10)}). Jangan pernah null.
-3. merchant: Nama toko / tempat / jenis penjual (contoh: Toko Roti, SPBU Pertamina, Warung Makan, dll.).
-4. category: Pilih salah satu dari: "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain".
-5. total_amount: Total nominal dalam angka integer rupiah (contoh 20000 untuk 20 ribu / 20k / dua puluh ribu).
-6. payment_method: "Cash" | "QRIS" | "Transfer BCA" | dll.
-7. items: Daftar rincian barang: [{ "item_name": "Roti", "qty": 1, "price": 20000, "total_price": 20000 }].`;
+const AUDIO_SYSTEM_INSTRUCTION = `Kamu adalah asisten AI pencatat keuangan cerdas yang mendengarkan Voice Note WhatsApp.
+Tugasmu:
+1. Dengarkan audio dan transkripsi kata-kata yang diucapkan pembicara apa adanya ke dalam "transcription".
+2. Analisis apakah informasi pengeluaran sudah lengkap untuk dicatat (minimal ada merchant/nama barang DAN nominal harga total).
+3. JIKA LENGKAP: Set is_complete: true dan isi objek "transaction".
+4. JIKA TIDAK LENGKAP / AMBIGU / ADA YANG KURANG JELAS:
+   - Set is_complete: false
+   - Buat pertanyaan klarifikasi yang ramah, sopan, dan spesifik dalam bahasa Indonesia pada "clarification_question".
+   Contoh pertanyaan klarifikasi:
+   - Jika nominal harga tidak ada: "Saya dengar Anda beli [nama barang/merchant], tapi berapa ya total harganya?"
+   - Jika barang/tempat tidak jelas: "Saya dengar nominal Rp [jumlah], tapi ini untuk pengeluaran apa ya?"
+   - Jika suara bising/tidak terdengar: "Suaranya kurang jelas terdengar. Boleh diulang atau diketik rincian pengeluarannya?"`;
 
 export async function parseAudioVoiceNote(
   audioBuffer: Buffer,
   mimeType: string = "audio/ogg"
-): Promise<{ transcription: string; transaction: ExtractedTransaction | null }> {
+): Promise<AudioAnalysisResult> {
   return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
     const model = genAI.getGenerativeModel({
       model: modelName,
@@ -34,25 +43,27 @@ export async function parseAudioVoiceNote(
       },
     };
 
-    const prompt = `Dengarkan rekaman suara ini dan ekstrak transaksi keuangan. 
+    const prompt = `Dengarkan rekaman suara ini. 
 Format JSON output wajib:
 {
   "transcription": "Teks hasil transkrip suara apa adanya",
+  "is_complete": true,
+  "clarification_question": "Pertanyaan jika ada info yang kurang (opsional jika lengkap)",
   "transaction": {
-    "merchant": "Nama toko / tempat",
+    "merchant": "Nama toko / tempat / jenis barang",
     "date": "${new Date().toISOString().slice(0, 10)}",
-    "category": "Makanan & Minuman",
-    "subtotal": 20000,
+    "category": "Makanan & Minuman | Belanja Bulanan | Transportasi & Bensin | Tagihan & Utilitas | Kesehatan & Obat | Pendidikan | Hiburan & Rekreasi | Operasional Kantor | Lain-lain",
+    "subtotal": 0,
     "tax": 0,
     "discount": 0,
-    "total_amount": 20000,
+    "total_amount": 0,
     "payment_method": "Cash",
     "items": [
       {
-        "item_name": "Nama barang",
+        "item_name": "Nama item",
         "qty": 1,
-        "price": 20000,
-        "total_price": 20000
+        "price": 0,
+        "total_price": 0
       }
     ],
     "confidence_score": 1.0
@@ -65,13 +76,22 @@ Format JSON output wajib:
 
     try {
       const parsed = JSON.parse(textResponse);
-      const rawTrx = parsed.transaction;
+      const transcription = parsed.transcription || "";
+      const isComplete = parsed.is_complete !== false && parsed.transaction?.total_amount > 0;
+      const clarification = parsed.clarification_question || undefined;
 
-      if (!rawTrx) {
-        return { transcription: parsed.transcription || "", transaction: null };
+      if (!isComplete || !parsed.transaction || parsed.transaction.total_amount <= 0) {
+        return {
+          transcription,
+          is_complete: false,
+          clarification_question:
+            clarification ||
+            `Saya dengar: "${transcription}". Namun nominal harga atau rincian belanjanya belum jelas. Berapa total biayanya ya?`,
+          transaction: null,
+        };
       }
 
-      // Normalization layer
+      const rawTrx = parsed.transaction;
       const todayStr = new Date().toISOString().slice(0, 10);
       const normalizedTrx = {
         merchant: rawTrx.merchant || "Penjual",
@@ -94,12 +114,18 @@ Format JSON output wajib:
 
       const validatedTrx = ExtractedTransactionSchema.parse(normalizedTrx);
       return {
-        transcription: parsed.transcription || "",
+        transcription,
+        is_complete: true,
         transaction: validatedTrx,
       };
     } catch (err) {
-      logger.error({ err, textResponse }, "Failed to validate audio transaction JSON");
-      return { transcription: "", transaction: null };
+      logger.error({ err, textResponse }, "Failed to parse audio response");
+      return {
+        transcription: "",
+        is_complete: false,
+        clarification_question: "Maaf, rekaman suaranya kurang terdengar jelas. Boleh tolong diulang atau diketik pengeluarannya?",
+        transaction: null,
+      };
     }
   });
 }

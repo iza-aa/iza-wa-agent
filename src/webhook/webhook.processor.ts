@@ -163,11 +163,12 @@ export class WebhookProcessor {
 
         // Voice Note in Webhook
         if (contentType.startsWith("audio/") || payload.mediaType === "audio") {
-          const { transcription, transaction } = await parseAudioVoiceNote(mediaBuffer, contentType);
-          if (!transaction || transaction.total_amount <= 0) {
+          const { transcription, is_complete, clarification_question, transaction } = await parseAudioVoiceNote(mediaBuffer, contentType);
+          if (!is_complete || !transaction || transaction.total_amount <= 0) {
+            const question = clarification_question || "Berapa nominal atau rincian belanjanya ya?";
             return {
-              reply: "🗣️ *Transkrip Suara:* \"" + (transcription || "(Suara tidak jelas)") + "\"\n\n⚠️ Tidak ditemukan nominal pengeluaran.",
-              success: false,
+              reply: "🗣️ *Transkrip:* \"" + (transcription || "(Suara belum jelas)") + "\"\n\n❓ " + question,
+              success: true,
             };
           }
 
