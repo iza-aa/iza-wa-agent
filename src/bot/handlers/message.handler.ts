@@ -268,26 +268,22 @@ export class MessageHandler {
       const history = await this.chatRepo.getRecentChatHistory(senderPhone, 3);
       const historyStrings = history.map((h) => (h.direction === "inbound" ? "User: " : "Bot: ") + h.content);
 
-      let parsed = null;
-try {
-  parsed = await parseTransactionText(body, historyStrings);
-} catch (aiErr) {
-  logger.error({ aiErr }, "AI text parsing error");
-  await sock.sendMessage(remoteJid, { text: "⚠️ Sistem AI sedang sibuk sementara. Silakan coba kirim ulang dalam beberapa detik." }, { quoted: msg });
-  return;
-}
-
-      if (!parsed || parsed.total_amount <= 0) {
-        await sock.sendMessage(
-          remoteJid,
-          {
-            text: "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.\n\nKetik */help* untuk bantuan.",
-          },
-          { quoted: msg }
-        );
+      let textResult = null;
+      try {
+        textResult = await parseTransactionText(body, historyStrings);
+      } catch (aiErr) {
+        logger.error({ aiErr }, "AI text parsing error");
+        await sock.sendMessage(remoteJid, { text: "⚠️ Sistem AI sedang sibuk sementara. Silakan coba kirim ulang dalam beberapa detik." }, { quoted: msg });
         return;
       }
 
+      if (!textResult.is_complete || !textResult.transaction || textResult.transaction.total_amount <= 0) {
+        const reply = textResult.reply_message || "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.";
+        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+        return;
+      }
+
+      const parsed = textResult.transaction;
       const trxId = this.trxRepo.generateTransactionId();
 
       const transactionRecord = await this.trxRepo.createTransaction(

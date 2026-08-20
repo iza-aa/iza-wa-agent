@@ -2,21 +2,52 @@ import { geminiKeyManager } from "../gemini-client.js";
 import { ExtractedTransaction, ExtractedTransactionSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
 
-const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI pencatat keuangan dan operasional pintar yang sangat teliti.
-Tugasmu adalah menganalisis pesan teks dari WhatsApp dan mengekstrak informasi transaksi keuangan ke dalam format JSON yang valid.
+export interface TextAnalysisResult {
+  is_complete: boolean;
+  reply_message?: string;
+  transaction: ExtractedTransaction | null;
+}
 
-Aturan Ekstraksi:
-1. Tanggal: Gunakan tanggal transaksi jika disebutkan (misal "kemarin", "tadi pagi", "15 Agustus"). Jika tidak ada, gunakan tanggal hari ini (${new Date().toISOString().slice(0, 10)}). Format wajib YYYY-MM-DD.
-2. Merchant: Nama toko, restoran, tempat, vendor, atau penerima pembayaran.
-3. Kategori: Pilih salah satu dari: "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain".
-4. Total Amount: Total uang keluar dalam bentuk angka bulat integer (contoh 25000 untuk 25rb / 25k).
-5. Payment Method: Deteksi apakah Cash, QRIS, Transfer BCA/Mandiri, Gopay, OVO, ShopeePay, dll.
-6. JSON Wajib valid dan mematuhi skema yang diberikan.`;
+const SYSTEM_INSTRUCTION = `Kamu adalah asisten AI keuangan pribadi dan operasional yang cerdas, sopan, dan proaktif berbahasa Indonesia.
+Tugasmu:
+1. Analisis pesan teks pengguna dengan memperhatikan riwayat percakapan sebelumnya.
+2. Tentukan apakah pesan ini adalah:
+   a. TRANSAKSI LENGKAP: Ada nama barang/toko DAN nominal uang (contoh: "Beli bensin 50rb", "Makan siang 25000", "Lunas tagihan wifi 350k").
+      -> Set is_complete: true, dan isi objek "transaction".
+   b. TRANSAKSI BELUM LENGKAP (Butuh Klarifikasi): Pengguna berniat mencatat pengeluaran tapi kurang nominal ATAU kurang nama barang (contoh: "Beli martabak", "Habis transfer 100rb").
+      -> Set is_complete: false, dan buat pertanyaan klarifikasi yang ramah dan spesifik di "reply_message" (contoh: "Boleh tahu berapa total biaya beli martabak tersebut?", "Nominal Rp100.000 dicatat. Boleh tahu ini pembayaran untuk keperluan apa?").
+   c. PERCAKAPAN UMUM / SAPAAN / BANTUAN: Pengguna menyapa ("halo", "selamat pagi", "siapa kamu?", "makasih").
+      -> Set is_complete: false, dan berikan balasan yang ramah dan singkat serta tawarkan bantuan pencatatan di "reply_message".
+
+Format JSON Wajib:
+{
+  "is_complete": true | false,
+  "reply_message": "Pesan balasan ramah jika is_complete false",
+  "transaction": {
+    "merchant": "Nama tempat / barang / vendor",
+    "date": "2026-08-20",
+    "category": "Makanan & Minuman | Belanja Bulanan | Transportasi & Bensin | Tagihan & Utilitas | Kesehatan & Obat | Pendidikan | Hiburan & Rekreasi | Operasional Kantor | Lain-lain",
+    "subtotal": 0,
+    "tax": 0,
+    "discount": 0,
+    "total_amount": 0,
+    "payment_method": "Cash",
+    "items": [
+      {
+        "item_name": "Nama item",
+        "qty": 1,
+        "price": 0,
+        "total_price": 0
+      }
+    ],
+    "confidence_score": 1.0
+  }
+}`;
 
 export async function parseTransactionText(
   userText: string,
   contextHistory: string[] = []
-): Promise<ExtractedTransaction | null> {
+): Promise<TextAnalysisResult> {
   return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
     const model = genAI.getGenerativeModel({
       model: modelName,
@@ -27,31 +58,65 @@ export async function parseTransactionText(
       },
     });
 
-    const prompt = `Riwayat Chat Sebelumnya:
+    const prompt = `Riwayat Percakapan Sebelumnya:
 ${contextHistory.join("\n")}
 
-Pesan Pengguna Saat Ini:
+Pesan Pengguna Baru:
 "${userText}"
 
-Ekstrak transaksi keuangan dari pesan di atas ke dalam format JSON.`;
+Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
 
     const result = await model.generateContent(prompt);
     const textResponse = result.response.text();
     logger.debug({ modelName, textResponse }, "Gemini Text Parser Raw Response");
 
     try {
-      const parsedJson = JSON.parse(textResponse);
-      if (Array.isArray(parsedJson)) {
-        if (parsedJson.length === 0) return null;
-        return ExtractedTransactionSchema.parse(parsedJson[0]);
+      const parsed = JSON.parse(textResponse);
+      const isComplete = parsed.is_complete !== false && parsed.transaction?.total_amount > 0;
+
+      if (!isComplete || !parsed.transaction || parsed.transaction.total_amount <= 0) {
+        return {
+          is_complete: false,
+          reply_message:
+            parsed.reply_message ||
+            "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.",
+          transaction: null,
+        };
       }
-      if (!parsedJson || typeof parsedJson !== "object" || Object.keys(parsedJson).length === 0) {
-        return null;
-      }
-      return ExtractedTransactionSchema.parse(parsedJson);
+
+      const rawTrx = parsed.transaction;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const normalizedTrx = {
+        merchant: rawTrx.merchant || "Penjual",
+        date: rawTrx.date || todayStr,
+        category: rawTrx.category || "Lain-lain",
+        subtotal: Number(rawTrx.subtotal || rawTrx.total_amount || 0),
+        tax: Number(rawTrx.tax || 0),
+        discount: Number(rawTrx.discount || 0),
+        total_amount: Number(rawTrx.total_amount || rawTrx.subtotal || 0),
+        payment_method: rawTrx.payment_method || "Cash",
+        confidence_score: Number(rawTrx.confidence_score || 1.0),
+        items: (rawTrx.items || []).map((it: any) => ({
+          item_name: it.item_name || it.name || "Item",
+          qty: Number(it.qty || it.quantity || 1),
+          price: Number(it.price || it.unit_price || it.total_price || 0),
+          total_price: Number(it.total_price || it.price || 0),
+          category: it.category || undefined,
+        })),
+      };
+
+      const validatedTrx = ExtractedTransactionSchema.parse(normalizedTrx);
+      return {
+        is_complete: true,
+        transaction: validatedTrx,
+      };
     } catch (err) {
-      logger.debug({ err, textResponse }, "Non-transaction or malformed JSON returned");
-      return null;
+      logger.error({ err, textResponse }, "Failed to validate extracted transaction JSON");
+      return {
+        is_complete: false,
+        reply_message: "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli bensin 50rb*) atau kirim foto struk/voice note untuk dicatat.",
+        transaction: null,
+      };
     }
   });
 }

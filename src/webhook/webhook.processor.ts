@@ -217,21 +217,24 @@ export class WebhookProcessor {
       const history = await this.chatRepo.getRecentChatHistory(senderPhone, 3);
       const historyStrings = history.map((h) => (h.direction === "inbound" ? "User: " : "Bot: ") + h.content);
 
-      let parsed = null;
+      let textResult = null;
       try {
-        parsed = await parseTransactionText(body, historyStrings);
+        textResult = await parseTransactionText(body, historyStrings);
       } catch (aiErr) {
         logger.error({ aiErr }, "AI text parsing error in webhook");
         return { reply: "⚠️ Sistem AI sedang sibuk sementara. Silakan coba lagi.", success: false };
       }
 
-      if (!parsed || parsed.total_amount <= 0) {
+      if (!textResult.is_complete || !textResult.transaction || textResult.transaction.total_amount <= 0) {
         return {
-          reply: "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.\n\nKetik */help* untuk bantuan.",
+          reply:
+            textResult.reply_message ||
+            "💬 Pesan Anda diterima! Ketik pengeluaran (contoh: *Beli makan 25rb*) atau kirim foto struk/voice note untuk dicatat otomatis.",
           success: true,
         };
       }
 
+      const parsed = textResult.transaction;
       const trxId = this.trxRepo.generateTransactionId();
       const transactionRecord = await this.trxRepo.createTransaction(
         {
