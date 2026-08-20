@@ -79,13 +79,16 @@ export function formatWalletBalance(wallet: {
 }
 
 export function formatPendingApprovalNotification(phone: string, pushName: string = "User"): string {
-  let msg = "⚠️ *PERMINTAAN AKSES BOT BARU*\n\n";
-  msg += "Ada nomor baru yang mencoba mengakses bot:\n";
-  msg += "📱 *Nomor:* `" + phone + "`\n";
-  msg += "👤 *Nama WhatsApp:* " + pushName + "\n\n";
-  msg += "Untuk mengizinkan, balas dengan perintah:\n";
-  msg += "*`/tambah " + phone + " [NamaUser]`*\n";
-  msg += "Atau ketik *`/blokir " + phone + "`* untuk menolak.";
+  let msg = "🔔 *PERMINTAAN AKSES PENGGUNA BARU*\n\n";
+  msg += "Ada pengguna baru yang mengirim pesan ke bot:\n";
+  msg += "👤 *Nama WhatsApp:* " + pushName + "\n";
+  msg += "📱 *ID / Nomor:* `" + phone + "`\n\n";
+  msg += "👉 *Untuk mengizinkan sebagai Anggota:*\n";
+  msg += "`/tambah " + phone + " " + pushName + "`\n\n";
+  msg += "👉 *Untuk mengizinkan sebagai Super Admin:*\n";
+  msg += "`/tambah " + phone + " " + pushName + " super_admin`\n\n";
+  msg += "🚫 *Untuk menolak / memblokir:*\n";
+  msg += "`/blokir " + phone + "`";
   return msg;
 }
 

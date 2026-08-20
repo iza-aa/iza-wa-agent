@@ -55,7 +55,7 @@ export class UserRepository {
             logger.info({ identifier: cleaned }, "Added Super Admin identifier to active whitelist");
         }
     }
-    async getUser(identifier) {
+    async getUser(identifier, pushName) {
         const cleaned = this.cleanIdentifier(identifier);
         const { data, error } = await this.supabase
             .from("users")
@@ -66,22 +66,53 @@ export class UserRepository {
             logger.error({ error, id: cleaned }, "Error fetching user from Supabase");
             return null;
         }
-        if (data && data.role === "super_admin") {
-            this.addSuperAdminIdentifier(cleaned);
+        if (data) {
+            if (data.status === "blocked") {
+                return data;
+            }
+            if (data.role === "super_admin") {
+                this.addSuperAdminIdentifier(cleaned);
+            }
+            return data;
         }
-        return data;
+        // If identifier is an unmapped WhatsApp LID (14-16 digits) and pushName is provided:
+        // Check if there is an active user registered with matching name
+        if (cleaned.length >= 14 && pushName && pushName.trim().length >= 2) {
+            const cleanName = pushName.trim();
+            const { data: nameMatch } = await this.supabase
+                .from("users")
+                .select("*")
+                .eq("status", "active")
+                .ilike("name", `%${cleanName}%`)
+                .maybeSingle();
+            if (nameMatch) {
+                logger.info({ lid: cleaned, matchedUser: nameMatch.name, role: nameMatch.role }, "Auto-linking WhatsApp LID to registered user by name");
+                const linkedUser = await this.upsertUser({
+                    phone_number: cleaned,
+                    name: nameMatch.name,
+                    role: nameMatch.role,
+                    status: "active",
+                });
+                return linkedUser;
+            }
+        }
+        return null;
     }
-    async isWhitelisted(identifier) {
+    async isWhitelisted(identifier, pushName) {
         const cleaned = this.cleanIdentifier(identifier);
         if (this.isSuperAdmin(cleaned)) {
             return true;
         }
-        const user = await this.getUser(cleaned);
-        if (user && user.role === "super_admin") {
+        const user = await this.getUser(cleaned, pushName);
+        if (!user)
+            return false;
+        if (user.status === "blocked")
+            return false;
+        if (user.role === "super_admin") {
             this.addSuperAdminIdentifier(cleaned);
             return true;
         }
-        return !!(user && user.status === "active");
+        return user.status === "active";
     }
     async upsertUser(user) {
         const cleaned = this.cleanIdentifier(user.phone_number);

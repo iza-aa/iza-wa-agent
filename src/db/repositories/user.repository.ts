@@ -76,7 +76,7 @@ export class UserRepository {
     }
   }
 
-  async getUser(identifier: string): Promise<UserRecord | null> {
+  async getUser(identifier: string, pushName?: string): Promise<UserRecord | null> {
     const cleaned = this.cleanIdentifier(identifier);
     const { data, error } = await this.supabase
       .from("users")
@@ -89,25 +89,57 @@ export class UserRepository {
       return null;
     }
 
-    if (data && data.role === "super_admin") {
-      this.addSuperAdminIdentifier(cleaned);
+    if (data) {
+      if (data.status === "blocked") {
+        return data as UserRecord;
+      }
+      if (data.role === "super_admin") {
+        this.addSuperAdminIdentifier(cleaned);
+      }
+      return data as UserRecord;
     }
 
-    return data as UserRecord | null;
+    // If identifier is an unmapped WhatsApp LID (14-16 digits) and pushName is provided:
+    // Check if there is an active user registered with matching name
+    if (cleaned.length >= 14 && pushName && pushName.trim().length >= 2) {
+      const cleanName = pushName.trim();
+      const { data: nameMatch } = await this.supabase
+        .from("users")
+        .select("*")
+        .eq("status", "active")
+        .ilike("name", `%${cleanName}%`)
+        .maybeSingle();
+
+      if (nameMatch) {
+        logger.info({ lid: cleaned, matchedUser: nameMatch.name, role: nameMatch.role }, "Auto-linking WhatsApp LID to registered user by name");
+        const linkedUser = await this.upsertUser({
+          phone_number: cleaned,
+          name: nameMatch.name,
+          role: nameMatch.role,
+          status: "active",
+        });
+        return linkedUser;
+      }
+    }
+
+    return null;
   }
 
-  async isWhitelisted(identifier: string): Promise<boolean> {
+  async isWhitelisted(identifier: string, pushName?: string): Promise<boolean> {
     const cleaned = this.cleanIdentifier(identifier);
     if (this.isSuperAdmin(cleaned)) {
       return true;
     }
 
-    const user = await this.getUser(cleaned);
-    if (user && user.role === "super_admin") {
+    const user = await this.getUser(cleaned, pushName);
+    if (!user) return false;
+    if (user.status === "blocked") return false;
+
+    if (user.role === "super_admin") {
       this.addSuperAdminIdentifier(cleaned);
       return true;
     }
-    return !!(user && user.status === "active");
+    return user.status === "active";
   }
 
   async upsertUser(user: Partial<UserRecord> & { phone_number: string; name: string }): Promise<UserRecord | null> {

@@ -75,10 +75,10 @@ export class MessageHandler {
             }
         }
         // 3. Whitelist / Access Control Check
-        const isAllowed = await this.userRepo.isWhitelisted(senderPhone);
+        const isAllowed = await this.userRepo.isWhitelisted(senderPhone, pushName);
         if (!isAllowed) {
             const superAdminPhone = config.SUPER_ADMIN_PHONE;
-            logger.warn({ senderPhone }, "Unauthorized user attempted to message bot");
+            logger.warn({ senderPhone, pushName }, "Unauthorized user attempted to message bot");
             await sock.sendMessage(remoteJid, {
                 text: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nPermintaan akses telah dikirimkan ke Super Admin untuk persetujuan.",
             }, { quoted: msg });
@@ -95,7 +95,7 @@ export class MessageHandler {
             return;
         }
         // Get User Profile from DB (or auto-register Super Admin)
-        let user = await this.userRepo.getUser(senderPhone);
+        let user = await this.userRepo.getUser(senderPhone, pushName);
         const isSuperAdminUser = await this.userRepo.isSuperAdminAsync(senderPhone);
         if (!user && isSuperAdminUser) {
             user = await this.userRepo.upsertUser({
