@@ -6,7 +6,7 @@
       "destination": "/api/webhook"
     },
     {
-      "source": "/(.*)",
+      "source": "/api/health",
       "destination": "/api/health"
     }
   ]
