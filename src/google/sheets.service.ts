@@ -125,7 +125,7 @@ export class GoogleSheetsService {
       trx.payment_method || "Cash", // M: Metode Pembayaran
       trx.status || "recorded", // N: Status Verifikasi
       trx.raw_text || "-", // O: Catatan / Raw Text
-      trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\", \"Lihat Foto Struk\")" : "-", // P: Link Bukti / Struk
+      trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Foto Struk\")" : "-", // P: Link Bukti / Struk
     ];
 
     const response = await this.sheetsClient.spreadsheets.values.append({
