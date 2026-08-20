@@ -26,6 +26,36 @@ export class CommandHandler {
       return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
     }
 
+    if (command === "/nama" || command === "/setnama" || command === "/gantinama") {
+      const arg1 = parts[1];
+      if (!arg1) {
+        return {
+          handled: true,
+          responseMessage: "❌ Format salah. Gunakan: `/nama Nama Baru Anda`\nContoh: `/nama Ayah` atau `/nama Rezky Haikal`",
+        };
+      }
+
+      // Check if Super Admin is changing another user: /nama 628123456789 Budi
+      const isTargetingOther = isSuperAdmin && /^[0-9+]{8,16}$/.test(arg1.replace(/[^0-9]/g, "")) && parts.length > 2;
+      const targetPhone = isTargetingOther ? arg1.replace(/[^0-9]/g, "") : senderPhone;
+      const newName = isTargetingOther ? parts.slice(2).join(" ") : parts.slice(1).join(" ");
+
+      const user = await this.userRepo.getUser(targetPhone);
+      await this.userRepo.upsertUser({
+        phone_number: targetPhone,
+        name: newName,
+        role: user?.role || (this.userRepo.isSuperAdmin(targetPhone) ? "super_admin" : "member"),
+        status: user?.status || "active",
+      });
+
+      return {
+        handled: true,
+        responseMessage: isTargetingOther
+          ? "✅ Nama untuk nomor `" + targetPhone + "` berhasil diubah menjadi: *" + newName + "*."
+          : "✅ Nama Anda berhasil diubah menjadi: *" + newName + "*\nSemua transaksi Anda selanjutnya akan dicatat atas nama ini di Google Sheets & Google Drive.",
+      };
+    }
+
     if (!isSuperAdmin) {
       return {
         handled: true,

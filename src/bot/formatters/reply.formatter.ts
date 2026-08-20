@@ -63,7 +63,8 @@ export function formatHelpMessage(isSuperAdmin: boolean): string {
   msg += "Anda dapat mencatat pengeluaran dengan 3 cara mudah:\n";
   msg += "1. 📸 *Kirim Foto Struk Belanja / Bukti Transfer*\n";
   msg += "2. 🎙️ *Kirim Voice Note WhatsApp* (contoh: \"Beli bensin 50rb di Pertamina barusan\")\n";
-  msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang warteg 25k\")\n\n";
+  msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang warteg 25k\")\n";
+  msg += "4. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n\n";
 
   if (isSuperAdmin) {
     msg += "👑 *Menu Khusus Super Admin:*\n";
