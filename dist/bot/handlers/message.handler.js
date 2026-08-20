@@ -27,6 +27,8 @@ export class MessageHandler {
             return "6281346367235";
         if (digits === "168096866255025")
             return "62811422404";
+        if (digits === "113404400390171")
+            return "6282147440520";
         return digits;
     }
     async processIncomingMessage(sock, msg) {

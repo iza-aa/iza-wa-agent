@@ -100,25 +100,45 @@ export class UserRepository {
     }
 
     // If identifier is an unmapped WhatsApp LID (14-16 digits) and pushName is provided:
-    // Check if there is an active user registered with matching name
+    // Search for a matching active user by comparing individual words of pushName against DB user names
     if (cleaned.length >= 14 && pushName && pushName.trim().length >= 2) {
-      const cleanName = pushName.trim();
-      const { data: nameMatch } = await this.supabase
+      // Fetch all active users with normal phone numbers (not LIDs)
+      const { data: activeUsers } = await this.supabase
         .from("users")
         .select("*")
         .eq("status", "active")
-        .ilike("name", `%${cleanName}%`)
-        .maybeSingle();
+        .lt("phone_number", "100000000000000"); // Only real phone numbers (< 15 digits)
 
-      if (nameMatch) {
-        logger.info({ lid: cleaned, matchedUser: nameMatch.name, role: nameMatch.role }, "Auto-linking WhatsApp LID to registered user by name");
-        const linkedUser = await this.upsertUser({
-          phone_number: cleaned,
-          name: nameMatch.name,
-          role: nameMatch.role,
-          status: "active",
+      if (activeUsers && activeUsers.length > 0) {
+        const pushNameLower = pushName.trim().toLowerCase();
+        const pushNameWords = pushNameLower.split(/\s+/).filter((w) => w.length >= 2);
+
+        // Try to find a user whose DB name appears in pushName or vice versa
+        const match = activeUsers.find((u) => {
+          const dbNameLower = u.name.toLowerCase().trim();
+          const dbNameWords = dbNameLower.split(/\s+/).filter((w: string) => w.length >= 2);
+          // Check: DB name contained in pushName, or any DB name word matches a pushName word
+          return (
+            pushNameLower.includes(dbNameLower) ||
+            dbNameLower.includes(pushNameLower) ||
+            dbNameWords.some((dbWord: string) => pushNameWords.includes(dbWord))
+          );
         });
-        return linkedUser;
+
+        if (match) {
+          logger.info(
+            { lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number, role: match.role },
+            "Auto-linking WhatsApp LID to registered user by name match"
+          );
+          // Create a new user entry for this LID so future lookups are instant
+          const linkedUser = await this.upsertUser({
+            phone_number: cleaned,
+            name: match.name,
+            role: match.role,
+            status: "active",
+          });
+          return linkedUser;
+        }
       }
     }
 
