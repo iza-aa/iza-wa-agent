@@ -60,6 +60,7 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/laporan [YYYY-MM]` - Ringkasan pengeluaran bulanan & breakdown kategori\n";
         msg += "• `/batal` - Membatalkan / menghapus transaksi terakhir yang baru dicatat\n";
         msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
+        msg += "• `/role <nomor> <super_admin|member>` - Mengubah hak akses user\n";
         msg += "• `/approve <nomor> [nama]` - Mengaktifkan akses nomor baru\n";
         msg += "• `/block <nomor>` - Memblokir akses nomor\n";
         msg += "• `/users` - Melihat seluruh daftar pengguna aktif\n";

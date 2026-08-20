@@ -10,14 +10,18 @@ export class CommandHandler {
         this.trxRepo = trxRepo;
     }
     async handleCommand(senderPhone, text) {
-        const trimmed = text.trim();
-        if (!trimmed.startsWith("/")) {
+        let trimmed = text.trim();
+        const isKeyword = ["help", "menu", "bantuan", "panduan", "rekap", "laporan", "users"].includes(trimmed.toLowerCase());
+        if (!trimmed.startsWith("/") && !isKeyword) {
             return { handled: false, responseMessage: "" };
+        }
+        if (isKeyword && !trimmed.startsWith("/")) {
+            trimmed = "/" + trimmed;
         }
         const parts = trimmed.split(" ");
         const command = parts[0].toLowerCase();
         const isSuperAdmin = this.userRepo.isSuperAdmin(senderPhone);
-        if (command === "/help" || command === "/bantuan" || command === "/menu") {
+        if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
             return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
         }
         if (command === "/nama" || command === "/setnama" || command === "/gantinama") {
@@ -98,6 +102,27 @@ export class CommandHandler {
             return {
                 handled: true,
                 responseMessage: "🚫 Nomor `" + targetPhone + "` berhasil diblokir.",
+            };
+        }
+        if (command === "/role" || command === "/setrole" || command === "/ubahrole") {
+            const targetPhone = parts[1]?.replace(/[^0-9]/g, "");
+            const newRole = parts[2]?.toLowerCase();
+            if (!targetPhone || !newRole || !["super_admin", "admin", "member"].includes(newRole)) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/role <nomor> <super_admin|member>`\n\nContoh:\n• `/role 6281234567890 super_admin`\n• `/role 6281234567890 member`",
+                };
+            }
+            const updated = await this.userRepo.setUserRole(targetPhone, newRole);
+            if (!updated) {
+                return {
+                    handled: true,
+                    responseMessage: "⚠️ Pengguna dengan nomor `" + targetPhone + "` tidak ditemukan di database. Pastikan nomor sudah pernah mendaftar/di-approve terlebih dahulu.",
+                };
+            }
+            return {
+                handled: true,
+                responseMessage: "✅ Role untuk *" + (updated.name || targetPhone) + "* (`+" + targetPhone + "`) berhasil diubah menjadi: *" + newRole.toUpperCase() + "*!",
             };
         }
         if (command === "/batal" || command === "/cancel") {

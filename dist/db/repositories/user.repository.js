@@ -78,6 +78,30 @@ export class UserRepository {
         }
         return (data || []);
     }
+    removeSuperAdminIdentifier(identifier) {
+        const cleaned = this.cleanIdentifier(identifier);
+        this.superAdminList = this.superAdminList.filter((id) => id !== cleaned);
+    }
+    async setUserRole(phone, role) {
+        const cleaned = this.cleanIdentifier(phone);
+        const { data, error } = await this.supabase
+            .from("users")
+            .update({ role, updated_at: new Date().toISOString() })
+            .eq("phone_number", cleaned)
+            .select()
+            .maybeSingle();
+        if (error) {
+            logger.error({ error, phone: cleaned, role }, "Failed to update user role");
+            return null;
+        }
+        if (role === "super_admin") {
+            this.addSuperAdminIdentifier(cleaned);
+        }
+        else {
+            this.removeSuperAdminIdentifier(cleaned);
+        }
+        return data;
+    }
     async setUserStatus(phone, status, name) {
         const cleaned = this.cleanIdentifier(phone);
         const updateData = { status, updated_at: new Date().toISOString() };
