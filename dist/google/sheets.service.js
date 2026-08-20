@@ -644,7 +644,7 @@ export class GoogleSheetsService {
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
         const isInc = isIncome(trx);
         const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
-        const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
+        const paymentMethod = trx.payment_method || "-";
         // Row format according to Photo 3 (Columns A:L)
         const rowData = [
             trx.id, // A: ID
@@ -692,7 +692,7 @@ export class GoogleSheetsService {
             const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
             const isInc = isIncome(trx);
             const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
-            const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
+            const paymentMethod = trx.payment_method || "-";
             const updatedRowData = [
                 trx.id, // A: ID
                 nowWIB, // B: Timestamp

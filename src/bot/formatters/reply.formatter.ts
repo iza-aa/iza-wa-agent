@@ -150,7 +150,7 @@ export function formatTransactionDetail(trx: TransactionRecord, items: Transacti
   msg += "👤 *Nama Penginput:* " + trx.user_name + " (`+" + trx.user_phone + "`)\n";
   msg += (isInc ? "💵 *Sumber / Pengirim:* *" : "🏪 *Merchant / Tempat:* *") + trx.merchant + "*\n";
   msg += "🏷️ *Kategori:* " + trx.category + "\n";
-  msg += "💳 *Metode Pembayaran:* " + (trx.payment_method || (isInc ? "Transfer Bank" : "Cash")) + "\n";
+  msg += "💳 *Metode Pembayaran:* " + (trx.payment_method || "-") + "\n";
   msg += "💰 *Nominal:* *" + (isInc ? "+" : "-") + formatRupiah(trx.total_amount) + "*\n";
 
   if (trx.raw_text && trx.raw_text !== "-") {

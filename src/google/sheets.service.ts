@@ -678,7 +678,7 @@ export class GoogleSheetsService {
 
     const isInc = isIncome(trx);
     const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
-    const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
+    const paymentMethod = trx.payment_method || "-";
 
     // Row format according to Photo 3 (Columns A:L)
     const rowData = [
@@ -738,7 +738,7 @@ export class GoogleSheetsService {
       const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
       const isInc = isIncome(trx);
       const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
-      const paymentMethod = trx.payment_method || (isInc ? "Transfer Bank" : "Cash");
+      const paymentMethod = trx.payment_method || "-";
 
       const updatedRowData = [
         trx.id, // A: ID

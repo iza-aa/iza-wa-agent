@@ -188,11 +188,19 @@ export class MessageHandler {
                 await sock.sendMessage(remoteJid, { text: "🎧 *Mendengarkan rekaman suara & memproses transaksi...*" }, { quoted: msg });
                 const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage }));
                 const mimeType = messageContent.audioMessage?.mimetype || "audio/ogg";
-                const { transcription, transaction } = await parseAudioVoiceNote(mediaBuffer, mimeType);
-                if (!transaction || transaction.total_amount <= 0) {
-                    await sock.sendMessage(remoteJid, {
-                        text: "🗣️ *Transkrip Suara:* \"" + (transcription || "(Suara tidak jelas)") + "\"\n\n⚠️ Tidak ditemukan nominal transaksi dalam suara Anda.",
-                    }, { quoted: msg });
+                const audioResult = await parseAudioVoiceNote(mediaBuffer, mimeType);
+                const { transcription, is_complete, clarification_question, transaction } = audioResult;
+                if (!is_complete || !transaction || transaction.total_amount <= 0) {
+                    const reply = clarification_question ||
+                        ("🗣️ *Transkrip Suara:* \"" + (transcription || "(Suara tidak jelas)") + "\"\n\n⚠️ Mohon lengkapi nama barang/sumber, nominal harga, dan metode pembayaran.");
+                    await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+                    await this.chatRepo.logMessage({
+                        user_phone: senderPhone,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: reply,
+                    });
                     return;
                 }
                 const trxId = this.trxRepo.generateTransactionId();

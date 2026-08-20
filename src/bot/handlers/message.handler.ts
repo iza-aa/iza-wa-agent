@@ -238,16 +238,25 @@ export class MessageHandler {
         const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
         const mimeType = messageContent.audioMessage?.mimetype || "audio/ogg";
 
-        const { transcription, transaction } = await parseAudioVoiceNote(mediaBuffer, mimeType);
+        const audioResult = await parseAudioVoiceNote(mediaBuffer, mimeType);
+        const { transcription, is_complete, clarification_question, transaction } = audioResult;
 
-        if (!transaction || transaction.total_amount <= 0) {
+        if (!is_complete || !transaction || transaction.total_amount <= 0) {
+          const reply =
+            clarification_question ||
+            ("🗣️ *Transkrip Suara:* \"" + (transcription || "(Suara tidak jelas)") + "\"\n\n⚠️ Mohon lengkapi nama barang/sumber, nominal harga, dan metode pembayaran.");
           await sock.sendMessage(
             remoteJid,
-            {
-              text: "🗣️ *Transkrip Suara:* \"" + (transcription || "(Suara tidak jelas)") + "\"\n\n⚠️ Tidak ditemukan nominal transaksi dalam suara Anda.",
-            },
+            { text: reply },
             { quoted: msg }
           );
+          await this.chatRepo.logMessage({
+            user_phone: senderPhone,
+            user_name: "Bot",
+            message_type: "text",
+            direction: "outbound",
+            content: reply,
+          });
           return;
         }
 
