@@ -44,6 +44,14 @@ export class MessageHandler {
         const isDocument = !!messageContent.documentMessage;
         const hasMedia = isImage || isAudio || isDocument;
         logger.info({ senderPhone, pushName, hasMedia, isImage, isAudio }, "Processing incoming Baileys message");
+        // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
+        try {
+            await sock.readMessages([msg.key]);
+            await sock.sendPresenceUpdate("composing", remoteJid);
+        }
+        catch (presenceErr) {
+            logger.debug({ presenceErr }, "Presence / Read receipt update non-critical error");
+        }
         // 1. Log chat
         await this.chatRepo.logMessage({
             user_phone: senderPhone,
