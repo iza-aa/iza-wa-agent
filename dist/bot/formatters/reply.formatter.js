@@ -49,7 +49,7 @@ export function formatWalletBalance(wallet) {
     msg += " 🔴 Pengeluaran: " + formatRupiah(wallet.monthExpense) + "\n";
     const netSign = wallet.monthBalance >= 0 ? "+" : "";
     msg += " 🏦 Saldo Bersih Bulan Ini: *" + netSign + formatRupiah(wallet.monthBalance) + "*\n\n";
-    msg += "💡 _Ketik `/pemasukan <nominal> <keterangan>` untuk menambah pemasukan baru._";
+    msg += "💡 _Ketik `/pemasukan <nominal> <keterangan> [metode]` untuk menambah pemasukan baru._\n_(Contoh: `/pemasukan 100000 sumbangan BCA`)_";
     return msg;
 }
 export function formatPendingApprovalNotification(phone, pushName = "User") {
@@ -85,9 +85,10 @@ export function formatHelpMessage(isSuperAdmin) {
     msg += "1. 📸 *Kirim Foto Struk / Bukti Transfer*\n";
     msg += "2. 🎙️ *Kirim Voice Note WA* (contoh: \"Beli bensin 50rb di Pertamina\")\n";
     msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang 25k\" atau \"Pemasukan 5jt gaji\")\n";
-    msg += "4. 💵 *Catat Pemasukan Cepat*: Ketik `/pemasukan <nominal> <keterangan>`\n";
+    msg += "4. 💵 *Catat Pemasukan Cepat*: Ketik `/pemasukan <nominal> <keterangan> [metode]` (contoh: `/pemasukan 100000 sumbangan BCA`)\n";
     msg += "5. 💳 *Cek Saldo Kas Dompet*: Ketik `/saldo` (atau `/dompet`)\n";
-    msg += "6. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n\n";
+    msg += "6. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Ayah`)\n";
+    msg += "7. 🔄 *Sinkronkan Spreadsheet*: Ketik `/sync`\n\n";
     if (isSuperAdmin) {
         msg += "🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
         msg += "👑 *Menu Khusus Super Admin:*\n";
