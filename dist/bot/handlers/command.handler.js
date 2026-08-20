@@ -316,17 +316,26 @@ export class CommandHandler {
             };
         }
         if (command === "/rekap" || command === "/riwayat" || command === "/summary") {
-            const recent = await this.trxRepo.getRecentTransactions(senderPhone, 10);
+            let limit = 10;
+            if (parts[1] && /^\d+$/.test(parts[1])) {
+                limit = Math.min(Math.max(parseInt(parts[1], 10), 1), 50);
+            }
+            const recent = isSuperAdmin
+                ? await this.trxRepo.getAllRecentTransactions(limit)
+                : await this.trxRepo.getRecentTransactions(senderPhone, limit);
             if (recent.length === 0) {
                 return { handled: true, responseMessage: "ℹ️ Belum ada transaksi tercatat." };
             }
-            let summary = "📊 *REKAP 10 TRANSAKSI TERAKHIR*\n\n";
+            let summary = "📊 *REKAP " + recent.length + " TRANSAKSI TERAKHIR*\n\n";
             let total = 0;
             recent.forEach((t, i) => {
                 total += Number(t.total_amount);
-                summary += (i + 1) + ". " + t.date + " - *" + t.merchant + "* (" + t.category + "): " + formatRupiah(t.total_amount) + "\n";
+                summary += (i + 1) + ". 🧾 `" + t.id + "`\n";
+                summary += "   📅 " + t.date + " | 🏪 *" + t.merchant + "* (" + t.category + ")\n";
+                summary += "   💰 *" + formatRupiah(t.total_amount) + "* | 👤 " + t.user_name + "\n\n";
             });
-            summary += "\n💰 *Total:* " + formatRupiah(total);
+            summary += "💰 *Total (" + recent.length + " transaksi):* *" + formatRupiah(total) + "*\n\n";
+            summary += "💡 *Tips:* Ketik `/detail [ID]` untuk melihat rincian barang, atau `/edit [ID] [koreksi]` untuk mengubah.";
             return { handled: true, responseMessage: summary };
         }
         return {

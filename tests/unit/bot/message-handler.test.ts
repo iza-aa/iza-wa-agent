@@ -112,6 +112,26 @@ describe("WhatsApp Bot Handlers", () => {
       expect(mockTrxRepo.getMonthlySummary).toHaveBeenCalledWith("2026-08");
     });
 
+    it("should allow /rekap with custom limit and display transaction IDs", async () => {
+      mockTrxRepo.getAllRecentTransactions = vi.fn().mockResolvedValue([
+        {
+          id: "TRX-20260820-001",
+          date: "2026-08-20",
+          merchant: "Alfamart",
+          category: "Belanja Bulanan",
+          total_amount: 50000,
+          user_name: "Ayah",
+        },
+      ]);
+
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand("6281346367235", "/rekap 5");
+      expect(res.handled).toBe(true);
+      expect(res.responseMessage).toContain("REKAP 1 TRANSAKSI TERAKHIR");
+      expect(res.responseMessage).toContain("TRX-20260820-001");
+      expect(mockTrxRepo.getAllRecentTransactions).toHaveBeenCalledWith(5);
+    });
+
     it("should block non-admin from executing /batal or /laporan", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
       const res = await handler.handleCommand("6281111111111", "/batal");

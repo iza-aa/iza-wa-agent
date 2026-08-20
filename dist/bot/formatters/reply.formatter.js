@@ -69,7 +69,7 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/blokir <nomor>` - Memblokir akses nomor tertentu\n";
         msg += "• `/pengguna` - Melihat seluruh daftar anggota aktif\n";
         msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
-        msg += "• `/rekap` - Melihat riwayat 10 transaksi terakhir\n";
+        msg += "• `/rekap [jumlah]` - Melihat riwayat transaksi + ID transaksi (contoh: `/rekap 5`)\n";
     }
     return msg;
 }

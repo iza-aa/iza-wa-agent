@@ -103,6 +103,20 @@ export class TransactionRepository {
     return (data || []) as TransactionRecord[];
   }
 
+  async getAllRecentTransactions(limit = 10): Promise<TransactionRecord[]> {
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .limit(limit);
+
+    if (error) {
+      logger.error({ error }, "Failed to fetch all recent transactions");
+      return [];
+    }
+    return (data || []) as TransactionRecord[];
+  }
+
   async updateGSheetRow(trxId: string, rowIndex: number): Promise<void> {
     await this.supabase
       .from("transactions")

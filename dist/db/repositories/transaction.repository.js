@@ -59,6 +59,18 @@ export class TransactionRepository {
         }
         return (data || []);
     }
+    async getAllRecentTransactions(limit = 10) {
+        const { data, error } = await this.supabase
+            .from("transactions")
+            .select("*")
+            .order("created_at", { ascending: false })
+            .limit(limit);
+        if (error) {
+            logger.error({ error }, "Failed to fetch all recent transactions");
+            return [];
+        }
+        return (data || []);
+    }
     async updateGSheetRow(trxId, rowIndex) {
         await this.supabase
             .from("transactions")
