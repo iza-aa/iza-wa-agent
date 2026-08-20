@@ -515,6 +515,19 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       },
     },
 
+    // --- Hide Pie Chart source data (J13:K35) by making text white ---
+    {
+      repeatCell: {
+        range: { sheetId: dashSheetId, startRowIndex: 12, endRowIndex: 35, startColumnIndex: 9, endColumnIndex: 11 },
+        cell: {
+          userEnteredFormat: {
+            textFormat: { foregroundColor: { red: 1, green: 1, blue: 1 } },
+          },
+        },
+        fields: "userEnteredFormat(textFormat.foregroundColor)",
+      },
+    },
+
     // Borders for Top Cards
     {
       updateBorders: {
