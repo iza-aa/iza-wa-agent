@@ -102,27 +102,30 @@ export class GoogleSheetsService {
     const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
     const month = !isNaN(dateObj.getMonth()) ? monthNames[dateObj.getMonth()] : "";
 
+    const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+    const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
+
     const itemsSummary = items.length > 0
       ? items.map((it) => it.item_name + " (" + (it.qty || 1) + "x @" + it.price + ")").join(", ")
       : "-";
 
     const rowData = [
-      trx.id,
-      trx.date,
-      year,
-      month,
-      trx.user_name + " (" + trx.user_phone + ")",
-      trx.merchant,
-      trx.category,
-      trx.total_amount,
-      trx.subtotal || trx.total_amount,
-      trx.tax || 0,
-      trx.discount || 0,
-      trx.payment_method || "Cash",
-      trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\", \"Lihat Bukti\")" : "-",
-      itemsSummary,
-      trx.status || "recorded",
-      new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }),
+      trx.id, // A: ID Transaksi
+      nowWIB, // B: Waktu Input
+      trx.date, // C: Tanggal Transaksi
+      trx.user_name, // D: Nama Penginput
+      cleanPhone, // E: Nomor WhatsApp
+      trx.merchant, // F: Nama Merchant / Tempat
+      trx.category, // G: Kategori
+      itemsSummary, // H: Rincian Barang
+      trx.subtotal || trx.total_amount, // I: Subtotal (Rp)
+      trx.tax || 0, // J: Pajak / PB1 (Rp)
+      trx.discount || 0, // K: Diskon (Rp)
+      trx.total_amount, // L: Total Pengeluaran (Rp)
+      trx.payment_method || "Cash", // M: Metode Pembayaran
+      trx.status || "recorded", // N: Status Verifikasi
+      trx.raw_text || "-", // O: Catatan / Raw Text
+      trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\", \"Lihat Foto Struk\")" : "-", // P: Link Bukti / Struk
     ];
 
     const response = await this.sheetsClient.spreadsheets.values.append({
