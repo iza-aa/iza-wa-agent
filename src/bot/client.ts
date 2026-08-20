@@ -103,10 +103,21 @@ export function createWhatsAppBot(): { start: () => Promise<void> } {
       }
     });
 
-    sock.ev.on("messages.upsert", async ({ messages, type }: any) => {
-      if (type !== "notify") return;
-
+    sock.ev.on("messages.upsert", async ({ messages }: any) => {
       for (const msg of messages) {
+        // Skip outgoing messages from bot itself
+        if (msg.key?.fromMe) continue;
+
+        // Skip messages older than 15 minutes to avoid processing ancient history on sync
+        const msgTimestamp = msg.messageTimestamp;
+        if (msgTimestamp) {
+          const msgTime = typeof msgTimestamp === "number" ? msgTimestamp * 1000 : Number(msgTimestamp) * 1000;
+          const ageMs = Date.now() - msgTime;
+          if (ageMs > 15 * 60 * 1000) {
+            continue;
+          }
+        }
+
         try {
           await messageHandler.processIncomingMessage(sock, msg);
         } catch (error) {
