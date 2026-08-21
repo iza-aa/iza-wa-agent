@@ -2,6 +2,7 @@ import { geminiKeyManager } from "../gemini-client.js";
 import { TransactionRecord } from "../../db/repositories/transaction.repository.js";
 import { logger } from "../../utils/logger.js";
 import { parseHumanNominal } from "../../bot/handlers/command.handler.js";
+import { getCanonicalPaymentMethod, CANONICAL_PAYMENT_MAP } from "../../utils/payment-methods.js";
 
 export interface ParsedTransactionEdit {
   merchant?: string;
@@ -22,41 +23,20 @@ export function extractDeterministicEdits(editInstruction: string): ParsedTransa
   const lower = trimmed.toLowerCase();
 
   // 1. Payment Method
-  const methodMap: Record<string, string> = {
-    mandiri: "Mandiri",
-    bca: "BCA",
-    bri: "BRI",
-    bni: "BNI",
-    qris: "QRIS",
-    cash: "Cash",
-    tunai: "Cash",
-    "transfer bank": "Transfer Bank",
-    transfer: "Transfer Bank",
-    tf: "Transfer Bank",
-    debit: "Debit",
-    "kartu kredit": "Kartu Kredit",
-    kredit: "Kartu Kredit",
-  };
-
   const methodRegex = /(?:metode(?:\s+pembayaran)?|pembayaran|bayar(?:\s+(?:via|pakai|lewat))?|via|pakai|lewat|rekening|bank)\s*[:=]?\s*([a-zA-Z0-9\s]+)/i;
   const methodMatch = trimmed.match(methodRegex);
   if (methodMatch) {
-    const rawVal = methodMatch[1].trim().toLowerCase();
-    for (const [key, val] of Object.entries(methodMap)) {
-      if (rawVal.includes(key) || rawVal === key) {
-        result.payment_method = val;
-        break;
-      }
-    }
-    if (!result.payment_method && methodMatch[1].trim()) {
-      result.payment_method = methodMatch[1].trim();
+    const rawVal = methodMatch[1].trim();
+    const canonical = getCanonicalPaymentMethod(rawVal);
+    if (canonical) {
+      result.payment_method = canonical;
+    } else if (rawVal) {
+      result.payment_method = rawVal;
     }
   } else {
-    for (const [key, val] of Object.entries(methodMap)) {
-      if (lower.startsWith(key) || lower.endsWith(key) || lower === key) {
-        result.payment_method = val;
-        break;
-      }
+    const canonicalDirect = getCanonicalPaymentMethod(trimmed);
+    if (canonicalDirect) {
+      result.payment_method = canonicalDirect;
     }
   }
 
@@ -73,17 +53,57 @@ export function extractDeterministicEdits(editInstruction: string): ParsedTransa
     }
   }
 
-  // 3. Category / Kategori
+  // 3. Merchant / Toko (Gap 43)
+  const merchantRegex = /(?:toko|merchant|vendor|tempat|penjual|sumber)\s*[:=]\s*([^,;\n]+)/i;
+  const merchantMatch = trimmed.match(merchantRegex);
+  if (merchantMatch) {
+    const rawMerchant = merchantMatch[1].trim();
+    if (rawMerchant) {
+      result.merchant = rawMerchant;
+    }
+  }
+
+  // 4. Category / Kategori
   const categoryRegex = /(?:kategori|pos)\s*[:=]?\s*([^,;\n]+)/i;
   const categoryMatch = trimmed.match(categoryRegex);
   if (categoryMatch) {
     const raw = categoryMatch[1].trim();
-    if (raw && !/^(metode|tanggal|nominal|total)/i.test(raw)) {
+    if (raw && !/^(metode|tanggal|nominal|total|toko|diskon|pajak|catatan)/i.test(raw)) {
       result.category = raw;
     }
   }
 
-  // 4. Total Amount / Nominal
+  // 5. Notes / Catatan (Gap 43)
+  const notesRegex = /(?:catatan|notes?|ket(?:erangan)?)\s*[:=]\s*([^,;\n]+)/i;
+  const notesMatch = trimmed.match(notesRegex);
+  if (notesMatch) {
+    const rawNotes = notesMatch[1].trim();
+    if (rawNotes) {
+      result.raw_text = rawNotes;
+    }
+  }
+
+  // 6. Diskon (Gap 7)
+  const diskonRegex = /(?:diskon|potongan|discount)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.,]+(?:\s*(?:rb|ribu|k|jt|juta))?)/i;
+  const diskonMatch = trimmed.match(diskonRegex);
+  if (diskonMatch) {
+    const parsedDiskon = parseHumanNominal(diskonMatch[1]);
+    if (parsedDiskon >= 0) {
+      result.discount = parsedDiskon;
+    }
+  }
+
+  // 7. Pajak / Tax (Gap 7)
+  const taxRegex = /(?:pajak|tax|ppn)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.,]+(?:\s*(?:rb|ribu|k|jt|juta))?)/i;
+  const taxMatch = trimmed.match(taxRegex);
+  if (taxMatch) {
+    const parsedTax = parseHumanNominal(taxMatch[1]);
+    if (parsedTax >= 0) {
+      result.tax = parsedTax;
+    }
+  }
+
+  // 8. Total Amount / Nominal
   const nominalRegex = /(?:nominal|total|harga|jumlah|sebesar|ganti)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.,]+(?:\s*(?:rb|ribu|k|jt|juta|milyar))?)/i;
   const nominalMatch = trimmed.match(nominalRegex);
   if (nominalMatch) {

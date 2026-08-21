@@ -1,6 +1,7 @@
 import { geminiKeyManager } from "../gemini-client.js";
 import { ExtractedTransaction, ExtractedTransactionSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
+import { normalizeDateToIso } from "../../google/sheets.service.js";
 
 export interface AudioAnalysisResult {
   transcription: string;
@@ -53,9 +54,9 @@ Format JSON output wajib:
   "is_complete": true,
   "clarification_question": "Pertanyaan jika ada info yang kurang (opsional)",
   "transaction": {
-    "merchant": "Nama toko / tempat / jenis barang",
+    "merchant": "Nama toko / tempat / jenis barang / sumber pemasukan",
     "date": "${new Date().toISOString().slice(0, 10)}",
-    "category": "Makanan & Minuman | Belanja Bulanan | Transportasi & Bensin | Tagihan & Utilitas | Kesehatan & Obat | Pendidikan | Hiburan & Rekreasi | Operasional Kantor | Lain-lain",
+    "category": "Pemasukan: Gaji | Pemasukan: Transfer Masuk | Pemasukan: Penjualan | Pemasukan: Top Up Kas | Pemasukan: Lain-lain | Makanan & Minuman | Belanja Bulanan | Transportasi & Bensin | Tagihan & Utilitas | Kesehatan & Obat | Pendidikan | Hiburan & Rekreasi | Operasional Kantor | Lain-lain",
     "subtotal": 0,
     "tax": 0,
     "discount": 0,
@@ -109,7 +110,7 @@ Format JSON output wajib:
 
       const rawTrx = parsed.transaction;
       const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-      let finalDate = rawTrx.date || todayStr;
+      let finalDate = normalizeDateToIso(rawTrx.date || todayStr);
       if (finalDate.startsWith("2023") || finalDate.startsWith("2024") || finalDate.startsWith("2025")) {
         finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
       }

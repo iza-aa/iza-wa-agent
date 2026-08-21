@@ -2,6 +2,7 @@ import { google } from "googleapis";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { isIncome } from "../db/repositories/transaction.repository.js";
+import { normalizePhoneNumber } from "../utils/phone.utils.js";
 export function normalizeDateToIso(rawDate) {
     if (!rawDate)
         return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
@@ -811,7 +812,7 @@ export class GoogleSheetsService {
         }
     }
     async appendTransaction(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
-        const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+        const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
         const isInc = isIncome(trx);
         const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
@@ -819,7 +820,7 @@ export class GoogleSheetsService {
         // Row format according to Photo 3 (Columns A:L)
         const rowData = [
             trx.id, // A: ID
-            nowWIB, // B: Timestamp
+            nowWITA, // B: Timestamp
             trx.date, // C: Tanggal
             typeLabel, // D: Jenis (Pemasukan / Pengeluaran)
             trx.category, // E: Kategori
@@ -935,13 +936,13 @@ export class GoogleSheetsService {
             }
             const sheetRowNumber = rowIndex + 1;
             const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
-            const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
+            const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
             const isInc = isIncome(trx);
             const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
             const paymentMethod = trx.payment_method || "-";
             const updatedRowData = [
                 trx.id, // A: ID
-                nowWIB, // B: Timestamp
+                nowWITA, // B: Timestamp
                 trx.date, // C: Tanggal
                 typeLabel, // D: Jenis
                 trx.category, // E: Kategori
@@ -1058,7 +1059,7 @@ export class GoogleSheetsService {
             const nominal = parseInt(rawNominal, 10) || 0;
             const paymentMethod = r[7]?.toString().trim() || "-";
             const fallbackPhone = Array.isArray(config.SUPER_ADMIN_PHONE) ? config.SUPER_ADMIN_PHONE[0] : config.SUPER_ADMIN_PHONE;
-            const userPhone = (r[8]?.toString().replace(/[^0-9]/g, "")) || fallbackPhone;
+            const userPhone = normalizePhoneNumber(r[8]?.toString() || fallbackPhone) || fallbackPhone;
             const userName = r[9]?.toString().trim() || "User";
             const rawText = r[11]?.toString().trim() || "Input Manual Spreadsheet";
             await trxRepo.createTransaction({

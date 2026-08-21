@@ -247,16 +247,20 @@ export class TransactionRepository {
       .eq("id", trxId);
   }
 
-  async getLatestTransaction(): Promise<TransactionRecord | null> {
-    const { data, error } = await this.supabase
+  async getLatestTransaction(userPhone?: string): Promise<TransactionRecord | null> {
+    let query = this.supabase
       .from("transactions")
       .select("*")
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order("created_at", { ascending: false });
+
+    if (userPhone) {
+      query = query.eq("user_phone", userPhone);
+    }
+
+    const { data, error } = await query.limit(1).maybeSingle();
 
     if (error) {
-      logger.error({ error }, "Failed to fetch latest transaction");
+      logger.error({ error, userPhone }, "Failed to fetch latest transaction");
       return null;
     }
     return data as TransactionRecord | null;
@@ -409,11 +413,17 @@ export class TransactionRepository {
     byUser: { [user: string]: number };
     topTransactions: TransactionRecord[];
   }> {
+    let normalizedYearMonth = yearMonth;
+    const parts = yearMonth.split("-");
+    if (parts.length === 2) {
+      normalizedYearMonth = `${parts[0]}-${parts[1].padStart(2, "0")}`;
+    }
+
     const { data, error } = await this.supabase
       .from("transactions")
       .select("*")
-      .gte("date", `${yearMonth}-01`)
-      .lte("date", `${yearMonth}-31`)
+      .gte("date", `${normalizedYearMonth}-01`)
+      .lte("date", `${normalizedYearMonth}-31`)
       .order("total_amount", { ascending: false });
 
     if (error || !data) {
@@ -629,15 +639,16 @@ export class TransactionRepository {
 
     let results = data as TransactionRecord[];
 
-    // If keyword filter is provided, do fuzzy match across merchant, category, raw_text, and payment_method
+    // If keyword filter is provided, do fuzzy match across id, merchant, category, raw_text, and payment_method
     if (filters.keyword) {
       const kw = filters.keyword.toLowerCase().trim();
       results = results.filter((t) => {
+        const id = (t.id || "").toLowerCase();
         const m = (t.merchant || "").toLowerCase();
         const c = (t.category || "").toLowerCase();
         const r = (t.raw_text || "").toLowerCase();
         const p = (t.payment_method || "").toLowerCase();
-        return m.includes(kw) || c.includes(kw) || r.includes(kw) || p.includes(kw);
+        return id.includes(kw) || m.includes(kw) || c.includes(kw) || r.includes(kw) || p.includes(kw);
       });
     }
 

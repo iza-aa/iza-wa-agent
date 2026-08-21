@@ -7,6 +7,57 @@ import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
 import { config } from "../../config/env.js";
 import { logger } from "../../utils/logger.js";
+import { getCanonicalPaymentMethod, CANONICAL_PAYMENT_MAP } from "../../utils/payment-methods.js";
+import { normalizePhoneNumber } from "../../utils/phone.utils.js";
+export function parseIndonesianMonth(raw) {
+    const now = new Date();
+    const currentMakassar = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now);
+    const currentYear = currentMakassar.slice(0, 4);
+    const currentYearMonth = currentMakassar.slice(0, 7);
+    if (!raw)
+        return currentYearMonth;
+    const clean = raw.toLowerCase().trim();
+    // If format is already YYYY-MM
+    if (/^\d{4}-\d{2}$/.test(clean))
+        return clean;
+    // If single or double digit month (1..12)
+    if (/^\d{1,2}$/.test(clean)) {
+        const num = parseInt(clean, 10);
+        if (num >= 1 && num <= 12) {
+            return `${currentYear}-${clean.padStart(2, "0")}`;
+        }
+    }
+    // Relative keywords
+    if (clean === "bulan ini" || clean === "this month" || clean === "sekarang") {
+        return currentYearMonth;
+    }
+    if (clean === "bulan lalu" || clean === "last month" || clean === "kemarin") {
+        const currentMonthIdx = parseInt(currentMakassar.slice(5, 7), 10) - 1;
+        const prevDate = new Date(parseInt(currentYear, 10), currentMonthIdx - 1, 1);
+        return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(prevDate).slice(0, 7);
+    }
+    // Month names
+    const monthMap = {
+        januari: "01", jan: "01",
+        februari: "02", feb: "02",
+        maret: "03", mar: "03",
+        april: "04", apr: "04",
+        mei: "05", may: "05",
+        juni: "06", jun: "06",
+        juli: "07", jul: "07",
+        agustus: "08", agu: "08", ags: "08",
+        september: "09", sep: "09",
+        oktober: "10", okt: "10", oct: "10",
+        november: "11", nov: "11",
+        desember: "12", des: "12", dec: "12",
+    };
+    for (const [name, mm] of Object.entries(monthMap)) {
+        if (clean.includes(name)) {
+            return `${currentYear}-${mm}`;
+        }
+    }
+    return currentYearMonth;
+}
 export class CommandHandler {
     userRepo;
     trxRepo;
@@ -26,7 +77,12 @@ export class CommandHandler {
         const parts = trimmed.split(" ");
         const command = parts[0].toLowerCase();
         const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
-        if (command === "/help" || command === "/bantuan" || command === "/menu" || command === "/panduan") {
+        if (command === "/help" ||
+            command === "/bantuan" ||
+            command === "/menu" ||
+            command === "/panduan" ||
+            command === "/start" ||
+            command === "/info") {
             return { handled: true, responseMessage: formatHelpMessage(isSuperAdmin) };
         }
         if (command === "/saldo" || command === "/dompet" || command === "/kas" || command === "/balance") {
@@ -36,13 +92,26 @@ export class CommandHandler {
                     responseMessage: "⚠️ Perintah `/saldo` hanya dapat diakses oleh Super Admin untuk menjaga privasi data keuangan.",
                 };
             }
-            const subArg = parts[1]?.trim().toLowerCase();
+            const subArg = parts.slice(1).join(" ").trim().toLowerCase();
             if (subArg) {
+                // Gap 35: Detect if user is asking about historical balance or period
+                if (subArg.includes("bulan lalu") ||
+                    subArg.includes("kemarin") ||
+                    subArg.includes("last month") ||
+                    /^(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|\d{4}-\d{2})$/i.test(subArg)) {
+                    const targetMonth = parseIndonesianMonth(subArg);
+                    return {
+                        handled: true,
+                        responseMessage: `ℹ️ Untuk melihat laporan dan analisis arus kas periode *${subArg}*, silakan gunakan perintah:\n\`/laporan ${targetMonth}\`\n\n💡 Perintah \`/saldo\` khusus untuk mengecek sisa kas dompet riil saat ini secara real-time.`,
+                    };
+                }
                 const multi = await this.trxRepo.getMultiPocketBalances();
                 if (subArg === "detail" || subArg === "rincian" || subArg === "semua" || subArg === "all") {
                     return { handled: true, responseMessage: formatMultiPocketBalance(multi) };
                 }
-                return { handled: true, responseMessage: formatMultiPocketBalance(multi, parts[1]) };
+                // Gap 19: Check for canonical pocket alias (e.g. spay -> ShopeePay)
+                const canonical = getCanonicalPaymentMethod(subArg) || subArg;
+                return { handled: true, responseMessage: formatMultiPocketBalance(multi, canonical) };
             }
             const wallet = await this.trxRepo.getWalletBalance();
             return { handled: true, responseMessage: formatWalletBalance(wallet) };
@@ -54,16 +123,82 @@ export class CommandHandler {
                     responseMessage: "⚠️ Perintah `/transfer` hanya dapat diakses oleh Super Admin.",
                 };
             }
-            // Format: /transfer <dari> <ke> <nominal> [keterangan]
-            // Contoh: /transfer bca cash 500000 Tarik tunai ATM
-            const fromPocket = parts[1]?.trim();
-            const toPocket = parts[2]?.trim();
-            const nominal = parseHumanNominal(parts[3] || "");
-            const notes = parts.slice(4).join(" ").trim() || "Mutasi Kas";
-            if (!fromPocket || !toPocket || !nominal || isNaN(nominal) || nominal <= 0) {
+            // Syntax support:
+            // 1. /transfer bca cash 500rb [keterangan]
+            // 2. /transfer dari bca ke cash 500rb [keterangan]
+            // 3. /transfer 500rb mandiri cash [keterangan]
+            // 4. /transfer dari mandiri ke cash 1.5jt Tarik tunai penjualan
+            const rawArgs = parts.slice(1);
+            if (rawArgs.length < 3) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan:\n`/transfer <dari_kantong> <ke_kantong> <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/transfer bca cash 500000 Tarik tunai ATM`\n• `/transfer cash mandiri 1jt Setor tunai penjualan`\n• `/transfer mandiri bca 250rb Pindah saldo antar bank`",
+                    responseMessage: "❌ Format salah. Gunakan:\n`/transfer <dari_kantong> <ke_kantong> <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/transfer bca cash 500000 Tarik tunai ATM`\n• `/transfer dari mandiri ke cash 1.5jt Tarik tunai`\n• `/transfer 500rb mandiri cash Pindah buku`",
+                };
+            }
+            // Find nominal token
+            let nominal = 0;
+            let nominalIdx = -1;
+            for (let i = 0; i < rawArgs.length; i++) {
+                const token = rawArgs[i];
+                const parsed = parseHumanNominal(token);
+                if (parsed > 0 && (/^rp\.?\s*[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)?$/i.test(token) || /[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)/i.test(token) || /^\d{4,}$/.test(token))) {
+                    nominal = parsed;
+                    nominalIdx = i;
+                    break;
+                }
+            }
+            if (nominal <= 0 && rawArgs.length >= 3) {
+                // Fallback: check 3rd arg or 1st arg
+                const candidate1 = parseHumanNominal(rawArgs[0]);
+                const candidate3 = parseHumanNominal(rawArgs[2]);
+                if (candidate1 > 0) {
+                    nominal = candidate1;
+                    nominalIdx = 0;
+                }
+                else if (candidate3 > 0) {
+                    nominal = candidate3;
+                    nominalIdx = 2;
+                }
+            }
+            if (nominal <= 0 || nominalIdx === -1) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Nominal mutasi tidak valid. Contoh: `500000`, `500rb`, `1.5jt`.",
+                };
+            }
+            // Remaining tokens without the nominal
+            const nonNominalTokens = rawArgs.filter((_, idx) => idx !== nominalIdx);
+            // Clean leading/trailing "dari" and "ke" around pocket names
+            let fromPocketRaw = "";
+            let toPocketRaw = "";
+            let notesParts = [];
+            let tokenIndex = 0;
+            if (nonNominalTokens[tokenIndex]?.toLowerCase() === "dari") {
+                tokenIndex++;
+            }
+            fromPocketRaw = nonNominalTokens[tokenIndex] || "";
+            tokenIndex++;
+            if (nonNominalTokens[tokenIndex]?.toLowerCase() === "ke") {
+                tokenIndex++;
+            }
+            toPocketRaw = nonNominalTokens[tokenIndex] || "";
+            tokenIndex++;
+            notesParts = nonNominalTokens.slice(tokenIndex);
+            const notes = notesParts.join(" ").trim() || "Mutasi Kas";
+            // Gap 42: Resolve canonical pocket names
+            const fromPocket = getCanonicalPaymentMethod(fromPocketRaw) || fromPocketRaw;
+            const toPocket = getCanonicalPaymentMethod(toPocketRaw) || toPocketRaw;
+            if (!fromPocket || !toPocket) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Nama kantong asal dan tujuan wajib diisi.\nContoh: `/transfer mandiri cash 500rb`",
+                };
+            }
+            // Gap 9: Validate same pocket transfer
+            if (fromPocket.toLowerCase() === toPocket.toLowerCase()) {
+                return {
+                    handled: true,
+                    responseMessage: `⚠️ Kantong asal dan tujuan tidak boleh sama (*${fromPocket}*). Silakan pilih kantong tujuan yang berbeda.`,
                 };
             }
             const user = await this.userRepo.getUser(senderPhone);
@@ -76,31 +211,30 @@ export class CommandHandler {
                 user_phone: senderPhone,
                 user_name: userName,
                 date: today,
-                merchant: `Mutasi Keluar -> ${toPocket.toUpperCase()}`,
+                merchant: `Mutasi Keluar -> ${toPocket}`,
                 category: "Mutasi Kas: Keluar",
                 subtotal: nominal,
                 tax: 0,
                 discount: 0,
                 total_amount: nominal,
-                payment_method: fromPocket.toUpperCase(),
+                payment_method: fromPocket,
                 raw_text: trimmed,
                 status: "expense",
             });
             // 2. Catat Pemasukan ke Kantong Tujuan (Mutasi Masuk)
-            // Slight delay to ensure sequential ID
             const inTrxId = await this.trxRepo.generateTransactionId(today);
             await this.trxRepo.createTransaction({
                 id: inTrxId,
                 user_phone: senderPhone,
                 user_name: userName,
                 date: today,
-                merchant: `Mutasi Masuk <- ${fromPocket.toUpperCase()}`,
+                merchant: `Mutasi Masuk <- ${fromPocket}`,
                 category: "Pemasukan: Mutasi Kas",
                 subtotal: nominal,
                 tax: 0,
                 discount: 0,
                 total_amount: nominal,
-                payment_method: toPocket.toUpperCase(),
+                payment_method: toPocket,
                 raw_text: trimmed,
                 status: "income",
             });
@@ -111,13 +245,13 @@ export class CommandHandler {
                     user_phone: senderPhone,
                     user_name: userName,
                     date: today,
-                    merchant: `Mutasi Keluar -> ${toPocket.toUpperCase()} (${notes})`,
+                    merchant: `Mutasi Keluar -> ${toPocket} (${notes})`,
                     category: "Mutasi Kas: Keluar",
                     subtotal: nominal,
                     tax: 0,
                     discount: 0,
                     total_amount: nominal,
-                    payment_method: fromPocket.toUpperCase(),
+                    payment_method: fromPocket,
                     status: "expense",
                     raw_text: trimmed,
                 });
@@ -126,13 +260,13 @@ export class CommandHandler {
                     user_phone: senderPhone,
                     user_name: userName,
                     date: today,
-                    merchant: `Mutasi Masuk <- ${fromPocket.toUpperCase()} (${notes})`,
+                    merchant: `Mutasi Masuk <- ${fromPocket} (${notes})`,
                     category: "Pemasukan: Mutasi Kas",
                     subtotal: nominal,
                     tax: 0,
                     discount: 0,
                     total_amount: nominal,
-                    payment_method: toPocket.toUpperCase(),
+                    payment_method: toPocket,
                     status: "income",
                     raw_text: trimmed,
                 });
@@ -143,7 +277,7 @@ export class CommandHandler {
             const wallet = await this.trxRepo.getWalletBalance();
             return {
                 handled: true,
-                responseMessage: formatTransferSuccess(fromPocket.toUpperCase(), toPocket.toUpperCase(), nominal, notes, wallet.balance),
+                responseMessage: formatTransferSuccess(fromPocket, toPocket, nominal, notes, wallet.balance),
             };
         }
         if (command === "/rekapmalam" || command === "/kirimrekap" || command === "/rekapmanual") {
@@ -153,7 +287,16 @@ export class CommandHandler {
                     responseMessage: "⚠️ Perintah ini hanya dapat diakses oleh Super Admin.",
                 };
             }
-            const targetDate = parts[1] || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+            let targetDate = parts[1]?.trim().toLowerCase();
+            if (!targetDate || targetDate === "hari ini" || targetDate === "today") {
+                targetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+            }
+            else if (targetDate === "kemarin" || targetDate === "yesterday") {
+                // Gap 18: Support yesterday in /rekapmalam
+                const now = new Date();
+                now.setDate(now.getDate() - 1);
+                targetDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now);
+            }
             const dailySummary = await this.trxRepo.getDailyTransactionsSummary(targetDate);
             const wallet = await this.trxRepo.getWalletBalance();
             return {
@@ -162,44 +305,57 @@ export class CommandHandler {
             };
         }
         if (command === "/pemasukan" || command === "/masuk" || command === "/income" || command === "/tambahsaldo") {
-            const rawNominal = parts[1] || "";
-            const nominal = parseHumanNominal(rawNominal);
-            const keterangan = parts.slice(2).join(" ").trim() || "Pemasukan Kas";
-            if (!nominal || isNaN(nominal) || nominal <= 0) {
+            // Gap 40: Support flexible nominal position (e.g. /pemasukan 5jt Gaji or /pemasukan Gaji Bulanan 5jt Mandiri)
+            const rawArgs = parts.slice(1);
+            if (rawArgs.length === 0) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan] [metode]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5jt Gaji Bulanan Mandiri`\n• `/pemasukan 500rb Transfer Masuk BCA`\n• `/pemasukan 250000 Penjualan Cash`",
+                    responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan] [metode]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5jt Gaji Bulanan Mandiri`\n• `/pemasukan Gaji 500rb BCA`\n• `/pemasukan 250000 Penjualan Cash`",
                 };
             }
-            // Detect payment method from the full remaining text
-            const lowerText = keterangan.toLowerCase();
-            const methodKeywords = {
-                cash: "Cash", tunai: "Cash", kas: "Cash",
-                mandiri: "Mandiri", bca: "BCA", bri: "BRI", bni: "BNI", bsi: "BSI",
-                qris: "QRIS", gopay: "GoPay", ovo: "OVO", dana: "DANA",
-                shopeepay: "ShopeePay", "shopee pay": "ShopeePay",
-                transfer: "Transfer Bank", tf: "Transfer Bank",
-                debit: "Debit", kredit: "Kredit",
-            };
-            let detectedMethod = null;
-            for (const [keyword, method] of Object.entries(methodKeywords)) {
-                if (lowerText.includes(keyword)) {
-                    detectedMethod = method;
+            // Scan for nominal
+            let nominal = 0;
+            let nominalIdx = -1;
+            for (let i = 0; i < rawArgs.length; i++) {
+                const token = rawArgs[i];
+                const parsed = parseHumanNominal(token);
+                if (parsed > 0 && (/^rp\.?\s*[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)?$/i.test(token) || /[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)/i.test(token) || /^\d{4,}$/.test(token))) {
+                    nominal = parsed;
+                    nominalIdx = i;
                     break;
                 }
             }
+            if (nominal <= 0 && rawArgs.length > 0) {
+                // Try parsing first token directly
+                const firstParsed = parseHumanNominal(rawArgs[0]);
+                if (firstParsed > 0) {
+                    nominal = firstParsed;
+                    nominalIdx = 0;
+                }
+            }
+            if (nominal <= 0) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Nominal pemasukan tidak valid. Gunakan contoh:\n• `/pemasukan 5jt Gaji Bulanan Mandiri`\n• `/pemasukan 500rb Transfer Masuk BCA`",
+                };
+            }
+            const nonNominalTokens = rawArgs.filter((_, idx) => idx !== nominalIdx);
+            const remainingText = nonNominalTokens.join(" ").trim() || "Pemasukan Kas";
+            // Gap 6: Detect payment method using canonical payment dictionary
+            let detectedMethod = getCanonicalPaymentMethod(remainingText);
             // If no payment method detected, ask the user
             if (!detectedMethod) {
                 const formatRp = new Intl.NumberFormat("id-ID").format(nominal);
                 return {
                     handled: true,
-                    responseMessage: "✅ Pemasukan *Rp" + formatRp + "* untuk *" + keterangan + "* dicatat sementara.\n\nMohon info, pemasukan ini melalui metode apa ya?\n_(Contoh: Cash, Transfer BCA, Mandiri, BRI, atau QRIS)_\n\n💡 Atau ketik langsung:\n`/pemasukan " + nominal + " " + keterangan + " Cash`",
+                    responseMessage: "✅ Pemasukan *Rp" + formatRp + "* untuk *" + remainingText + "* dicatat sementara.\n\nMohon info, pemasukan ini melalui metode apa ya?\n_(Contoh: Cash, Transfer BCA, Mandiri, BRI, QRIS, ShopeePay)_\n\n💡 Atau ketik langsung:\n`/pemasukan " + nominal + " " + remainingText + " Cash`",
                 };
             }
-            // Remove the method keyword from keterangan for cleaner display
-            let cleanKeterangan = keterangan;
-            for (const keyword of Object.keys(methodKeywords)) {
-                cleanKeterangan = cleanKeterangan.replace(new RegExp("\\b" + keyword + "\\b", "gi"), "").trim();
+            // Clean the detected method keyword from description
+            let cleanKeterangan = remainingText;
+            const sortedKeys = Object.keys(CANONICAL_PAYMENT_MAP).sort((a, b) => b.length - a.length);
+            for (const keyword of sortedKeys) {
+                cleanKeterangan = cleanKeterangan.replace(new RegExp(`\\b${keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "gi"), "").trim();
             }
             cleanKeterangan = cleanKeterangan || "Pemasukan Kas";
             const user = await this.userRepo.getUser(senderPhone);
@@ -212,7 +368,7 @@ export class CommandHandler {
                 category = "Pemasukan: Gaji";
             else if (lowerKet.includes("transfer") || lowerKet.includes("tf"))
                 category = "Pemasukan: Transfer Masuk";
-            else if (lowerKet.includes("jual") || lowerKet.includes("proyek") || lowerKet.includes("order"))
+            else if (lowerKet.includes("jual") || lowerKet.includes("proyek") || lowerKet.includes("order") || lowerKet.includes("kopi"))
                 category = "Pemasukan: Penjualan";
             else if (lowerKet.includes("top up") || lowerKet.includes("kas"))
                 category = "Pemasukan: Top Up Kas";
@@ -243,6 +399,42 @@ export class CommandHandler {
             const reply = formatTransactionSuccess(transactionRecord, [], isSuperAdmin, wallet.balance);
             return { handled: true, responseMessage: reply };
         }
+        // Gap 1: /cari and /search
+        if (command === "/cari" || command === "/search" || command === "/find") {
+            const kw = parts.slice(1).join(" ").trim();
+            if (!kw) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/cari <kata kunci>`\nContoh:\n• `/cari bensin`\n• `/cari indomaret`\n• `/cari H054`",
+                };
+            }
+            const results = await this.trxRepo.searchTransactions({
+                keyword: kw,
+                userPhone: isSuperAdmin ? undefined : senderPhone,
+                limit: 15,
+            });
+            if (results.length === 0) {
+                return {
+                    handled: true,
+                    responseMessage: `ℹ️ Tidak ditemukan transaksi dengan kata kunci: *"${kw}"*.\n\nKetik \`/rekap\` untuk melihat daftar transaksi terkini.`,
+                };
+            }
+            let reply = `🔍 *HASIL PENCARIAN: "${kw}" (${results.length} transaksi)*\n\n`;
+            let totalAmount = 0;
+            results.forEach((t, i) => {
+                const isInc = isIncome(t);
+                const sign = isInc ? "🟢 [+]" : "🔴 [-]";
+                const shortCode = t.id.includes("-") ? t.id.split("-").slice(1).join("") : t.id;
+                totalAmount += Number(t.total_amount);
+                reply += `${i + 1}. ${sign} \`${t.id}\` (• ${shortCode})\n`;
+                reply += `   📅 ${t.date} | *${t.merchant}* (${t.category})\n`;
+                reply += `   💰 *${isInc ? "+" : "-"}${formatRupiah(t.total_amount)}* | 👤 ${t.user_name}\n\n`;
+            });
+            reply += `────────────────────────\n`;
+            reply += `💰 *Total Akumulasi:* *${formatRupiah(totalAmount)}*\n\n`;
+            reply += `💡 _Ketik \`/detail <ID>\` untuk melihat rincian nota lengkap._`;
+            return { handled: true, responseMessage: reply };
+        }
         if (command === "/link" || command === "/sheet" || command === "/drive" || command === "/spreadsheet" || command === "/dasbor") {
             if (!isSuperAdmin) {
                 return {
@@ -259,17 +451,12 @@ export class CommandHandler {
             return { handled: true, responseMessage: msg };
         }
         if (command === "/detail" || command === "/rincian" || command === "/lihat") {
-            if (!isSuperAdmin) {
-                return {
-                    handled: true,
-                    responseMessage: "⚠️ Perintah `/detail` hanya dapat diakses oleh Super Admin.",
-                };
-            }
             const targetId = parts[1]?.trim();
             if (!targetId) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/detail <ID_TRANSAKSI>`\nContoh: `/detail TRX-20260820-LX8Y`",
+                    // Gap 29: Use short ID example format
+                    responseMessage: "❌ Format salah. Gunakan: `/detail <ID_TRANSAKSI>`\nContoh: `/detail H054` atau `/detail T026-H054`",
                 };
             }
             const data = await this.trxRepo.getTransactionWithItems(targetId);
@@ -277,6 +464,13 @@ export class CommandHandler {
                 return {
                     handled: true,
                     responseMessage: "⚠️ Transaksi dengan ID `" + targetId + "` tidak ditemukan di database.",
+                };
+            }
+            // Gap 3: Allow member to view their own transaction
+            if (!isSuperAdmin && data.trx.user_phone !== senderPhone) {
+                return {
+                    handled: true,
+                    responseMessage: "⚠️ Anda hanya dapat melihat rincian nota transaksi yang Anda input sendiri.",
                 };
             }
             return {
@@ -320,6 +514,26 @@ export class CommandHandler {
                     : "✅ Nama Anda berhasil diubah menjadi: *" + newName + "*\nSemua transaksi Anda selanjutnya akan dicatat atas nama ini di Google Sheets & Google Drive.",
             };
         }
+        if (command === "/batal" || command === "/batalkan" || command === "/cancel") {
+            // Gap 4: Scoped cancellation for non-superadmin to avoid deleting other users' transactions
+            const latest = isSuperAdmin
+                ? await this.trxRepo.getLatestTransaction()
+                : await this.trxRepo.getLatestTransaction(senderPhone);
+            if (!latest) {
+                return { handled: true, responseMessage: "ℹ️ Tidak ada transaksi terakhir yang dapat dibatalkan." };
+            }
+            await this.trxRepo.deleteTransaction(latest.id);
+            try {
+                await googleSheetsService.deleteTransactionRow(latest.id);
+            }
+            catch (sheetErr) {
+                logger.error({ sheetErr }, "Failed to delete row from Google Sheet");
+            }
+            return {
+                handled: true,
+                responseMessage: formatDeletedTransaction(latest),
+            };
+        }
         if (!isSuperAdmin) {
             return {
                 handled: true,
@@ -332,7 +546,8 @@ export class CommandHandler {
             if (!targetId || !editInstruction) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/edit <ID_TRX> <koreksi>`\n\n*Contoh Penggunaan:*\n• `/edit TRX-20260820-LX8Y 50000` (ubah total)\n• `/edit TRX-20260820-LX8Y toko: Indomaret, total: 45000`\n• `/edit TRX-20260820-LX8Y ganti tanggal 2026-08-19 dan kategori Makanan`",
+                    // Gap 30: Use short ID example format
+                    responseMessage: "❌ Format salah. Gunakan: `/edit <ID_TRX> <koreksi>`\n\n*Contoh Penggunaan:*\n• `/edit H054 50000` (ubah total)\n• `/edit H054 toko: Indomaret, total: 45000`\n• `/edit H054 ganti tanggal 2026-08-19 dan kategori Makanan`",
                 };
             }
             const existing = await this.trxRepo.getTransactionWithItems(targetId);
@@ -428,7 +643,15 @@ export class CommandHandler {
                 responseMessage: formatTransactionUpdated(updatedTrx, changedFields),
             };
         }
-        if (command === "/pengguna" || command === "/anggota" || command === "/daftar" || command === "/users" || command === "/user") {
+        // Gap 34: Additional team/user list aliases
+        if (command === "/pengguna" ||
+            command === "/anggota" ||
+            command === "/daftar" ||
+            command === "/users" ||
+            command === "/user" ||
+            command === "/tim" ||
+            command === "/listuser" ||
+            command === "/listpengguna") {
             if (!isSuperAdmin) {
                 return {
                     handled: true,
@@ -444,15 +667,11 @@ export class CommandHandler {
             let targetPhone = "";
             let userName = "Anggota";
             if (match) {
-                targetPhone = match[1].replace(/[^0-9]/g, "");
-                if (targetPhone.startsWith("0"))
-                    targetPhone = "62" + targetPhone.slice(1);
+                targetPhone = normalizePhoneNumber(match[1]);
                 userName = match[2].trim() || "Anggota";
             }
             else {
-                targetPhone = (parts[1] || "").replace(/[^0-9]/g, "");
-                if (targetPhone.startsWith("0"))
-                    targetPhone = "62" + targetPhone.slice(1);
+                targetPhone = normalizePhoneNumber(parts[1] || "");
                 userName = parts.slice(2).join(" ") || "Anggota";
             }
             if (!targetPhone || targetPhone.length < 8) {
@@ -483,6 +702,22 @@ export class CommandHandler {
                 responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai *" + roleLabel + "*!",
             };
         }
+        // Gap 31: Unblock user command (/aktifkan & /unblock)
+        if (command === "/aktifkan" || command === "/unblock" || command === "/buka" || command === "/bukablokir") {
+            const target = trimmed.substring(command.length).trim();
+            if (!target || target.length < 2) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/aktifkan <nomor_hp_atau_nama>`\nContoh:\n• `/aktifkan 083801408811`\n• `/aktifkan alfi`",
+                };
+            }
+            const res = await this.userRepo.setUserStatus(target, "active");
+            const affectedNames = res.affectedUsers.map((u) => `• *${u.name}* (\`+${u.phone_number}\`)`).join("\n");
+            return {
+                handled: true,
+                responseMessage: `✅ *PEMBUKAAN BLOKIR BERHASIL!*\n\n${res.affectedUsers.length} pengguna telah diaktifkan kembali ke sistem:\n${affectedNames || `• Target: ${target}`}\n\nPengguna di atas kini dapat mengirim transaksi ke bot.`,
+            };
+        }
         if (command === "/blokir" || command === "/block") {
             const target = trimmed.substring(command.length).trim();
             if (!target || target.length < 2) {
@@ -504,15 +739,11 @@ export class CommandHandler {
             let targetPhone = "";
             let rawRole = "";
             if (match) {
-                targetPhone = match[1].replace(/[^0-9]/g, "");
-                if (targetPhone.startsWith("0"))
-                    targetPhone = "62" + targetPhone.slice(1);
+                targetPhone = normalizePhoneNumber(match[1]);
                 rawRole = match[2].trim().toLowerCase();
             }
             else {
-                targetPhone = (parts[1] || "").replace(/[^0-9]/g, "");
-                if (targetPhone.startsWith("0"))
-                    targetPhone = "62" + targetPhone.slice(1);
+                targetPhone = normalizePhoneNumber(parts[1] || "");
                 rawRole = (parts[2] || "").toLowerCase();
             }
             let mappedRole = null;
@@ -539,23 +770,6 @@ export class CommandHandler {
             return {
                 handled: true,
                 responseMessage: "✅ Hak akses / peran untuk *" + (updated.name || targetPhone) + "* (`+" + targetPhone + "`) berhasil diubah menjadi: *" + roleLabel + "*!",
-            };
-        }
-        if (command === "/batal" || command === "/batalkan" || command === "/cancel") {
-            const latest = await this.trxRepo.getLatestTransaction();
-            if (!latest) {
-                return { handled: true, responseMessage: "ℹ️ Tidak ada transaksi terakhir yang dapat dibatalkan." };
-            }
-            await this.trxRepo.deleteTransaction(latest.id);
-            try {
-                await googleSheetsService.deleteTransactionRow(latest.id);
-            }
-            catch (sheetErr) {
-                logger.error({ sheetErr }, "Failed to delete row from Google Sheet");
-            }
-            return {
-                handled: true,
-                responseMessage: formatDeletedTransaction(latest),
             };
         }
         if (command === "/sync" || command === "/sinkron" || command === "/tariksheet") {
@@ -586,7 +800,7 @@ export class CommandHandler {
             if (!targetId) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/hapus <ID_TRX>`\nContoh: `/hapus H001` atau `/hapus 1`\n\nAtau cukup ketik `/batal` untuk membatalkan transaksi paling akhir.",
+                    responseMessage: "❌ Format salah. Gunakan: `/hapus <ID_TRX>`\nContoh: `/hapus H054` atau `/hapus 1`\n\nAtau cukup ketik `/batal` untuk membatalkan transaksi paling akhir.",
                 };
             }
             const deleted = await this.trxRepo.deleteTransaction(targetId.trim());
@@ -614,11 +828,9 @@ export class CommandHandler {
                     responseMessage: "⚠️ Perintah `/laporan` hanya dapat diakses oleh Super Admin untuk menjaga privasi data keuangan.",
                 };
             }
-            const now = new Date();
-            let targetMonth = parts[1] || `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-            if (/^\d{1,2}$/.test(targetMonth)) {
-                targetMonth = `${now.getFullYear()}-${targetMonth.padStart(2, "0")}`;
-            }
+            // Gap 10: Parse Indonesian month names
+            const rawMonth = parts.slice(1).join(" ").trim();
+            const targetMonth = parseIndonesianMonth(rawMonth);
             const summary = await this.trxRepo.getMonthlySummary(targetMonth);
             return {
                 handled: true,
@@ -631,9 +843,13 @@ export class CommandHandler {
             command === "/terakhir" ||
             command === "/pengeluaranterakhir" ||
             command === "/pemasukanterakhir") {
+            // Gap 12: Flexible limit extraction anywhere in tokens (e.g. /riwayat keluar 5 or /riwayat 5 keluar)
             let limit = 10;
-            if (parts[1] && /^\d+$/.test(parts[1])) {
-                limit = Math.min(Math.max(parseInt(parts[1], 10), 1), 50);
+            for (let i = 1; i < parts.length; i++) {
+                if (/^\d+$/.test(parts[i])) {
+                    limit = Math.min(Math.max(parseInt(parts[i], 10), 1), 50);
+                    break;
+                }
             }
             let filterType = undefined;
             if (command === "/pengeluaranterakhir" || parts.some((p) => p.toLowerCase() === "keluar" || p.toLowerCase() === "pengeluaran")) {
@@ -660,11 +876,12 @@ export class CommandHandler {
             recent.forEach((t, i) => {
                 const isInc = isIncome(t);
                 const sign = isInc ? "🟢 [+]" : "🔴 [-]";
+                const shortCode = t.id.includes("-") ? t.id.split("-").slice(1).join("") : t.id;
                 if (isInc)
                     totalIncome += Number(t.total_amount);
                 else
                     totalExpense += Number(t.total_amount);
-                summary += (i + 1) + ". " + sign + " 🧾 `" + t.id + "`\n";
+                summary += (i + 1) + ". " + sign + " 🧾 `" + t.id + "` (• " + shortCode + ")\n";
                 summary += "   📅 " + t.date + " | *" + t.merchant + "* (" + t.category + ")\n";
                 summary += "   💰 *" + (isInc ? "+" : "-") + formatRupiah(t.total_amount) + "* | 👤 " + t.user_name + "\n\n";
             });
@@ -686,18 +903,9 @@ export class CommandHandler {
                     responseMessage: "⚠️ Fitur download laporan PDF hanya dapat diakses oleh Super Admin.",
                 };
             }
-            const now = new Date();
-            let targetMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
-            // Handle format: /export pdf 2026-08 or /export 2026-08 or /export pdf
-            for (let i = 1; i < parts.length; i++) {
-                const p = parts[i].trim();
-                if (/^\d{4}-\d{2}$/.test(p)) {
-                    targetMonth = p;
-                }
-                else if (/^\d{1,2}$/.test(p)) {
-                    targetMonth = `${now.getFullYear()}-${p.padStart(2, "0")}`;
-                }
-            }
+            // Gap 11: Indonesian month support in /export pdf
+            const nonPdfParts = parts.slice(1).filter((p) => !/^(pdf|laporan|export)$/i.test(p));
+            const targetMonth = parseIndonesianMonth(nonPdfParts.join(" "));
             try {
                 const summary = await this.trxRepo.getMonthlySummary(targetMonth);
                 const [year, month] = targetMonth.split("-");
@@ -872,13 +1080,15 @@ export class CommandHandler {
                 if (this.billRepo) {
                     await this.billRepo.markBillPaid(bill.bill_name, currentMonth);
                 }
-                // Record expense transaction
+                // Record expense transaction (Gap 15: Use actual user name)
+                const user = typeof this.userRepo.getUser === "function" ? await this.userRepo.getUser(senderPhone) : null;
+                const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
                 const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
                 const trxId = await this.trxRepo.generateTransactionId(todayStr);
                 const trx = await this.trxRepo.createTransaction({
                     id: trxId,
                     user_phone: senderPhone,
-                    user_name: "Super Admin",
+                    user_name: userName,
                     date: todayStr,
                     merchant: bill.bill_name,
                     category: bill.category || "Tagihan & Utilitas",

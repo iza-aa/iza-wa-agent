@@ -23,6 +23,7 @@ import {
 import { DuplicateDetectorService } from "../../services/duplicate-detector.service.js";
 import { logger } from "../../utils/logger.js";
 import { config } from "../../config/env.js";
+import { normalizePhoneNumber } from "../../utils/phone.utils.js";
 
 export class MessageHandler {
   private commandHandler: CommandHandler;
@@ -65,19 +66,15 @@ export class MessageHandler {
   }
 
   cleanPhone(from: string): string {
-    const digits = from.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
-    // Known WhatsApp multi-device LID mappings
-    if (digits === "232130131046571") return "6281346367235";
-    if (digits === "168096866255025") return "62811422404";
-    if (digits === "113404400390171") return "6282147440520";
-    return digits;
+    return normalizePhoneNumber(from);
   }
 
   async processIncomingMessage(sock: WASocket, msg: WAMessage): Promise<void> {
     if (!msg.message || msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
-    if (!remoteJid || remoteJid.includes("status@broadcast")) return;
+    // Strictly Private Chat Only: drop status broadcast and any WhatsApp group messages (@g.us)
+    if (!remoteJid || remoteJid.includes("status@broadcast") || remoteJid.endsWith("@g.us")) return;
 
     // Deduplication: prevent Baileys multi-device from processing the same message twice
     const msgId = msg.key.id;
@@ -90,9 +87,7 @@ export class MessageHandler {
       setTimeout(() => this.processedMessageIds.delete(msgId), 60_000);
     }
 
-    const isGroup = remoteJid.endsWith("@g.us");
-    const rawParticipant = msg.key.participant || msg.participant;
-    const senderPhone = isGroup && rawParticipant ? this.cleanPhone(rawParticipant) : this.cleanPhone(remoteJid);
+    const senderPhone = this.cleanPhone(remoteJid);
     const pushName = msg.pushName || "User";
 
     // Extract text body
@@ -110,20 +105,7 @@ export class MessageHandler {
     const isDocument = !!messageContent.documentMessage;
     const hasMedia = isImage || isAudio || isDocument;
 
-    // Group anti-spam filter: In groups, only respond if message is media, command, mentions bot, or transaction keywords
-    if (isGroup && !hasMedia) {
-      const lowerBody = body.toLowerCase().trim();
-      const isCommand = lowerBody.startsWith("/");
-      const mentionsBot = lowerBody.includes("bot") || lowerBody.includes("agent") || (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).some((j: string) => j.includes("62881082854818"));
-      const isTrxKeyword = /^(beli|bayar|pengeluaran|pemasukan|belanja|kasbon|gaji|bensin|makan|saldo|rekap|laporan)\b/i.test(lowerBody);
-
-      if (!isCommand && !mentionsBot && !isTrxKeyword) {
-        // Silently skip general group chatter
-        return;
-      }
-    }
-
-    logger.info({ senderPhone, pushName, isGroup, hasMedia, isImage, isAudio }, "Processing incoming Baileys message");
+    logger.info({ senderPhone, pushName, hasMedia, isImage, isAudio }, "Processing incoming Baileys private message");
 
     // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
     try {
@@ -133,17 +115,18 @@ export class MessageHandler {
       logger.debug({ presenceErr }, "Presence / Read receipt update non-critical error");
     }
 
-    // 1. Log chat
-    await this.chatRepo.logMessage({
-      user_phone: senderPhone,
-      user_name: pushName,
-      message_type: isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text",
-      direction: "inbound",
-      content: body,
-    });
+    try {
+      // 1. Log chat
+      await this.chatRepo.logMessage({
+        user_phone: senderPhone,
+        user_name: pushName,
+        message_type: isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text",
+        direction: "inbound",
+        content: body,
+      });
 
-    // 2. User Access & Status Check
-    const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
+      // 2. User Access & Status Check
+      const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
 
     if (user.status === "blocked") {
       logger.warn({ senderPhone, pushName }, "Blocked user attempted to message bot");
@@ -163,6 +146,14 @@ export class MessageHandler {
       if (handled) {
         await sock.sendMessage(remoteJid, { text: responseMessage }, { quoted: msg });
         return;
+      } else {
+        // Gap 2: Safety guard to prevent unhandled slash messages from falling through to AI
+        await sock.sendMessage(
+          remoteJid,
+          { text: "❓ Perintah tidak dikenal. Ketik `/menu` untuk melihat daftar panduan & perintah." },
+          { quoted: msg }
+        );
+        return;
       }
     }
 
@@ -170,9 +161,13 @@ export class MessageHandler {
 
     // 4. Handle Media Messages (Receipt Photos & Voice Notes)
     if (hasMedia) {
-      // CASE A: Image / Receipt / Nota / PDF Invoice
+      // CASE A: Image / Receipt / Nota / PDF Invoice / Uncompressed Image Document (Gap 32)
       if (isImage || isDocument) {
-        const isPdf = isDocument && (messageContent.documentMessage?.mimetype?.includes("pdf") || (messageContent.documentMessage?.fileName || "").endsWith(".pdf"));
+        const docMime = messageContent.documentMessage?.mimetype || "";
+        const docFileName = messageContent.documentMessage?.fileName || "";
+        const isPdf = isDocument && (docMime.includes("pdf") || docFileName.endsWith(".pdf"));
+        const isDocImage = isDocument && (docMime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(docFileName));
+
         await sock.sendMessage(
           remoteJid,
           { text: isPdf ? "⏳ *Sedang membaca dokumen invoice / struk PDF dengan AI...*" : "⏳ *Sedang membaca struk belanja dengan AI...*" },
@@ -180,7 +175,11 @@ export class MessageHandler {
         );
 
         const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
-        const mimeType = isPdf ? "application/pdf" : (messageContent.imageMessage?.mimetype || "image/jpeg");
+        const mimeType = isPdf
+          ? "application/pdf"
+          : isDocImage
+          ? (docMime || "image/jpeg")
+          : (messageContent.imageMessage?.mimetype || "image/jpeg");
 
         const parsed = await parseReceiptVision(mediaBuffer, mimeType, body);
         if (!parsed || parsed.total_amount <= 0) {
@@ -479,5 +478,17 @@ export class MessageHandler {
         content: replyText,
       });
     }
+  } catch (fatalErr: any) {
+    logger.error({ fatalErr, senderPhone, remoteJid }, "Unhandled error during processIncomingMessage");
+    try {
+      await sock.sendMessage(
+        remoteJid,
+        { text: "⚠️ Terjadi kendala teknis sementara saat memproses pesan Anda. Silakan coba kirim ulang." },
+        { quoted: msg }
+      );
+    } catch (replyErr) {
+      logger.error({ replyErr }, "Failed to send error fallback message");
+    }
   }
+}
 }

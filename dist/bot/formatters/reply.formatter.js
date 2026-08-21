@@ -35,7 +35,13 @@ export function formatTransactionSuccess(trx, items = [], isSuperAdmin = false, 
     if (isSuperAdmin && trx.gdrive_web_view_link) {
         reply += "\n🔗 *Bukti Dokumen (Google Drive):*\n" + trx.gdrive_web_view_link + "\n";
     }
-    reply += "\n💡 _Untuk membatalkan, ketik: `/hapus " + shortCode + "`_";
+    // Gap 23: Role-specific cancellation hint
+    if (isSuperAdmin) {
+        reply += "\n💡 _Untuk membatalkan, ketik: `/hapus " + shortCode + "` atau `/batal`_";
+    }
+    else {
+        reply += "\n💡 _Untuk membatalkan transaksi terakhir Anda, ketik: `/batal`_";
+    }
     return reply;
 }
 export function formatWalletBalance(wallet) {
@@ -53,21 +59,22 @@ export function formatWalletBalance(wallet) {
     return msg;
 }
 export function formatMultiPocketBalance(multiWallet, specificPocket) {
+    const pockets = multiWallet?.pockets || {};
     if (specificPocket) {
-        const key = Object.keys(multiWallet.pockets).find((k) => k.toLowerCase() === specificPocket.toLowerCase());
-        const pocketData = key ? multiWallet.pockets[key] : null;
+        const key = Object.keys(pockets).find((k) => k.toLowerCase() === specificPocket.toLowerCase());
+        const pocketData = key ? pockets[key] : null;
         if (!pocketData) {
             return `ℹ️ Kantong / Metode bayar *${specificPocket}* belum memiliki riwayat transaksi.\n\nKetik \`/saldo\` untuk melihat seluruh kantong kas.`;
         }
         let msg = `🏦 *STATUS SALDO: ${key?.toUpperCase()}*\n\n`;
-        msg += `🟢 Pemasukan: ${formatRupiah(pocketData.income)}\n`;
-        msg += `🔴 Pengeluaran: ${formatRupiah(pocketData.expense)}\n`;
+        msg += `🟢 Pemasukan: ${formatRupiah(pocketData.income || 0)}\n`;
+        msg += `🔴 Pengeluaran: ${formatRupiah(pocketData.expense || 0)}\n`;
         msg += `────────────────────────\n`;
-        msg += `💵 *Sisa Saldo ${key}:* *${formatRupiah(pocketData.balance)}*\n`;
+        msg += `💵 *Sisa Saldo ${key}:* *${formatRupiah(pocketData.balance || 0)}*\n`;
         return msg;
     }
     let msg = "💳 *RINCIAN SALDO PER KAS & BANK*\n\n";
-    const pocketKeys = Object.keys(multiWallet.pockets);
+    const pocketKeys = Object.keys(pockets);
     if (pocketKeys.length === 0) {
         msg += "ℹ️ Belum ada data saldo per kantong.\n";
     }
@@ -81,17 +88,17 @@ export function formatMultiPocketBalance(multiWallet, specificPocket) {
             return a.localeCompare(b);
         });
         for (const p of sortedKeys) {
-            const pData = multiWallet.pockets[p];
+            const pData = pockets[p];
             const icon = (p.toLowerCase().includes("cash") || p.toLowerCase().includes("tunai"))
                 ? "💵"
                 : (p.toLowerCase().includes("qris") || p.toLowerCase().includes("gopay") || p.toLowerCase().includes("ovo") || p.toLowerCase().includes("dana"))
                     ? "📱"
                     : "🏦";
-            msg += `${icon} *${p}:* *${formatRupiah(pData.balance)}*\n`;
+            msg += `${icon} *${p}:* *${formatRupiah(pData?.balance || 0)}*\n`;
         }
     }
     msg += "────────────────────────\n";
-    msg += `💰 *TOTAL SELURUH KAS:* *${formatRupiah(multiWallet.totalBalance)}*\n\n`;
+    msg += `💰 *TOTAL SELURUH KAS:* *${formatRupiah(multiWallet.totalBalance || 0)}*\n\n`;
     msg += "💡 *Tips:* Ketik `/saldo mandiri` atau `/saldo bca` untuk cek spesifik.\nKetik `/transfer bca cash 500000 Tarik Tunai` untuk mutasi kas.";
     return msg;
 }
@@ -116,7 +123,8 @@ export function formatDailyRecap(dailySummary, wallet) {
         const isInc = isIncome(t);
         const sign = isInc ? "🟢" : "🔴";
         const method = t.payment_method ? ` (${t.payment_method})` : "";
-        msg += ` ${i + 1}. ${sign} *${t.merchant}*${method}: ${formatRupiah(t.total_amount)}\n`;
+        const shortCode = t.id.includes("-") ? t.id.split("-").slice(1).join("") : t.id;
+        msg += ` ${i + 1}. ${sign} \`${shortCode}\` *${t.merchant}*${method}: ${formatRupiah(t.total_amount)}\n`;
     });
     if (dailySummary.transactions.length > 15) {
         msg += ` _...dan ${dailySummary.transactions.length - 15} transaksi lainnya._\n`;
@@ -307,7 +315,8 @@ export function formatMonthlyReport(summary, monthLabel) {
     if (summary.topTransactions && summary.topTransactions.length > 0) {
         msg += "\n🔥 *Top Pengeluaran Terbesar:*\n";
         summary.topTransactions.forEach((t, i) => {
-            msg += " " + (i + 1) + ". " + t.merchant + " (" + t.date + ") -> *" + formatRupiah(t.total_amount) + "*\n";
+            const shortCode = t.id.includes("-") ? t.id.split("-").slice(1).join("") : t.id;
+            msg += " " + (i + 1) + ". `" + shortCode + "` *" + t.merchant + "* (" + t.date + ") -> *" + formatRupiah(t.total_amount) + "*\n";
         });
     }
     return msg;
@@ -362,7 +371,17 @@ export function formatBillList(bills, currentMonth) {
     return msg.trim();
 }
 export function formatBillReminder(bill, daysLeft) {
-    const urgency = daysLeft === 0 ? "🚨 *HARI INI JATUH TEMPO!*" : `⏳ *Jatuh tempo dalam ${daysLeft} hari lagi!*`;
+    // Gap 38: Handle positive, zero, and negative daysLeft properly
+    let urgency = "";
+    if (daysLeft === 0) {
+        urgency = "🚨 *HARI INI JATUH TEMPO!*";
+    }
+    else if (daysLeft > 0) {
+        urgency = `⏳ *Jatuh tempo dalam ${daysLeft} hari lagi!*`;
+    }
+    else {
+        urgency = `🚨 *SUDAH MELEWATI JATUH TEMPO (${Math.abs(daysLeft)} HARI LALU)!*`;
+    }
     return `⏰ *PENGINGAT TAGIHAN BULANAN*\n\n${urgency}\n📌 *Tagihan:* ${bill.bill_name}\n💰 *Nominal:* *${formatRupiah(bill.amount)}*\n📅 *Tanggal Jatuh Tempo:* Tgl ${bill.due_day}\n\n💡 _Jika sudah dibayar, ketik:_ \`/tagihan bayar ${bill.bill_name}\``;
 }
 export function formatBillCreatedSuccess(bill) {

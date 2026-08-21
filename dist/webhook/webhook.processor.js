@@ -1,30 +1,38 @@
 import { UserRepository } from "../db/repositories/user.repository.js";
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
 import { ChatRepository } from "../db/repositories/chat.repository.js";
+import { BudgetRepository } from "../db/repositories/budget.repository.js";
+import { BillRepository } from "../db/repositories/bill.repository.js";
 import { CommandHandler } from "../bot/handlers/command.handler.js";
 import { parseTransactionText } from "../ai/parsers/text.parser.js";
 import { parseReceiptVision } from "../ai/parsers/receipt-vision.parser.js";
 import { parseAudioVoiceNote } from "../ai/parsers/audio.parser.js";
+import { executeNaturalQuerySearch } from "../ai/parsers/search.parser.js";
 import { googleDriveService } from "../google/drive.service.js";
 import { googleSheetsService } from "../google/sheets.service.js";
 import { formatTransactionSuccess, } from "../bot/formatters/reply.formatter.js";
 import { getSupabaseClient } from "../db/supabase.js";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { normalizePhoneNumber } from "../utils/phone.utils.js";
 export class WebhookProcessor {
     userRepo;
     trxRepo;
     chatRepo;
+    budgetRepo;
+    billRepo;
     commandHandler;
     constructor() {
         const supabase = getSupabaseClient();
         this.userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
         this.trxRepo = new TransactionRepository(supabase);
         this.chatRepo = new ChatRepository(supabase);
-        this.commandHandler = new CommandHandler(this.userRepo, this.trxRepo);
+        this.budgetRepo = new BudgetRepository(supabase);
+        this.billRepo = new BillRepository(supabase);
+        this.commandHandler = new CommandHandler(this.userRepo, this.trxRepo, this.budgetRepo, this.billRepo);
     }
     async process(payload) {
-        const senderPhone = payload.sender.replace(/[^0-9]/g, "");
+        const senderPhone = normalizePhoneNumber(payload.sender);
         const userName = payload.name || "User";
         const body = (payload.message || "").trim();
         logger.info({ senderPhone, userName, hasMedia: !!payload.mediaUrl }, "Processing incoming Webhook");
@@ -170,6 +178,24 @@ export class WebhookProcessor {
         }
         // 5. Handle Text
         if (body.length > 0) {
+            const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
+            // Check if message is a natural query or question (e.g. "Berapa saldo kas?", "Cari nota bensin")
+            try {
+                const queryCheck = await executeNaturalQuerySearch(body, this.trxRepo, isSuperAdmin, senderPhone);
+                if (queryCheck.isQuery) {
+                    await this.chatRepo.logMessage({
+                        user_phone: senderPhone,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: queryCheck.replyText,
+                    });
+                    return { reply: queryCheck.replyText, success: true };
+                }
+            }
+            catch (searchErr) {
+                logger.debug({ searchErr }, "Webhook query search check bypass to standard text parser");
+            }
             const history = await this.chatRepo.getRecentChatHistory(senderPhone, 3);
             const historyStrings = history.map((h) => (h.direction === "inbound" ? "User: " : "Bot: ") + h.content);
             let textResult = null;

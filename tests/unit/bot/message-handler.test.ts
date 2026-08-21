@@ -207,9 +207,9 @@ describe("WhatsApp Bot Handlers", () => {
       expect(mockTrxRepo.getAllRecentTransactions).toHaveBeenCalledWith(5);
     });
 
-    it("should block non-admin from executing /batal or /laporan", async () => {
+    it("should block non-admin from executing /laporan", async () => {
       const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
-      const res = await handler.handleCommand("6281111111111", "/batal");
+      const res = await handler.handleCommand("6281111111111", "/laporan");
       expect(res.handled).toBe(true);
       expect(res.responseMessage).toContain("hanya dapat dijalankan oleh Super Admin");
     });

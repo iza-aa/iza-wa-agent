@@ -1,6 +1,7 @@
 import { geminiKeyManager } from "../gemini-client.js";
 import { ExtractedTransaction, ExtractedTransactionSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
+import { normalizeDateToIso } from "../../google/sheets.service.js";
 
 export interface TextAnalysisResult {
   is_complete: boolean;
@@ -119,7 +120,7 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
       }
 
       const rawTrx = parsedJson.transaction;
-      let finalDate = rawTrx.date || todayStr;
+      let finalDate = normalizeDateToIso(rawTrx.date || todayStr);
       if (finalDate.startsWith("2023") || finalDate.startsWith("2024") || finalDate.startsWith("2025")) {
         finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
       }

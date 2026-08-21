@@ -182,15 +182,17 @@ export class TransactionRepository {
             .update({ gsheet_row_index: rowIndex, updated_at: new Date().toISOString() })
             .eq("id", trxId);
     }
-    async getLatestTransaction() {
-        const { data, error } = await this.supabase
+    async getLatestTransaction(userPhone) {
+        let query = this.supabase
             .from("transactions")
             .select("*")
-            .order("created_at", { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .order("created_at", { ascending: false });
+        if (userPhone) {
+            query = query.eq("user_phone", userPhone);
+        }
+        const { data, error } = await query.limit(1).maybeSingle();
         if (error) {
-            logger.error({ error }, "Failed to fetch latest transaction");
+            logger.error({ error, userPhone }, "Failed to fetch latest transaction");
             return null;
         }
         return data;
@@ -307,11 +309,16 @@ export class TransactionRepository {
         };
     }
     async getMonthlySummary(yearMonth) {
+        let normalizedYearMonth = yearMonth;
+        const parts = yearMonth.split("-");
+        if (parts.length === 2) {
+            normalizedYearMonth = `${parts[0]}-${parts[1].padStart(2, "0")}`;
+        }
         const { data, error } = await this.supabase
             .from("transactions")
             .select("*")
-            .gte("date", `${yearMonth}-01`)
-            .lte("date", `${yearMonth}-31`)
+            .gte("date", `${normalizedYearMonth}-01`)
+            .lte("date", `${normalizedYearMonth}-31`)
             .order("total_amount", { ascending: false });
         if (error || !data) {
             logger.error({ error, yearMonth }, "Failed to fetch monthly transactions");
@@ -469,15 +476,16 @@ export class TransactionRepository {
             return [];
         }
         let results = data;
-        // If keyword filter is provided, do fuzzy match across merchant, category, raw_text, and payment_method
+        // If keyword filter is provided, do fuzzy match across id, merchant, category, raw_text, and payment_method
         if (filters.keyword) {
             const kw = filters.keyword.toLowerCase().trim();
             results = results.filter((t) => {
+                const id = (t.id || "").toLowerCase();
                 const m = (t.merchant || "").toLowerCase();
                 const c = (t.category || "").toLowerCase();
                 const r = (t.raw_text || "").toLowerCase();
                 const p = (t.payment_method || "").toLowerCase();
-                return m.includes(kw) || c.includes(kw) || r.includes(kw) || p.includes(kw);
+                return id.includes(kw) || m.includes(kw) || c.includes(kw) || r.includes(kw) || p.includes(kw);
             });
         }
         // If trx_type filter is provided

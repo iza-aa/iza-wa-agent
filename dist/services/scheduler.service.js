@@ -102,8 +102,8 @@ export class SchedulerService {
                     continue;
                 const reminderDays = bill.reminder_days_before || 3;
                 const daysLeft = bill.due_day - currentDay;
-                // Trigger reminder if due today or within reminder window (e.g. H-3 to H-0)
-                if (daysLeft >= 0 && daysLeft <= reminderDays) {
+                // Trigger reminder if due within reminder window (e.g. H-3 to H-0) or overdue up to 7 days (Gap 14)
+                if (daysLeft <= reminderDays && daysLeft >= -7) {
                     const reminderText = formatBillReminder(bill, daysLeft);
                     for (const jid of superAdminJids) {
                         try {
