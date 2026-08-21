@@ -3,6 +3,42 @@ import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { TransactionRecord, TransactionItem, isIncome } from "../db/repositories/transaction.repository.js";
 
+export function normalizeDateToIso(rawDate: string): string {
+  if (!rawDate) return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+  const trimmed = rawDate.toString().trim();
+
+  // If already YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return trimmed;
+  }
+
+  // If DD/MM/YYYY or DD-MM-YYYY
+  const dmyMatch = trimmed.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmyMatch) {
+    const day = dmyMatch[1].padStart(2, "0");
+    const month = dmyMatch[2].padStart(2, "0");
+    const year = dmyMatch[3];
+    return `${year}-${month}-${day}`;
+  }
+
+  // If YYYY/MM/DD
+  const ymdMatch = trimmed.match(/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/);
+  if (ymdMatch) {
+    const year = ymdMatch[1];
+    const month = ymdMatch[2].padStart(2, "0");
+    const day = ymdMatch[3].padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  // Try parsing Date object
+  const parsed = new Date(trimmed);
+  if (!isNaN(parsed.getTime())) {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(parsed);
+  }
+
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+}
+
 export class GoogleSheetsService {
   private sheetsClient: any;
   private sheetTitle = "Transaksi";
@@ -1078,7 +1114,8 @@ export class GoogleSheetsService {
     let syncedCount = 0;
     for (let i = 0; i < validRows.length; i++) {
       const r = validRows[i];
-      const date = r[2]?.toString().trim() || new Date().toISOString().slice(0, 10);
+      const rawDateStr = r[2]?.toString().trim() || "";
+      const date = normalizeDateToIso(rawDateStr);
       let id = r[0]?.toString().trim();
 
       if (!id) {
@@ -1102,7 +1139,8 @@ export class GoogleSheetsService {
       const rawNominal = r[6]?.toString().replace(/[^0-9]/g, "");
       const nominal = parseInt(rawNominal, 10) || 0;
       const paymentMethod = r[7]?.toString().trim() || "-";
-      const userPhone = (r[8]?.toString().replace(/[^0-9]/g, "")) || config.SUPER_ADMIN_PHONE;
+      const fallbackPhone = Array.isArray(config.SUPER_ADMIN_PHONE) ? config.SUPER_ADMIN_PHONE[0] : config.SUPER_ADMIN_PHONE;
+      const userPhone = (r[8]?.toString().replace(/[^0-9]/g, "")) || fallbackPhone;
       const userName = r[9]?.toString().trim() || "User";
       const rawText = r[11]?.toString().trim() || "Input Manual Spreadsheet";
 
