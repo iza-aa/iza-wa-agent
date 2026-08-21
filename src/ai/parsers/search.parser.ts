@@ -231,7 +231,8 @@ export async function executeNaturalQuerySearch(
     reply += `💰 *Total Nilai:* *${formatRupiah(totalAmount)}*\n`;
     reply += `────────────────────────\n\n`;
 
-    results.slice(0, 15).forEach((t, i) => {
+    const displayLimit = 25;
+    results.slice(0, displayLimit).forEach((t, i) => {
       const isInc = isIncome(t);
       const sign = isInc ? "🟢" : "🔴";
       const method = t.payment_method ? ` • ${t.payment_method}` : "";
@@ -240,8 +241,8 @@ export async function executeNaturalQuerySearch(
       reply += `   📅 ${t.date} | 💰 *${formatRupiah(t.total_amount)}*${method} | 👤 ${t.user_name}\n\n`;
     });
 
-    if (results.length > 15) {
-      reply += `_...dan ${results.length - 15} transaksi lainnya._\n\n`;
+    if (results.length > displayLimit) {
+      reply += `_...dan ${results.length - displayLimit} transaksi lainnya._\n\n`;
     }
 
     reply += `💡 _Ketik \`/detail <ID>\` untuk melihat rincian item lengkap._`;
