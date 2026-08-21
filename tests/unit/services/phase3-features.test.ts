@@ -4,6 +4,7 @@ import { BillRepository } from "../../../src/db/repositories/bill.repository.js"
 import { PdfReportService } from "../../../src/services/pdf-report.service.js";
 import { SchedulerService } from "../../../src/services/scheduler.service.js";
 import { CommandHandler } from "../../../src/bot/handlers/command.handler.js";
+import { googleSheetsService } from "../../../src/google/sheets.service.js";
 import * as socketHolder from "../../../src/bot/socket-holder.js";
 
 describe("Phase 3 Features Tests", () => {
@@ -11,6 +12,7 @@ describe("Phase 3 Features Tests", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    vi.spyOn(googleSheetsService, "appendTransaction").mockResolvedValue({ rowIndex: 10, spreadsheetId: "mock" } as any);
     mockSupabase = {
       from: vi.fn().mockReturnValue({
         select: vi.fn().mockReturnThis(),

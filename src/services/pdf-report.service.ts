@@ -207,6 +207,7 @@ export class PdfReportService {
 
         for (let i = 0; i < totalPages; i++) {
           doc.switchToPage(i);
+          doc.page.margins.bottom = 0; // Prevent PDFKit from auto-spawning blank pages on footer text
 
           // Footer separator line
           doc.moveTo(marginX, pageHeight - 32).lineTo(marginX + contentWidth, pageHeight - 32).strokeColor("#e2e8f0").stroke();
@@ -215,7 +216,8 @@ export class PdfReportService {
           doc.fillColor("#94a3b8").font("Helvetica").fontSize(6.8).text(
             `Digenerate oleh IZA WhatsApp Assistant • ${generatedTime} WITA`,
             marginX,
-            pageHeight - 24
+            pageHeight - 24,
+            { lineBreak: false }
           );
 
           // Right
@@ -223,7 +225,7 @@ export class PdfReportService {
             `Halaman ${i + 1} dari ${totalPages}`,
             marginX,
             pageHeight - 24,
-            { width: contentWidth, align: "right" }
+            { width: contentWidth, align: "right", lineBreak: false }
           );
         }
 
