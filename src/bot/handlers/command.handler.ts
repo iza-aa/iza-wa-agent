@@ -87,15 +87,14 @@ export class CommandHandler {
       // Contoh: /transfer bca cash 500000 Tarik tunai ATM
       const fromPocket = parts[1]?.trim();
       const toPocket = parts[2]?.trim();
-      const rawNominal = parts[3]?.replace(/[^0-9]/g, "") || "";
-      const nominal = parseInt(rawNominal, 10);
+      const nominal = parseHumanNominal(parts[3] || "");
       const notes = parts.slice(4).join(" ").trim() || "Mutasi Kas";
 
       if (!fromPocket || !toPocket || !nominal || isNaN(nominal) || nominal <= 0) {
         return {
           handled: true,
           responseMessage:
-            "❌ Format salah. Gunakan:\n`/transfer <dari_kantong> <ke_kantong> <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/transfer bca cash 500000 Tarik tunai ATM`\n• `/transfer cash mandiri 1000000 Setor tunai penjualan`\n• `/transfer mandiri bca 250000 Pindah saldo antar bank`",
+            "❌ Format salah. Gunakan:\n`/transfer <dari_kantong> <ke_kantong> <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/transfer bca cash 500000 Tarik tunai ATM`\n• `/transfer cash mandiri 1jt Setor tunai penjualan`\n• `/transfer mandiri bca 250rb Pindah saldo antar bank`",
         };
       }
 
@@ -208,14 +207,13 @@ export class CommandHandler {
 
     if (command === "/pemasukan" || command === "/masuk" || command === "/income" || command === "/tambahsaldo") {
       const rawNominal = parts[1] || "";
-      const cleanedNominal = rawNominal.replace(/[^0-9]/g, "");
-      const nominal = parseInt(cleanedNominal, 10);
+      const nominal = parseHumanNominal(rawNominal);
       const keterangan = parts.slice(2).join(" ").trim() || "Pemasukan Kas";
 
       if (!nominal || isNaN(nominal) || nominal <= 0) {
         return {
           handled: true,
-          responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan] [metode]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5000000 Gaji Bulanan Mandiri`\n• `/pemasukan 500000 Transfer Masuk dari Klien BCA`\n• `/pemasukan 250000 Penjualan Produk Cash`",
+          responseMessage: "❌ Format salah. Gunakan: `/pemasukan <nominal> [keterangan] [metode]`\n\n*Contoh Penggunaan:*\n• `/pemasukan 5jt Gaji Bulanan Mandiri`\n• `/pemasukan 500rb Transfer Masuk BCA`\n• `/pemasukan 250000 Penjualan Cash`",
         };
       }
 
@@ -1056,18 +1054,32 @@ export class CommandHandler {
   }
 }
 
-function parseHumanNominal(raw: string): number {
+export function parseHumanNominal(raw: string): number {
   if (!raw) return 0;
-  let clean = raw.toLowerCase().trim();
+  let clean = raw.toLowerCase().trim().replace(/^rp\.?\s*/i, "");
+
   let multiplier = 1;
+  const hasMultiplier = /jt|juta|rb|ribu|k|milyar/i.test(clean) || (clean.endsWith("m") && !clean.includes("makan"));
+
   if (clean.includes("jt") || clean.includes("juta")) {
     multiplier = 1000000;
     clean = clean.replace(/jt|juta/g, "").trim();
   } else if (clean.includes("rb") || clean.includes("ribu") || clean.includes("k")) {
     multiplier = 1000;
     clean = clean.replace(/rb|ribu|k/g, "").trim();
+  } else if (clean.includes("milyar")) {
+    multiplier = 1000000000;
+    clean = clean.replace(/milyar/g, "").trim();
   }
-  const num = parseFloat(clean.replace(/[^0-9.]/g, ""));
-  return Math.round((isNaN(num) ? 0 : num) * multiplier);
+
+  if (hasMultiplier) {
+    clean = clean.replace(/,/g, ".");
+    const num = parseFloat(clean.replace(/[^0-9.]/g, ""));
+    return Math.round((isNaN(num) ? 0 : num) * multiplier);
+  } else {
+    const cleanDigits = clean.replace(/[^0-9]/g, "");
+    const num = parseInt(cleanDigits, 10);
+    return isNaN(num) ? 0 : num;
+  }
 }
 

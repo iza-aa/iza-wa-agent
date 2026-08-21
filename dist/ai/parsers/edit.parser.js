@@ -1,5 +1,6 @@
 import { geminiKeyManager } from "../gemini-client.js";
 import { logger } from "../../utils/logger.js";
+import { parseHumanNominal } from "../../bot/handlers/command.handler.js";
 export function extractDeterministicEdits(editInstruction) {
     const result = {};
     const trimmed = editInstruction.trim();
@@ -65,33 +66,20 @@ export function extractDeterministicEdits(editInstruction) {
         }
     }
     // 4. Total Amount / Nominal
-    const nominalRegex = /(?:nominal|total|harga|jumlah|sebesar|ganti)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.]+(?:rb|k|jt|juta)?)/i;
+    const nominalRegex = /(?:nominal|total|harga|jumlah|sebesar|ganti)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.,]+(?:\s*(?:rb|ribu|k|jt|juta|milyar))?)/i;
     const nominalMatch = trimmed.match(nominalRegex);
     if (nominalMatch) {
-        let rawNum = nominalMatch[1].toLowerCase().trim();
-        let mult = 1;
-        if (rawNum.endsWith("jt") || rawNum.endsWith("juta")) {
-            mult = 1000000;
-            rawNum = rawNum.replace(/jt|juta/g, "").trim();
-        }
-        else if (rawNum.endsWith("rb") || rawNum.endsWith("k")) {
-            mult = 1000;
-            rawNum = rawNum.replace(/rb|k/g, "").trim();
-        }
-        const cleanDigits = rawNum.replace(/[^0-9]/g, "");
-        if (cleanDigits) {
-            const parsedAmount = parseInt(cleanDigits, 10) * mult;
-            if (parsedAmount > 0) {
-                result.total_amount = parsedAmount;
-                result.subtotal = parsedAmount;
-            }
-        }
-    }
-    else if (/^\d+$/.test(trimmed)) {
-        const parsedAmount = parseInt(trimmed, 10);
+        const parsedAmount = parseHumanNominal(nominalMatch[1]);
         if (parsedAmount > 0) {
             result.total_amount = parsedAmount;
             result.subtotal = parsedAmount;
+        }
+    }
+    else if (/^\s*(?:rp\.?\s*)?[\d\.,]+(?:\s*(?:rb|ribu|k|jt|juta))?\s*$/i.test(trimmed)) {
+        const directParsed = parseHumanNominal(trimmed);
+        if (directParsed > 0) {
+            result.total_amount = directParsed;
+            result.subtotal = directParsed;
         }
     }
     return result;
