@@ -60,10 +60,60 @@ Format JSON Wajib:
         }
     });
 }
+export function extractDeterministicSearchIntent(userQuery) {
+    const trimmed = userQuery.trim();
+    const lower = trimmed.toLowerCase();
+    const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+    const [year, month] = today.split("-");
+    const currentMonthStart = `${year}-${month}-01`;
+    const currentMonthEnd = `${year}-${month}-31`;
+    // 1. Check general wallet balance
+    if (/^(berapa|cek|sisa|total)?\s*(saldo|uang|kas|dompet)(\s*kita|\s*sekarang)?\??$/i.test(lower) ||
+        lower === "saldo" ||
+        lower === "cek saldo" ||
+        lower === "sisa saldo") {
+        return { intent_type: "wallet_balance" };
+    }
+    // 2. Check specific bank pocket balance
+    const bankMatch = lower.match(/(?:saldo|uang(?:\s+di)?|kas)\s+(mandiri|bca|bri|bni|cash|qris|tunai)/i);
+    if (bankMatch) {
+        let pocket = bankMatch[1].toUpperCase();
+        if (pocket === "TUNAI")
+            pocket = "CASH";
+        return { intent_type: "multi_pocket_balance", target_pocket: pocket };
+    }
+    // 3. Check monthly expense / income inquiries
+    const isExpenseInquiry = lower.includes("pengeluaran") || lower.includes("belanja") || lower.includes("keluar");
+    const isIncomeInquiry = lower.includes("pemasukan") || lower.includes("uang masuk") || lower.includes("terima");
+    const isMonthInquiry = lower.includes("bulan ini") || lower.includes("agustus") || lower.includes("month");
+    if (isExpenseInquiry || isIncomeInquiry) {
+        let paymentMethod = undefined;
+        if (lower.includes("cash") || lower.includes("tunai"))
+            paymentMethod = "Cash";
+        else if (lower.includes("mandiri"))
+            paymentMethod = "Mandiri";
+        else if (lower.includes("bca"))
+            paymentMethod = "BCA";
+        else if (lower.includes("bri"))
+            paymentMethod = "BRI";
+        else if (lower.includes("qris"))
+            paymentMethod = "QRIS";
+        return {
+            intent_type: "search_transactions",
+            search_params: {
+                trx_type: isIncomeInquiry ? "income" : "expense",
+                payment_method: paymentMethod,
+                start_date: isMonthInquiry ? currentMonthStart : undefined,
+                end_date: isMonthInquiry ? currentMonthEnd : undefined,
+            },
+        };
+    }
+    return null;
+}
 export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin, senderPhone) {
     const trimmed = (userQuery || "").trim();
     const lower = trimmed.toLowerCase();
-    // Fast heuristic: Only evaluate with AI if the text contains question indicators or inquiry keywords
+    // Fast heuristic: Only evaluate if the text contains question indicators or inquiry keywords
     const isQuestionLike = trimmed.endsWith("?") ||
         /^(berapa|cek|saldo|dompet|kas|riwayat|cari|rekap|laporan|apakah|bagaimana|mana|total|siapa|ada|terakhir|transaksi|pengeluaran|pemasukan)\b/i.test(lower) ||
         lower.includes("saldo") ||
@@ -71,14 +121,19 @@ export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin
         lower.includes("cari nota") ||
         lower.includes("cari belanja") ||
         lower.includes("terakhir") ||
-        lower.includes("pengeluaran terakhir") ||
-        lower.includes("pemasukan terakhir") ||
-        lower.includes("transaksi terakhir") ||
-        lower.includes("belanja terakhir");
+        lower.includes("pengeluaran") ||
+        lower.includes("pemasukan") ||
+        lower.includes("transaksi") ||
+        lower.includes("belanja");
     if (!isQuestionLike) {
         return { isQuery: false, replyText: "" };
     }
-    const intent = await parseQueryIntent(userQuery);
+    // 1. Check deterministic rule-based intent first
+    let intent = extractDeterministicSearchIntent(userQuery);
+    // 2. If no deterministic intent matched, use Gemini AI
+    if (!intent) {
+        intent = await parseQueryIntent(userQuery);
+    }
     if (intent.intent_type === "not_a_query") {
         return { isQuery: false, replyText: "" };
     }
@@ -113,7 +168,7 @@ export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin
         const results = await trxRepo.searchTransactions({
             ...params,
             userPhone: isSuperAdmin ? undefined : senderPhone, // Non-admin only sees own transactions
-            limit: 20,
+            limit: 30,
         });
         if (results.length === 0) {
             let notFound = `🔍 *Pencarian Riwayat Transaksi:*\n\nTidak ditemukan transaksi yang cocok untuk: *"${userQuery}"*`;
@@ -131,17 +186,18 @@ export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin
         reply += `📊 *Ditemukan:* ${results.length} transaksi\n`;
         reply += `💰 *Total Nilai:* *${formatRupiah(totalAmount)}*\n`;
         reply += `────────────────────────\n\n`;
-        results.slice(0, 10).forEach((t, i) => {
+        results.slice(0, 15).forEach((t, i) => {
             const isInc = isIncome(t);
             const sign = isInc ? "🟢" : "🔴";
             const method = t.payment_method ? ` • ${t.payment_method}` : "";
-            reply += `${i + 1}. ${sign} *${t.merchant}* (${t.category})\n`;
+            const shortId = t.id.includes("-") ? t.id.split("-").slice(1).join("") : t.id;
+            reply += `${i + 1}. ${sign} *${t.merchant}* (${t.category}) • \`${shortId}\`\n`;
             reply += `   📅 ${t.date} | 💰 *${formatRupiah(t.total_amount)}*${method} | 👤 ${t.user_name}\n\n`;
         });
-        if (results.length > 10) {
-            reply += `_...dan ${results.length - 10} transaksi lainnya._\n\n`;
+        if (results.length > 15) {
+            reply += `_...dan ${results.length - 15} transaksi lainnya._\n\n`;
         }
-        reply += `💡 _Ketik \`/detail [ID]\` untuk melihat rincian item lengkap._`;
+        reply += `💡 _Ketik \`/detail <ID>\` untuk melihat rincian item lengkap._`;
         return { isQuery: true, replyText: reply };
     }
     if (intent.intent_type === "general_qa" && intent.clarification_response) {

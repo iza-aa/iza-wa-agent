@@ -461,26 +461,23 @@ export class TransactionRepository {
         if (filters.payment_method) {
             query = query.ilike("payment_method", `%${filters.payment_method}%`);
         }
-        if (filters.limit) {
-            query = query.limit(filters.limit);
-        }
-        else {
-            query = query.limit(30);
-        }
+        const fetchLimit = Math.max(filters.limit || 30, 100);
+        query = query.limit(fetchLimit);
         const { data, error } = await query;
         if (error || !data) {
             logger.error({ error, filters }, "Failed to search transactions");
             return [];
         }
         let results = data;
-        // If keyword filter is provided, do fuzzy match across merchant, category, and raw_text
+        // If keyword filter is provided, do fuzzy match across merchant, category, raw_text, and payment_method
         if (filters.keyword) {
             const kw = filters.keyword.toLowerCase().trim();
             results = results.filter((t) => {
                 const m = (t.merchant || "").toLowerCase();
                 const c = (t.category || "").toLowerCase();
                 const r = (t.raw_text || "").toLowerCase();
-                return m.includes(kw) || c.includes(kw) || r.includes(kw);
+                const p = (t.payment_method || "").toLowerCase();
+                return m.includes(kw) || c.includes(kw) || r.includes(kw) || p.includes(kw);
             });
         }
         // If trx_type filter is provided
@@ -490,7 +487,8 @@ export class TransactionRepository {
                 return filters.trx_type === "income" ? isInc : !isInc;
             });
         }
-        return results;
+        const maxReturn = filters.limit || 30;
+        return results.slice(0, maxReturn);
     }
 }
 //# sourceMappingURL=transaction.repository.js.map
