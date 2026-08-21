@@ -19,6 +19,7 @@ import { MessageHandler } from "./handlers/message.handler.js";
 import { getSupabaseClient } from "../db/supabase.js";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
+import { setGlobalSocket } from "./socket-holder.js";
 export function createWhatsAppBot() {
     const start = async () => {
         logger.info("Initializing Baileys WhatsApp Socket Client...");
@@ -33,6 +34,7 @@ export function createWhatsAppBot() {
             browser: ["IZA WA Agent", "Chrome", "1.0.0"],
             generateHighQualityLinkPreview: true,
         });
+        setGlobalSocket(sock);
         const supabase = getSupabaseClient();
         const userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
         await userRepo.syncSuperAdminsFromDB();

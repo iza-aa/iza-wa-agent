@@ -14,12 +14,15 @@ import { googleSheetsService } from "../../google/sheets.service.js";
 import {
   formatTransactionSuccess,
   formatPendingApprovalNotification,
+  formatDuplicateWarning,
 } from "../formatters/reply.formatter.js";
+import { DuplicateDetectorService } from "../../services/duplicate-detector.service.js";
 import { logger } from "../../utils/logger.js";
 import { config } from "../../config/env.js";
 
 export class MessageHandler {
   private commandHandler: CommandHandler;
+  private duplicateDetector: DuplicateDetectorService;
   private processedMessageIds: Set<string> = new Set();
 
   constructor(
@@ -28,6 +31,7 @@ export class MessageHandler {
     private chatRepo: ChatRepository
   ) {
     this.commandHandler = new CommandHandler(userRepo, trxRepo);
+    this.duplicateDetector = new DuplicateDetectorService(trxRepo);
   }
 
   cleanPhone(from: string): string {
@@ -196,6 +200,13 @@ export class MessageHandler {
           logger.error({ driveErr }, "Failed to upload receipt file");
         }
 
+        // Check for potential duplicate within last 10 minutes
+        const potentialDuplicate = await this.duplicateDetector.detectDuplicate(
+          parsed.total_amount,
+          parsed.merchant,
+          10
+        );
+
         // Save to Supabase
         const transactionRecord = await this.trxRepo.createTransaction(
           {
@@ -235,10 +246,13 @@ export class MessageHandler {
           logger.error({ sheetErr }, "Failed to append row to Google Sheet");
         }
 
-        // Reply Success
+        // Reply Success (with duplicate warning if detected)
         const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
         const wallet = await this.trxRepo.getWalletBalance();
-        const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+        let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+        if (potentialDuplicate) {
+          replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+        }
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
       }
@@ -342,6 +356,13 @@ export class MessageHandler {
       const parsed = textResult.transaction;
       const trxId = await this.trxRepo.generateTransactionId(parsed.date);
 
+      // Check for potential duplicate within last 10 minutes
+      const potentialDuplicate = await this.duplicateDetector.detectDuplicate(
+        parsed.total_amount,
+        parsed.merchant,
+        10
+      );
+
       const transactionRecord = await this.trxRepo.createTransaction(
         {
           id: trxId,
@@ -373,7 +394,10 @@ export class MessageHandler {
 
       const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
       const wallet = await this.trxRepo.getWalletBalance();
-      const replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+      let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+      if (potentialDuplicate) {
+        replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+      }
       await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
       await this.chatRepo.logMessage({
         user_phone: senderPhone,

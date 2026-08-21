@@ -1,0 +1,1 @@
+{"version":3,"file":"socket-holder.js","sourceRoot":"","sources":["../../src/bot/socket-holder.ts"],"names":[],"mappings":"AAEA,IAAI,YAAY,GAAoB,IAAI,CAAC;AAEzC,MAAM,UAAU,eAAe,CAAC,IAAqB;IACnD,YAAY,GAAG,IAAI,CAAC;AACtB,CAAC;AAED,MAAM,UAAU,eAAe;IAC7B,OAAO,YAAY,CAAC;AACtB,CAAC"}

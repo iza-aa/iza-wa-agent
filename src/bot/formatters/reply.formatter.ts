@@ -72,7 +72,148 @@ export function formatWalletBalance(wallet: {
   msg += " 🔴 Pengeluaran: " + formatRupiah(wallet.monthExpense) + "\n";
   const netSign = wallet.monthBalance >= 0 ? "+" : "";
   msg += " 🏦 Saldo Bersih Bulan Ini: *" + netSign + formatRupiah(wallet.monthBalance) + "*\n\n";
-  msg += "💡 _Ketik `/pemasukan <nominal> <keterangan> [metode]` untuk menambah pemasukan baru._\n_(Contoh: `/pemasukan 100000 sumbangan BCA`)_";
+  msg += "💡 _Ketik `/saldo detail` untuk melihat rincian saldo per bank/kas fisik._\n_Ketik `/pemasukan <nominal> <keterangan> [metode]` untuk tambah saldo._";
+  return msg;
+}
+
+export function formatMultiPocketBalance(
+  multiWallet: {
+    totalBalance: number;
+    totalIncome: number;
+    totalExpense: number;
+    pockets: { [method: string]: { income: number; expense: number; balance: number } };
+  },
+  specificPocket?: string
+): string {
+  if (specificPocket) {
+    const key = Object.keys(multiWallet.pockets).find(
+      (k) => k.toLowerCase() === specificPocket.toLowerCase()
+    );
+    const pocketData = key ? multiWallet.pockets[key] : null;
+
+    if (!pocketData) {
+      return `ℹ️ Kantong / Metode bayar *${specificPocket}* belum memiliki riwayat transaksi.\n\nKetik \`/saldo\` untuk melihat seluruh kantong kas.`;
+    }
+
+    let msg = `🏦 *STATUS SALDO: ${key?.toUpperCase()}*\n\n`;
+    msg += `🟢 Pemasukan: ${formatRupiah(pocketData.income)}\n`;
+    msg += `🔴 Pengeluaran: ${formatRupiah(pocketData.expense)}\n`;
+    msg += `────────────────────────\n`;
+    msg += `💵 *Sisa Saldo ${key}:* *${formatRupiah(pocketData.balance)}*\n`;
+    return msg;
+  }
+
+  let msg = "💳 *RINCIAN SALDO PER KAS & BANK*\n\n";
+  const pocketKeys = Object.keys(multiWallet.pockets);
+
+  if (pocketKeys.length === 0) {
+    msg += "ℹ️ Belum ada data saldo per kantong.\n";
+  } else {
+    // Sort Cash first, then banks
+    const sortedKeys = [...pocketKeys].sort((a, b) => {
+      if (a.toLowerCase() === "cash" || a.toLowerCase() === "tunai") return -1;
+      if (b.toLowerCase() === "cash" || b.toLowerCase() === "tunai") return 1;
+      return a.localeCompare(b);
+    });
+
+    for (const p of sortedKeys) {
+      const pData = multiWallet.pockets[p];
+      const icon = (p.toLowerCase().includes("cash") || p.toLowerCase().includes("tunai"))
+        ? "💵"
+        : (p.toLowerCase().includes("qris") || p.toLowerCase().includes("gopay") || p.toLowerCase().includes("ovo") || p.toLowerCase().includes("dana"))
+        ? "📱"
+        : "🏦";
+      msg += `${icon} *${p}:* *${formatRupiah(pData.balance)}*\n`;
+    }
+  }
+
+  msg += "────────────────────────\n";
+  msg += `💰 *TOTAL SELURUH KAS:* *${formatRupiah(multiWallet.totalBalance)}*\n\n`;
+  msg += "💡 *Tips:* Ketik `/saldo mandiri` atau `/saldo bca` untuk cek spesifik.\nKetik `/transfer bca cash 500000 Tarik Tunai` untuk mutasi kas.";
+  return msg;
+}
+
+export function formatDailyRecap(
+  dailySummary: {
+    date: string;
+    count: number;
+    totalIncome: number;
+    totalExpense: number;
+    netCashflow: number;
+    transactions: TransactionRecord[];
+  },
+  wallet: { balance: number }
+): string {
+  const [y, m, d] = dailySummary.date.split("-");
+  const formattedDate = `${d}/${m}/${y}`;
+
+  let msg = `🌙 *REKAP KAS MALAM INI (${formattedDate})*\n\n`;
+
+  if (dailySummary.count === 0) {
+    msg += "ℹ️ _Tidak ada transaksi yang tercatat hari ini._\n\n";
+    msg += `💵 *Sisa Saldo Kas Dompet Saat Ini:* *${formatRupiah(wallet.balance)}*\n\n`;
+    msg += "💡 _Laporan harian otomatis dikirim setiap pukul 20.00 WITA._";
+    return msg;
+  }
+
+  msg += `🟢 *Pemasukan Hari Ini:* *${formatRupiah(dailySummary.totalIncome)}*\n`;
+  msg += `🔴 *Pengeluaran Hari Ini:* *${formatRupiah(dailySummary.totalExpense)}*\n`;
+  const netSign = dailySummary.netCashflow >= 0 ? "+" : "";
+  msg += `🏦 *Arus Kas Bersih Hari Ini:* *${netSign}${formatRupiah(dailySummary.netCashflow)}*\n`;
+  msg += `────────────────────────\n`;
+  msg += `💵 *SISA SALDO KAS DOMPET:* *${formatRupiah(wallet.balance)}*\n\n`;
+
+  msg += `📋 *Rincian Transaksi Hari Ini (${dailySummary.count} transaksi):*\n`;
+  dailySummary.transactions.slice(0, 15).forEach((t, i) => {
+    const isInc = isIncome(t);
+    const sign = isInc ? "🟢" : "🔴";
+    const method = t.payment_method ? ` (${t.payment_method})` : "";
+    msg += ` ${i + 1}. ${sign} *${t.merchant}*${method}: ${formatRupiah(t.total_amount)}\n`;
+  });
+
+  if (dailySummary.transactions.length > 15) {
+    msg += ` _...dan ${dailySummary.transactions.length - 15} transaksi lainnya._\n`;
+  }
+
+  msg += "\n💡 _Laporan harian otomatis dikirim setiap pukul 20.00 WITA._";
+  return msg;
+}
+
+export function formatDuplicateWarning(
+  existingTrx: TransactionRecord,
+  amount: number,
+  merchant: string
+): string {
+  const isInc = isIncome(existingTrx);
+  let msg = "⚠️ *PERINGATAN TRANSAKSI KEMBAR / SERUPA*\n\n";
+  msg += `Sistem mendeteksi transaksi ini sama persis dengan transaksi yang baru saja dicatat:\n`;
+  msg += `🧾 *ID Transaksi:* \`${existingTrx.id}\`\n`;
+  msg += `🏪 *Tempat / Sumber:* ${existingTrx.merchant}\n`;
+  msg += `💰 *Nominal:* *${formatRupiah(existingTrx.total_amount)}*\n`;
+  msg += `📅 *Tanggal:* ${existingTrx.date}\n`;
+  msg += `👤 *Penginput:* ${existingTrx.user_name}\n\n`;
+  msg += `✅ *Transaksi ini tetap berhasil disimpan.*\n`;
+  msg += `💡 _Jika ini transaksi ganda yang tidak sengaja terinput, Anda bisa membatalkannya dengan ketik:_ \`/hapus ${existingTrx.id.includes("-") ? existingTrx.id.split("-").slice(1).join("") : existingTrx.id}\``;
+  return msg;
+}
+
+export function formatTransferSuccess(
+  fromPocket: string,
+  toPocket: string,
+  amount: number,
+  notes: string,
+  totalBalance: number
+): string {
+  let msg = "🔄 *MUTASI KAS BERHASIL DICATAT!*\n\n";
+  msg += `📤 *Dari:* ${fromPocket}\n`;
+  msg += `📥 *Ke:* ${toPocket}\n`;
+  msg += `💰 *Nominal:* *${formatRupiah(amount)}*\n`;
+  if (notes) {
+    msg += `📝 *Keterangan:* ${notes}\n`;
+  }
+  msg += `────────────────────────\n`;
+  msg += `💵 *Total Sisa Saldo Kas:* *${formatRupiah(totalBalance)}*\n\n`;
+  msg += `💡 _Saldo ${fromPocket} telah berkurang dan saldo ${toPocket} telah bertambah._`;
   return msg;
 }
 

@@ -10,6 +10,9 @@ import {
   formatTransactionUpdated,
   formatTransactionSuccess,
   formatWalletBalance,
+  formatMultiPocketBalance,
+  formatDailyRecap,
+  formatTransferSuccess,
 } from "../formatters/reply.formatter.js";
 import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
@@ -47,8 +50,149 @@ export class CommandHandler {
           responseMessage: "⚠️ Perintah `/saldo` hanya dapat diakses oleh Super Admin untuk menjaga privasi data keuangan.",
         };
       }
+
+      const subArg = parts[1]?.trim().toLowerCase();
+      if (subArg) {
+        const multi = await this.trxRepo.getMultiPocketBalances();
+        if (subArg === "detail" || subArg === "rincian" || subArg === "semua" || subArg === "all") {
+          return { handled: true, responseMessage: formatMultiPocketBalance(multi) };
+        }
+        return { handled: true, responseMessage: formatMultiPocketBalance(multi, parts[1]) };
+      }
+
       const wallet = await this.trxRepo.getWalletBalance();
       return { handled: true, responseMessage: formatWalletBalance(wallet) };
+    }
+
+    if (command === "/transfer" || command === "/mutasi" || command === "/tariktunai") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/transfer` hanya dapat diakses oleh Super Admin.",
+        };
+      }
+
+      // Format: /transfer <dari> <ke> <nominal> [keterangan]
+      // Contoh: /transfer bca cash 500000 Tarik tunai ATM
+      const fromPocket = parts[1]?.trim();
+      const toPocket = parts[2]?.trim();
+      const rawNominal = parts[3]?.replace(/[^0-9]/g, "") || "";
+      const nominal = parseInt(rawNominal, 10);
+      const notes = parts.slice(4).join(" ").trim() || "Mutasi Kas";
+
+      if (!fromPocket || !toPocket || !nominal || isNaN(nominal) || nominal <= 0) {
+        return {
+          handled: true,
+          responseMessage:
+            "❌ Format salah. Gunakan:\n`/transfer <dari_kantong> <ke_kantong> <nominal> [keterangan]`\n\n*Contoh Penggunaan:*\n• `/transfer bca cash 500000 Tarik tunai ATM`\n• `/transfer cash mandiri 1000000 Setor tunai penjualan`\n• `/transfer mandiri bca 250000 Pindah saldo antar bank`",
+        };
+      }
+
+      const user = await this.userRepo.getUser(senderPhone);
+      const userName = user?.name || "Super Admin";
+      const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+
+      // 1. Catat Pengeluaran dari Kantong Asal (Mutasi Keluar)
+      const outTrxId = await this.trxRepo.generateTransactionId(today);
+      await this.trxRepo.createTransaction({
+        id: outTrxId,
+        user_phone: senderPhone,
+        user_name: userName,
+        date: today,
+        merchant: `Mutasi Keluar -> ${toPocket.toUpperCase()}`,
+        category: "Mutasi Kas: Keluar",
+        subtotal: nominal,
+        tax: 0,
+        discount: 0,
+        total_amount: nominal,
+        payment_method: fromPocket.toUpperCase(),
+        raw_text: trimmed,
+        status: "expense",
+      });
+
+      // 2. Catat Pemasukan ke Kantong Tujuan (Mutasi Masuk)
+      // Slight delay to ensure sequential ID
+      const inTrxId = await this.trxRepo.generateTransactionId(today);
+      await this.trxRepo.createTransaction({
+        id: inTrxId,
+        user_phone: senderPhone,
+        user_name: userName,
+        date: today,
+        merchant: `Mutasi Masuk <- ${fromPocket.toUpperCase()}`,
+        category: "Pemasukan: Mutasi Kas",
+        subtotal: nominal,
+        tax: 0,
+        discount: 0,
+        total_amount: nominal,
+        payment_method: toPocket.toUpperCase(),
+        raw_text: trimmed,
+        status: "income",
+      });
+
+      // 3. Append both to Google Sheets
+      try {
+        await googleSheetsService.appendTransaction({
+          id: outTrxId,
+          user_phone: senderPhone,
+          user_name: userName,
+          date: today,
+          merchant: `Mutasi Keluar -> ${toPocket.toUpperCase()} (${notes})`,
+          category: "Mutasi Kas: Keluar",
+          subtotal: nominal,
+          tax: 0,
+          discount: 0,
+          total_amount: nominal,
+          payment_method: fromPocket.toUpperCase(),
+          status: "expense",
+          raw_text: trimmed,
+        });
+
+        await googleSheetsService.appendTransaction({
+          id: inTrxId,
+          user_phone: senderPhone,
+          user_name: userName,
+          date: today,
+          merchant: `Mutasi Masuk <- ${fromPocket.toUpperCase()} (${notes})`,
+          category: "Pemasukan: Mutasi Kas",
+          subtotal: nominal,
+          tax: 0,
+          discount: 0,
+          total_amount: nominal,
+          payment_method: toPocket.toUpperCase(),
+          status: "income",
+          raw_text: trimmed,
+        });
+      } catch (sheetErr) {
+        logger.error({ sheetErr }, "Failed to append transfer transaction to Google Sheet");
+      }
+
+      const wallet = await this.trxRepo.getWalletBalance();
+      return {
+        handled: true,
+        responseMessage: formatTransferSuccess(
+          fromPocket.toUpperCase(),
+          toPocket.toUpperCase(),
+          nominal,
+          notes,
+          wallet.balance
+        ),
+      };
+    }
+
+    if (command === "/rekapmalam" || command === "/kirimrekap" || command === "/rekapmanual") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah ini hanya dapat diakses oleh Super Admin.",
+        };
+      }
+      const targetDate = parts[1] || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+      const dailySummary = await this.trxRepo.getDailyTransactionsSummary(targetDate);
+      const wallet = await this.trxRepo.getWalletBalance();
+      return {
+        handled: true,
+        responseMessage: formatDailyRecap(dailySummary, wallet),
+      };
     }
 
     if (command === "/pemasukan" || command === "/masuk" || command === "/income" || command === "/tambahsaldo") {

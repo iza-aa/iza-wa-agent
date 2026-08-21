@@ -435,4 +435,129 @@ export class TransactionRepository {
       topTransactions: data.filter((t) => !isIncome(t)).slice(0, 3) as TransactionRecord[],
     };
   }
+
+  async getMultiPocketBalances(): Promise<{
+    totalBalance: number;
+    totalIncome: number;
+    totalExpense: number;
+    pockets: { [method: string]: { income: number; expense: number; balance: number } };
+  }> {
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .select("*");
+
+    if (error || !data) {
+      logger.error({ error }, "Failed to fetch transactions for multi-pocket balances");
+      return { totalBalance: 0, totalIncome: 0, totalExpense: 0, pockets: {} };
+    }
+
+    const pockets: { [method: string]: { income: number; expense: number; balance: number } } = {};
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (const trx of data) {
+      const amount = Number(trx.total_amount) || 0;
+      let method = (trx.payment_method || "Cash").trim();
+      if (!method) method = "Cash";
+
+      if (!pockets[method]) {
+        pockets[method] = { income: 0, expense: 0, balance: 0 };
+      }
+
+      if (isIncome(trx)) {
+        totalIncome += amount;
+        pockets[method].income += amount;
+        pockets[method].balance += amount;
+      } else {
+        totalExpense += amount;
+        pockets[method].expense += amount;
+        pockets[method].balance -= amount;
+      }
+    }
+
+    return {
+      totalBalance: totalIncome - totalExpense,
+      totalIncome,
+      totalExpense,
+      pockets,
+    };
+  }
+
+  async getDailyTransactionsSummary(dateStr?: string): Promise<{
+    date: string;
+    count: number;
+    totalIncome: number;
+    totalExpense: number;
+    netCashflow: number;
+    transactions: TransactionRecord[];
+  }> {
+    const targetDate = dateStr || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .select("*")
+      .eq("date", targetDate)
+      .order("created_at", { ascending: true });
+
+    if (error || !data) {
+      logger.error({ error, targetDate }, "Failed to fetch daily transactions");
+      return { date: targetDate, count: 0, totalIncome: 0, totalExpense: 0, netCashflow: 0, transactions: [] };
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    for (const trx of data) {
+      const amount = Number(trx.total_amount) || 0;
+      if (isIncome(trx)) {
+        totalIncome += amount;
+      } else {
+        totalExpense += amount;
+      }
+    }
+
+    return {
+      date: targetDate,
+      count: data.length,
+      totalIncome,
+      totalExpense,
+      netCashflow: totalIncome - totalExpense,
+      transactions: data as TransactionRecord[],
+    };
+  }
+
+  async findRecentSimilarTransaction(
+    amount: number,
+    merchant: string,
+    minutesWindow: number = 10
+  ): Promise<TransactionRecord | null> {
+    const windowStart = new Date(Date.now() - minutesWindow * 60 * 1000).toISOString();
+
+    const { data, error } = await this.supabase
+      .from("transactions")
+      .select("*")
+      .gte("created_at", windowStart)
+      .eq("total_amount", amount)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (error || !data || data.length === 0) {
+      return null;
+    }
+
+    const cleanMerchant = (merchant || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    for (const item of data) {
+      const itemMerchant = (item.merchant || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (
+        cleanMerchant === itemMerchant ||
+        cleanMerchant.includes(itemMerchant) ||
+        itemMerchant.includes(cleanMerchant)
+      ) {
+        return item as TransactionRecord;
+      }
+    }
+
+    // If nominal matches exactly within window, flag it
+    return data[0] as TransactionRecord;
+  }
 }

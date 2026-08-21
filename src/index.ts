@@ -81,6 +81,25 @@ async function bootstrap() {
   // 4. Initialize WhatsApp Bot Client
   const bot = createWhatsAppBot();
   await bot.start();
+
+  // 5. Initialize Background Scheduler Service (Nightly Recap & Reminders)
+  try {
+    const { getSupabaseClient } = await import("./db/supabase.js");
+    const { TransactionRepository } = await import("./db/repositories/transaction.repository.js");
+    const { UserRepository } = await import("./db/repositories/user.repository.js");
+    const { SchedulerService } = await import("./services/scheduler.service.js");
+
+    const supabase = getSupabaseClient();
+    const trxRepo = new TransactionRepository(supabase);
+    const userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
+    await userRepo.syncSuperAdminsFromDB();
+
+    const scheduler = new SchedulerService(trxRepo, userRepo);
+    scheduler.start();
+    logger.info("Background Scheduler Service is active and monitoring daily schedule");
+  } catch (schedErr) {
+    logger.error({ schedErr }, "Could not start Background Scheduler Service");
+  }
 }
 
 bootstrap().catch((err) => {
