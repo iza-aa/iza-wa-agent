@@ -384,24 +384,31 @@ export class CommandHandler {
                 changedFields.push("Catatan");
             }
             if (changedFields.length === 0) {
+                // Ensure Google Sheets is also up-to-date with current DB state
+                try {
+                    await googleSheetsService.updateTransactionRow(existing.trx, existing.items);
+                }
+                catch (sheetErr) {
+                    logger.error({ sheetErr }, "Failed to sync row in Google Sheets");
+                }
                 let sameInfo = "";
                 if (parsedEdit.payment_method && parsedEdit.payment_method === existing.trx.payment_method) {
-                    sameInfo += `\n• Metode Pembayaran transaksi ini memang sudah *${existing.trx.payment_method}*`;
+                    sameInfo += `\n• Metode Pembayaran: *${existing.trx.payment_method}*`;
                 }
                 if (parsedEdit.merchant && parsedEdit.merchant === existing.trx.merchant) {
-                    sameInfo += `\n• Toko/Sumber memang sudah *${existing.trx.merchant}*`;
+                    sameInfo += `\n• Toko/Sumber: *${existing.trx.merchant}*`;
                 }
                 if (parsedEdit.category && parsedEdit.category === existing.trx.category) {
-                    sameInfo += `\n• Kategori memang sudah *${existing.trx.category}*`;
+                    sameInfo += `\n• Kategori: *${existing.trx.category}*`;
                 }
                 if (parsedEdit.total_amount && parsedEdit.total_amount === existing.trx.total_amount) {
-                    sameInfo += `\n• Nominal memang sudah *${formatRupiah(existing.trx.total_amount)}*`;
+                    sameInfo += `\n• Nominal: *${formatRupiah(existing.trx.total_amount)}*`;
                 }
                 return {
                     handled: true,
                     responseMessage: "ℹ️ *Tidak Ada Perubahan:*" +
                         (sameInfo
-                            ? sameInfo + "\n\n_Semua data sudah sesuai dengan yang Anda instruksikan._"
+                            ? sameInfo + "\n\n_Semua data di database & spreadsheet sudah sesuai dengan yang Anda instruksikan._"
                             : `\nTidak ada kolom yang berbeda dari instruksi: "${editInstruction}".`),
                 };
             }
