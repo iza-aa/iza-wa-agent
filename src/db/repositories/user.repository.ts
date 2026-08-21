@@ -98,10 +98,60 @@ export class UserRepository {
         this.removeSuperAdminIdentifier(cleaned);
         return data as UserRecord;
       }
+
+      // Check if user's name or pushName matches any blocked user
+      const nameToCheck = (pushName || data.name || "").trim().toLowerCase();
+      if (nameToCheck.length >= 2 && nameToCheck !== "user" && nameToCheck !== ".") {
+        const { data: blockedMatch } = await this.supabase
+          .from("users")
+          .select("*")
+          .eq("status", "blocked")
+          .ilike("name", `%${nameToCheck}%`)
+          .limit(1);
+
+        if (blockedMatch && blockedMatch.length > 0) {
+          logger.warn(
+            { identifier: cleaned, pushName, blockedUser: blockedMatch[0].name },
+            "User matched blocked user by name, auto-blocking identifier"
+          );
+          await this.supabase
+            .from("users")
+            .update({ status: "blocked", updated_at: new Date().toISOString() })
+            .eq("phone_number", cleaned);
+          data.status = "blocked";
+          this.removeSuperAdminIdentifier(cleaned);
+          return data as UserRecord;
+        }
+      }
+
       if (data.role === "super_admin") {
         this.addSuperAdminIdentifier(cleaned);
       }
       return data as UserRecord;
+    }
+
+    // If user record not found yet, check if pushName matches a blocked user
+    if (pushName && pushName.trim().length >= 2 && pushName.trim() !== "User" && pushName.trim() !== ".") {
+      const pushNameLower = pushName.trim().toLowerCase();
+      const { data: blockedMatch } = await this.supabase
+        .from("users")
+        .select("*")
+        .eq("status", "blocked")
+        .ilike("name", `%${pushNameLower}%`)
+        .limit(1);
+
+      if (blockedMatch && blockedMatch.length > 0) {
+        logger.warn(
+          { identifier: cleaned, pushName, blockedUser: blockedMatch[0].name },
+          "New incoming user matches blocked user by name, creating as blocked"
+        );
+        return await this.upsertUser({
+          phone_number: cleaned,
+          name: pushName.trim(),
+          role: "member",
+          status: "blocked",
+        });
+      }
     }
 
     // If identifier is an unmapped WhatsApp LID (14-16 digits) and pushName is provided:
@@ -256,33 +306,50 @@ export class UserRepository {
     return data as UserRecord | null;
   }
 
-  async setUserStatus(phone: string, status: "active" | "blocked" | "pending", name?: string): Promise<boolean> {
-    const cleaned = this.cleanIdentifier(phone);
+  async setUserStatus(
+    target: string,
+    status: "active" | "blocked" | "pending",
+    name?: string
+  ): Promise<{ success: boolean; affectedUsers: UserRecord[] }> {
+    const rawTarget = target.trim();
+    let cleanedPhone = this.cleanIdentifier(rawTarget);
+    if (cleanedPhone.startsWith("0")) cleanedPhone = "62" + cleanedPhone.slice(1);
+
     const updateData: any = { status, updated_at: new Date().toISOString() };
     if (name) updateData.name = name;
 
-    if (status === "blocked") {
-      this.removeSuperAdminIdentifier(cleaned);
+    if (status === "blocked" && cleanedPhone) {
+      this.removeSuperAdminIdentifier(cleanedPhone);
     }
 
-    const { data: targetUser } = await this.supabase
-      .from("users")
-      .select("*")
-      .eq("phone_number", cleaned)
-      .maybeSingle();
+    // Fetch all users to match against phone or name
+    const { data: allUsers } = await this.supabase.from("users").select("*");
+    const matched = (allUsers || []).filter((u: any) => {
+      const matchPhone = cleanedPhone && cleanedPhone.length >= 4 && (u.phone_number === cleanedPhone || u.phone_number.includes(cleanedPhone));
+      const matchName = rawTarget.length >= 2 && u.name.toLowerCase().includes(rawTarget.toLowerCase());
+      return matchPhone || matchName;
+    });
 
-    if (targetUser && status === "blocked") {
-      await this.supabase
-        .from("users")
-        .update(updateData)
-        .or(`phone_number.eq.${cleaned},name.eq."${targetUser.name}"`);
-    } else {
-      await this.supabase
-        .from("users")
-        .update(updateData)
-        .eq("phone_number", cleaned);
+    const affected: UserRecord[] = [];
+    for (const u of matched) {
+      await this.supabase.from("users").update(updateData).eq("phone_number", u.phone_number);
+      if (status === "blocked") {
+        this.removeSuperAdminIdentifier(u.phone_number);
+      }
+      affected.push({ ...u, ...updateData });
     }
 
-    return true;
+    // If no existing user matched but it's a valid phone number, create as blocked
+    if (affected.length === 0 && cleanedPhone.length >= 8) {
+      const created = await this.upsertUser({
+        phone_number: cleanedPhone,
+        name: name || `User (+${cleanedPhone})`,
+        role: "member",
+        status,
+      });
+      if (created) affected.push(created);
+    }
+
+    return { success: affected.length > 0, affectedUsers: affected };
   }
 }

@@ -463,20 +463,18 @@ export class CommandHandler {
             };
         }
         if (command === "/blokir" || command === "/block") {
-            const remaining = trimmed.substring(command.length).trim();
-            let targetPhone = remaining.replace(/[^0-9]/g, "");
-            if (targetPhone.startsWith("0"))
-                targetPhone = "62" + targetPhone.slice(1);
-            if (!targetPhone || targetPhone.length < 8) {
+            const target = trimmed.substring(command.length).trim();
+            if (!target || target.length < 2) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/blokir <nomor_hp>`\nContoh: `/blokir 0811422404`",
+                    responseMessage: "❌ Format salah. Gunakan: `/blokir <nomor_hp_atau_nama>`\nContoh:\n• `/blokir 083801408811`\n• `/blokir alfi`\n• `/blokir ikhwan`",
                 };
             }
-            await this.userRepo.setUserStatus(targetPhone, "blocked");
+            const res = await this.userRepo.setUserStatus(target, "blocked");
+            const affectedNames = res.affectedUsers.map((u) => `• *${u.name}* (\`+${u.phone_number}\`)`).join("\n");
             return {
                 handled: true,
-                responseMessage: "🚫 Nomor `+" + targetPhone + "` berhasil diblokir.",
+                responseMessage: `🚫 *PEMBLOKIRAN BERHASIL!*\n\n${res.affectedUsers.length} pengguna telah dinonaktifkan dari sistem:\n${affectedNames || `• Target: ${target}`}\n\nPengguna di atas tidak lagi dapat mengirim atau mencatat transaksi ke bot.`,
             };
         }
         if (command === "/peran" || command === "/role" || command === "/ubahperan" || command === "/setrole") {
