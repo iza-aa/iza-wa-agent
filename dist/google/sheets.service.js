@@ -709,13 +709,13 @@ export class GoogleSheetsService {
                     },
                 });
             });
-            // Trim Transaksi columns to exactly 12 (A:L)
+            // Keep Transaksi columns expanded to 26 (A:Z) to allow custom notes in columns M, N, O, etc.
             formattingRequests.push({
                 updateSheetProperties: {
                     properties: {
                         sheetId: trxSheetId,
                         gridProperties: {
-                            columnCount: 12,
+                            columnCount: 26,
                         },
                     },
                     fields: "gridProperties.columnCount",
@@ -811,7 +811,6 @@ export class GoogleSheetsService {
         }
     }
     async appendTransaction(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
-        await this.ensureSheetInitialized(sheetId);
         const nowWIB = new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" });
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
         const isInc = isIncome(trx);
