@@ -155,7 +155,51 @@ export function parseDateRange(
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10);
 
-  // 1. Minggu ini / Pekan ini / This week
+  // 1. Last N Days (e.g. "7 hari terakhir", "30 hari terakhir", "3 hari terakhir")
+  const nDaysMatch = lower.match(/(\d+)\s*hari\s*terakhir/i);
+  if (nDaysMatch) {
+    const days = parseInt(nDaysMatch[1], 10);
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - days);
+    const startStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(startDate);
+    return {
+      start_date: startStr,
+      end_date: yStr,
+      period_label: `${days} Hari Terakhir (${startStr} s/d ${yStr})`,
+    };
+  }
+
+  // 2. Tahun lalu / Tahun kemarin / Last year
+  if (lower.includes("tahun lalu") || lower.includes("tahun kemarin") || lower.includes("last year")) {
+    const prevYear = year - 1;
+    return {
+      start_date: `${prevYear}-01-01`,
+      end_date: `${prevYear}-12-31`,
+      period_label: `Tahun Lalu (${prevYear})`,
+    };
+  }
+
+  // 3. Tahun ini / This year
+  if (lower.includes("tahun ini") || lower.includes("this year") || lower.includes("sepanjang tahun")) {
+    return {
+      start_date: `${year}-01-01`,
+      end_date: `${year}-12-31`,
+      period_label: `Tahun Ini (${year})`,
+    };
+  }
+
+  // 4. Specific Year Mention (e.g. "tahun 2024", "tahun 2025", "thn 2023")
+  const yearMatch = lower.match(/(?:tahun|thn)\s+(20\d\d)\b/i);
+  if (yearMatch) {
+    const targetYear = yearMatch[1];
+    return {
+      start_date: `${targetYear}-01-01`,
+      end_date: `${targetYear}-12-31`,
+      period_label: `Tahun ${targetYear}`,
+    };
+  }
+
+  // 5. Minggu ini / Pekan ini / This week
   if (lower.includes("minggu ini") || lower.includes("pekan ini") || lower.includes("this week")) {
     const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon ...
     const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
@@ -175,7 +219,7 @@ export function parseDateRange(
     };
   }
 
-  // 2. Minggu lalu / Minggu kemarin / Pekan lalu / Last week
+  // 6. Minggu lalu / Minggu kemarin / Pekan lalu / Last week
   if (lower.includes("minggu lalu") || lower.includes("minggu kemarin") || lower.includes("pekan lalu") || lower.includes("last week")) {
     const dayOfWeek = today.getDay();
     const diffToMonday = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek) - 7;
@@ -195,7 +239,7 @@ export function parseDateRange(
     };
   }
 
-  // 3. Bulan kemarin / Bulan lalu / Last month
+  // 7. Bulan kemarin / Bulan lalu / Last month
   if (lower.includes("bulan kemarin") || lower.includes("bulan lalu") || lower.includes("last month")) {
     const prevMonthNum = month === 1 ? 12 : month - 1;
     const prevYearNum = month === 1 ? year - 1 : year;
@@ -208,7 +252,7 @@ export function parseDateRange(
     };
   }
 
-  // 4. Bulan ini / This month
+  // 8. Bulan ini / This month
   if (lower.includes("bulan ini") || lower.includes("this month")) {
     const lastDay = new Date(year, month, 0).getDate();
     return {
@@ -218,7 +262,7 @@ export function parseDateRange(
     };
   }
 
-  // 5. Specific Month Name (e.g. "bulan juli", "agustus")
+  // 9. Specific Month Name (e.g. "bulan juli", "agustus")
   for (const [mName, mInfo] of Object.entries(MONTH_NAMES)) {
     if (new RegExp(`\\b${mName}\\b`, "i").test(lower)) {
       const mNum = parseInt(mInfo.month, 10);
@@ -231,7 +275,7 @@ export function parseDateRange(
     }
   }
 
-  // 6. Hari ini / Today
+  // 10. Hari ini / Today
   if (lower.includes("hari ini") || lower.includes("today")) {
     return {
       start_date: yStr,
@@ -240,8 +284,8 @@ export function parseDateRange(
     };
   }
 
-  // 7. Kemarin (standalone)
-  if (/\bkemarin\b/.test(lower) && !lower.includes("bulan") && !lower.includes("minggu") && !lower.includes("pekan")) {
+  // 11. Kemarin
+  if (/\bkemarin\b/.test(lower) && !lower.includes("bulan") && !lower.includes("minggu") && !lower.includes("pekan") && !lower.includes("tahun")) {
     const yesterday = new Date(today);
     yesterday.setDate(today.getDate() - 1);
     const prevDayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(yesterday);
