@@ -41,6 +41,12 @@ export class CommandHandler {
     }
 
     if (command === "/saldo" || command === "/dompet" || command === "/kas" || command === "/balance") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/saldo` hanya dapat diakses oleh Super Admin untuk menjaga privasi data keuangan.",
+        };
+      }
       const wallet = await this.trxRepo.getWalletBalance();
       return { handled: true, responseMessage: formatWalletBalance(wallet) };
     }
@@ -315,6 +321,12 @@ export class CommandHandler {
     }
 
     if (command === "/pengguna" || command === "/anggota" || command === "/daftar" || command === "/users" || command === "/user") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/pengguna` hanya dapat diakses oleh Super Admin.",
+        };
+      }
       const users = await this.userRepo.listActiveUsers();
       return { handled: true, responseMessage: formatUserList(users) };
     }
@@ -450,6 +462,12 @@ export class CommandHandler {
     }
 
     if (command === "/sync" || command === "/sinkron" || command === "/tariksheet") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/sync` hanya dapat diakses oleh Super Admin.",
+        };
+      }
       try {
         const syncResult = await googleSheetsService.syncFromSheetToDatabase(this.trxRepo);
         const wallet = await this.trxRepo.getWalletBalance();
@@ -496,6 +514,12 @@ export class CommandHandler {
     }
 
     if (command === "/laporan" || command === "/bulanini" || command === "/report") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Perintah `/laporan` hanya dapat diakses oleh Super Admin untuk menjaga privasi data keuangan.",
+        };
+      }
       const now = new Date();
       let targetMonth = parts[1] || `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
 
@@ -540,7 +564,11 @@ export class CommandHandler {
       summary += "────────────────────────\n";
       summary += "🟢 *Total Pemasukan:* *" + formatRupiah(totalIncome) + "*\n";
       summary += "🔴 *Total Pengeluaran:* *" + formatRupiah(totalExpense) + "*\n\n";
-      summary += "💡 *Tips:* Ketik `/detail [ID]` untuk rincian, atau `/saldo` untuk status kas dompet.";
+      if (isSuperAdmin) {
+        summary += "💡 *Tips:* Ketik `/detail [ID]` untuk rincian, atau `/saldo` untuk status kas dompet.";
+      } else {
+        summary += "💡 *Tips:* Ketik `/rekap 20` untuk melihat 20 transaksi terakhir Anda.";
+      }
       return { handled: true, responseMessage: summary };
     }
 
