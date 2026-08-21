@@ -101,37 +101,101 @@ const MONTH_NAMES: Record<string, { month: string; lastDay: number }> = {
 
 const PAYMENT_METHOD_MAP: Record<string, string> = {
   mandiri: "Mandiri",
+  livin: "Mandiri",
   bca: "BCA",
+  blu: "BCA",
   bri: "BRI",
+  brimo: "BRI",
   bni: "BNI",
   bsi: "BSI",
   cimb: "CIMB",
+  "cimb niaga": "CIMB",
   permata: "Permata",
   danamon: "Danamon",
   cash: "Cash",
   tunai: "Cash",
+  kesh: "Cash",
   qris: "QRIS",
+  kris: "QRIS",
   gopay: "GoPay",
+  "go pay": "GoPay",
+  "go-pay": "GoPay",
   ovo: "OVO",
   dana: "DANA",
   shopeepay: "ShopeePay",
   "shopee pay": "ShopeePay",
+  shoopepay: "ShopeePay",
+  shoppepay: "ShopeePay",
+  shopee: "ShopeePay",
+  spay: "ShopeePay",
   transfer: "Transfer Bank",
   "transfer bank": "Transfer Bank",
   tf: "Transfer Bank",
+  trf: "Transfer Bank",
+  tranfer: "Transfer Bank",
   debit: "Debit",
   kredit: "Kredit",
 };
 
+const STOP_WORDS = new Set([
+  "berapa", "cek", "total", "lihat", "tampilkan", "ada", "daftar", "rekap", "laporan",
+  "apa", "saja", "sisa", "yang", "di", "ke", "dari", "pada", "untuk", "dan", "atau",
+  "pengeluaran", "belanja", "beli", "keluar", "biaya", "pemasukan", "masuk", "terima", "gaji",
+  "transaksi", "hari", "ini", "kemarin", "minggu", "pekan", "lalu", "bulan", "tahun", "toko",
+  "nota", "struk", "semua", "kami", "kita", "saya", "ayah", "sekarang", "saat", "dong", "ya", "nih", "kah",
+  "januari", "februari", "maret", "april", "mei", "juni", "juli", "agustus", "september", "oktober", "november", "desember",
+]);
+
 export function parseDateRange(
   lower: string,
-  todayStr: string
+  today: Date
 ): { start_date?: string; end_date?: string; period_label?: string } {
-  const [yearStr, monthStr] = todayStr.split("-");
+  const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(today);
+  const [yearStr, monthStr, dayStr] = yStr.split("-");
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10);
 
-  // 1. Bulan kemarin / Bulan lalu / Last month
+  // 1. Minggu ini / Pekan ini / This week
+  if (lower.includes("minggu ini") || lower.includes("pekan ini") || lower.includes("this week")) {
+    const dayOfWeek = today.getDay(); // 0 = Sun, 1 = Mon ...
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const monStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(monday);
+    const sunStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(sunday);
+
+    return {
+      start_date: monStr,
+      end_date: sunStr,
+      period_label: `Minggu Ini (${monStr} s/d ${sunStr})`,
+    };
+  }
+
+  // 2. Minggu lalu / Minggu kemarin / Pekan lalu / Last week
+  if (lower.includes("minggu lalu") || lower.includes("minggu kemarin") || lower.includes("pekan lalu") || lower.includes("last week")) {
+    const dayOfWeek = today.getDay();
+    const diffToMonday = (dayOfWeek === 0 ? -6 : 1 - dayOfWeek) - 7;
+    const monday = new Date(today);
+    monday.setDate(today.getDate() + diffToMonday);
+
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
+
+    const monStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(monday);
+    const sunStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(sunday);
+
+    return {
+      start_date: monStr,
+      end_date: sunStr,
+      period_label: `Minggu Lalu (${monStr} s/d ${sunStr})`,
+    };
+  }
+
+  // 3. Bulan kemarin / Bulan lalu / Last month
   if (lower.includes("bulan kemarin") || lower.includes("bulan lalu") || lower.includes("last month")) {
     const prevMonthNum = month === 1 ? 12 : month - 1;
     const prevYearNum = month === 1 ? year - 1 : year;
@@ -144,7 +208,7 @@ export function parseDateRange(
     };
   }
 
-  // 2. Bulan ini / This month
+  // 4. Bulan ini / This month
   if (lower.includes("bulan ini") || lower.includes("this month")) {
     const lastDay = new Date(year, month, 0).getDate();
     return {
@@ -154,7 +218,7 @@ export function parseDateRange(
     };
   }
 
-  // 3. Specific Month Name (e.g. "bulan juli", "agustus")
+  // 5. Specific Month Name (e.g. "bulan juli", "agustus")
   for (const [mName, mInfo] of Object.entries(MONTH_NAMES)) {
     if (new RegExp(`\\b${mName}\\b`, "i").test(lower)) {
       const mNum = parseInt(mInfo.month, 10);
@@ -167,23 +231,24 @@ export function parseDateRange(
     }
   }
 
-  // 4. Hari ini / Today
+  // 6. Hari ini / Today
   if (lower.includes("hari ini") || lower.includes("today")) {
-    return {
-      start_date: todayStr,
-      end_date: todayStr,
-      period_label: `Hari Ini (${todayStr})`,
-    };
-  }
-
-  // 5. Kemarin (standalone)
-  if (/\bkemarin\b/.test(lower) && !lower.includes("bulan") && !lower.includes("minggu")) {
-    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(yesterday);
     return {
       start_date: yStr,
       end_date: yStr,
-      period_label: `Kemarin (${yStr})`,
+      period_label: `Hari Ini (${yStr})`,
+    };
+  }
+
+  // 7. Kemarin (standalone)
+  if (/\bkemarin\b/.test(lower) && !lower.includes("bulan") && !lower.includes("minggu") && !lower.includes("pekan")) {
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+    const prevDayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(yesterday);
+    return {
+      start_date: prevDayStr,
+      end_date: prevDayStr,
+      period_label: `Kemarin (${prevDayStr})`,
     };
   }
 
@@ -193,23 +258,44 @@ export function parseDateRange(
 export function extractDeterministicSearchIntent(userQuery: string): SearchIntent | null {
   const trimmed = userQuery.trim();
   const lower = trimmed.toLowerCase();
-  const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+  const today = new Date();
 
   // 1. Check general wallet balance
   if (
-    /^(berapa|cek|sisa|total)?\s*(saldo|uang|kas|dompet)(\s*kita|\s*sekarang)?\??$/i.test(lower) ||
-    lower === "saldo" ||
-    lower === "cek saldo" ||
-    lower === "sisa saldo"
+    /(?:saldo|uang\s+kas|sisa\s+uang|uang\s+kita|dompet)/i.test(lower) &&
+    !lower.includes("pengeluaran") &&
+    !lower.includes("pemasukan") &&
+    !lower.includes("belanja") &&
+    !lower.includes("nota") &&
+    !lower.includes("struk")
   ) {
+    // Check specific bank pocket balance
+    for (const [key, val] of Object.entries(PAYMENT_METHOD_MAP)) {
+      if (new RegExp(`(?:saldo|uang(?:\\s+di)?|kas)\\s+${key}\\b`, "i").test(lower)) {
+        return { intent_type: "multi_pocket_balance", target_pocket: val.toUpperCase() };
+      }
+    }
     return { intent_type: "wallet_balance" };
   }
 
-  // 2. Check specific bank pocket balance
+  // 2. Detect payment method from aliases
+  let paymentMethod: string | undefined = undefined;
   for (const [key, val] of Object.entries(PAYMENT_METHOD_MAP)) {
-    if (new RegExp(`(?:saldo|uang(?:\\s+di)?|kas)\\s+${key}\\b`, "i").test(lower)) {
-      return { intent_type: "multi_pocket_balance", target_pocket: val.toUpperCase() };
+    if (new RegExp(`\\b${key}\\b`, "i").test(lower)) {
+      paymentMethod = val;
+      break;
     }
+  }
+
+  // Check specific bank pocket balance
+  if (
+    paymentMethod &&
+    /(?:saldo|uang(?:\s+di)?|kas)/i.test(lower) &&
+    !lower.includes("pengeluaran") &&
+    !lower.includes("pemasukan") &&
+    !lower.includes("belanja")
+  ) {
+    return { intent_type: "multi_pocket_balance", target_pocket: paymentMethod.toUpperCase() };
   }
 
   // 3. Transactions search
@@ -226,37 +312,30 @@ export function extractDeterministicSearchIntent(userQuery: string): SearchInten
     lower.includes("gaji") ||
     lower.includes("masuk");
 
-  let paymentMethod: string | undefined = undefined;
-  for (const [key, val] of Object.entries(PAYMENT_METHOD_MAP)) {
-    if (new RegExp(`\\b${key}\\b`, "i").test(lower)) {
-      paymentMethod = val;
-      break;
-    }
-  }
-
   const dateRange = parseDateRange(lower, today);
 
-  // 4. Keyword search (e.g. "cari nota indomaret", "cari belanja semen", "cari mitra10")
+  // Extract residual words for custom keywords (e.g. "bitcoin", "semen", "indomaret")
+  const words = lower.replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean);
+  const residualWords = words.filter((w) => !STOP_WORDS.has(w) && !PAYMENT_METHOD_MAP[w]);
+  const residualKeyword = residualWords.length > 0 ? residualWords.join(" ") : undefined;
+
+  // Keyword search with explicit trigger (e.g. "cari nota indomaret", "cari belanja semen")
   const cariMatch = lower.match(/(?:cari(?:\s+(?:nota|struk|belanja|transaksi))?|lihat nota|cek nota)\s+([^?]+)/i);
+  let explicitKeyword: string | undefined = undefined;
   if (cariMatch) {
     const rawKw = cariMatch[1].trim();
     if (rawKw && rawKw.length >= 2) {
-      return {
-        intent_type: "search_transactions",
-        search_params: {
-          keyword: rawKw,
-          payment_method: paymentMethod,
-          start_date: dateRange.start_date,
-          end_date: dateRange.end_date,
-        },
-      };
+      explicitKeyword = rawKw;
     }
   }
 
-  if (isExpense || isIncome || paymentMethod || dateRange.start_date) {
+  const finalKeyword = explicitKeyword || residualKeyword;
+
+  if (isExpense || isIncome || paymentMethod || dateRange.start_date || finalKeyword) {
     return {
       intent_type: "search_transactions",
       search_params: {
+        keyword: finalKeyword,
         trx_type: isIncome && !isExpense ? "income" : isExpense && !isIncome ? "expense" : undefined,
         payment_method: paymentMethod,
         start_date: dateRange.start_date,
