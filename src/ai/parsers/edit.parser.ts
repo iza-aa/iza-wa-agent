@@ -15,10 +15,117 @@ export interface ParsedTransactionEdit {
   raw_text?: string;
 }
 
+export function extractDeterministicEdits(editInstruction: string): ParsedTransactionEdit {
+  const result: ParsedTransactionEdit = {};
+  const trimmed = editInstruction.trim();
+  const lower = trimmed.toLowerCase();
+
+  // 1. Payment Method
+  const methodMap: Record<string, string> = {
+    mandiri: "Mandiri",
+    bca: "BCA",
+    bri: "BRI",
+    bni: "BNI",
+    qris: "QRIS",
+    cash: "Cash",
+    tunai: "Cash",
+    "transfer bank": "Transfer Bank",
+    transfer: "Transfer Bank",
+    tf: "Transfer Bank",
+    debit: "Debit",
+    "kartu kredit": "Kartu Kredit",
+    kredit: "Kartu Kredit",
+  };
+
+  const methodRegex = /(?:metode(?:\s+pembayaran)?|pembayaran|bayar(?:\s+(?:via|pakai|lewat))?|via|pakai|lewat|rekening|bank)\s*[:=]?\s*([a-zA-Z0-9\s]+)/i;
+  const methodMatch = trimmed.match(methodRegex);
+  if (methodMatch) {
+    const rawVal = methodMatch[1].trim().toLowerCase();
+    for (const [key, val] of Object.entries(methodMap)) {
+      if (rawVal.includes(key) || rawVal === key) {
+        result.payment_method = val;
+        break;
+      }
+    }
+    if (!result.payment_method && methodMatch[1].trim()) {
+      result.payment_method = methodMatch[1].trim();
+    }
+  } else {
+    for (const [key, val] of Object.entries(methodMap)) {
+      if (lower.startsWith(key) || lower.endsWith(key) || lower === key) {
+        result.payment_method = val;
+        break;
+      }
+    }
+  }
+
+  // 2. Date / Tanggal
+  const dateRegex = /(?:tanggal|tgl|date)\s*[:=]?\s*(\d{4}-\d{2}-\d{2}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4})/i;
+  const dateMatch = trimmed.match(dateRegex);
+  if (dateMatch) {
+    const rawDate = dateMatch[1].trim();
+    const dmyMatch = rawDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+    if (dmyMatch) {
+      result.date = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, "0")}-${dmyMatch[1].padStart(2, "0")}`;
+    } else {
+      result.date = rawDate;
+    }
+  }
+
+  // 3. Category / Kategori
+  const categoryRegex = /(?:kategori|pos)\s*[:=]?\s*([^,;\n]+)/i;
+  const categoryMatch = trimmed.match(categoryRegex);
+  if (categoryMatch) {
+    const raw = categoryMatch[1].trim();
+    if (raw && !/^(metode|tanggal|nominal|total)/i.test(raw)) {
+      result.category = raw;
+    }
+  }
+
+  // 4. Total Amount / Nominal
+  const nominalRegex = /(?:nominal|total|harga|jumlah|sebesar|ganti)\s*[:=]?\s*(?:rp\.?\s*)?([\d\.]+(?:rb|k|jt|juta)?)/i;
+  const nominalMatch = trimmed.match(nominalRegex);
+  if (nominalMatch) {
+    let rawNum = nominalMatch[1].toLowerCase().trim();
+    let mult = 1;
+    if (rawNum.endsWith("jt") || rawNum.endsWith("juta")) {
+      mult = 1000000;
+      rawNum = rawNum.replace(/jt|juta/g, "").trim();
+    } else if (rawNum.endsWith("rb") || rawNum.endsWith("k")) {
+      mult = 1000;
+      rawNum = rawNum.replace(/rb|k/g, "").trim();
+    }
+    const cleanDigits = rawNum.replace(/[^0-9]/g, "");
+    if (cleanDigits) {
+      const parsedAmount = parseInt(cleanDigits, 10) * mult;
+      if (parsedAmount > 0) {
+        result.total_amount = parsedAmount;
+        result.subtotal = parsedAmount;
+      }
+    }
+  } else if (/^\d+$/.test(trimmed)) {
+    const parsedAmount = parseInt(trimmed, 10);
+    if (parsedAmount > 0) {
+      result.total_amount = parsedAmount;
+      result.subtotal = parsedAmount;
+    }
+  }
+
+  return result;
+}
+
 export async function parseTransactionEdit(
   existingTrx: TransactionRecord,
   editInstruction: string
 ): Promise<ParsedTransactionEdit> {
+  const deterministic = extractDeterministicEdits(editInstruction);
+
+  // If deterministic rules already parsed all or key intended edits, return immediately for instant execution
+  if (Object.keys(deterministic).length > 0) {
+    logger.info({ deterministic, editInstruction }, "Deterministic transaction edit matched instantly");
+    return deterministic;
+  }
+
   const prompt = `Anda adalah asisten cerdas untuk mengedit data transaksi keuangan yang sudah tercatat.
 
 DATA TRANSAKSI SAAT INI:
@@ -48,13 +155,13 @@ Format JSON yang valid:
   "tax": 0,
   "discount": 0,
   "date": "YYYY-MM-DD",
-  "payment_method": "Cash | QRIS | Transfer Bank | Debit | Kartu Kredit",
+  "payment_method": "Cash | QRIS | Transfer Bank | Mandiri | BCA | BRI | BNI | Debit | Kartu Kredit",
   "raw_text": "Catatan baru jika ada"
 }
 `;
 
   try {
-    return await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
+    const aiResult = await geminiKeyManager.executeWithFallback(async (genAI, modelName) => {
       const model = genAI.getGenerativeModel({
         model: modelName,
         generationConfig: {
@@ -68,12 +175,10 @@ Format JSON yang valid:
       const parsed = JSON.parse(rawJson);
       return parsed as ParsedTransactionEdit;
     });
+
+    return { ...aiResult, ...deterministic };
   } catch (err) {
-    logger.error({ err, editInstruction }, "Failed to parse transaction edit with Gemini");
-    const numMatch = editInstruction.replace(/[^0-9]/g, "");
-    if (numMatch && numMatch.length >= 3) {
-      return { total_amount: parseInt(numMatch, 10) };
-    }
-    return {};
+    logger.error({ err, editInstruction }, "Failed to parse transaction edit with Gemini, using deterministic fallback");
+    return deterministic;
   }
 }
