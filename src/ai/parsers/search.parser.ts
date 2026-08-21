@@ -90,6 +90,22 @@ export async function executeNaturalQuerySearch(
   isSuperAdmin: boolean,
   senderPhone: string
 ): Promise<{ isQuery: boolean; replyText: string }> {
+  const trimmed = (userQuery || "").trim();
+  const lower = trimmed.toLowerCase();
+
+  // Fast heuristic: Only evaluate with AI if the text contains question indicators or inquiry keywords
+  const isQuestionLike =
+    trimmed.endsWith("?") ||
+    /^(berapa|cek|saldo|dompet|kas|riwayat|cari|rekap|laporan|apakah|bagaimana|mana|total|siapa|ada)\b/i.test(lower) ||
+    lower.includes("saldo") ||
+    lower.includes("berapa") ||
+    lower.includes("cari nota") ||
+    lower.includes("cari belanja");
+
+  if (!isQuestionLike) {
+    return { isQuery: false, replyText: "" };
+  }
+
   const intent = await parseQueryIntent(userQuery);
 
   if (intent.intent_type === "not_a_query") {

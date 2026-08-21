@@ -3,9 +3,12 @@ import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 export const AVAILABLE_MODELS = [
     "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
     "gemini-flash-latest",
     "gemini-2.5-flash-lite",
     "gemini-2.5-pro",
+    "gemini-1.5-pro",
     "gemini-3.7-flash"
 ];
 export class GeminiKeyManager {
