@@ -604,18 +604,36 @@ export class CommandHandler {
                 responseMessage: formatMonthlyReport(summary, targetMonth),
             };
         }
-        if (command === "/rekap" || command === "/riwayat" || command === "/summary") {
+        if (command === "/rekap" ||
+            command === "/riwayat" ||
+            command === "/summary" ||
+            command === "/terakhir" ||
+            command === "/pengeluaranterakhir" ||
+            command === "/pemasukanterakhir") {
             let limit = 10;
             if (parts[1] && /^\d+$/.test(parts[1])) {
                 limit = Math.min(Math.max(parseInt(parts[1], 10), 1), 50);
             }
-            const recent = isSuperAdmin
-                ? await this.trxRepo.getAllRecentTransactions(limit)
-                : await this.trxRepo.getRecentTransactions(senderPhone, limit);
-            if (recent.length === 0) {
-                return { handled: true, responseMessage: "ℹ️ Belum ada transaksi tercatat." };
+            let filterType = undefined;
+            if (command === "/pengeluaranterakhir" || parts.some((p) => p.toLowerCase() === "keluar" || p.toLowerCase() === "pengeluaran")) {
+                filterType = "expense";
             }
-            let summary = "📊 *REKAP " + recent.length + " TRANSAKSI TERAKHIR*\n\n";
+            else if (command === "/pemasukanterakhir" || parts.some((p) => p.toLowerCase() === "masuk" || p.toLowerCase() === "pemasukan")) {
+                filterType = "income";
+            }
+            const fetchLimit = filterType ? 50 : limit;
+            let recent = isSuperAdmin
+                ? await this.trxRepo.getAllRecentTransactions(fetchLimit)
+                : await this.trxRepo.getRecentTransactions(senderPhone, fetchLimit);
+            if (filterType) {
+                recent = recent.filter((t) => (filterType === "income" ? isIncome(t) : !isIncome(t)));
+            }
+            recent = recent.slice(0, limit);
+            if (recent.length === 0) {
+                return { handled: true, responseMessage: "ℹ️ Belum ada data transaksi yang sesuai." };
+            }
+            const typeTitle = filterType === "income" ? "PEMASUKAN" : filterType === "expense" ? "PENGELUARAN" : "TRANSAKSI";
+            let summary = "📊 *REKAP " + recent.length + " " + typeTitle + " TERAKHIR*\n\n";
             let totalExpense = 0;
             let totalIncome = 0;
             recent.forEach((t, i) => {

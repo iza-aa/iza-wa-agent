@@ -96,11 +96,16 @@ export async function executeNaturalQuerySearch(
   // Fast heuristic: Only evaluate with AI if the text contains question indicators or inquiry keywords
   const isQuestionLike =
     trimmed.endsWith("?") ||
-    /^(berapa|cek|saldo|dompet|kas|riwayat|cari|rekap|laporan|apakah|bagaimana|mana|total|siapa|ada)\b/i.test(lower) ||
+    /^(berapa|cek|saldo|dompet|kas|riwayat|cari|rekap|laporan|apakah|bagaimana|mana|total|siapa|ada|terakhir|transaksi|pengeluaran|pemasukan)\b/i.test(lower) ||
     lower.includes("saldo") ||
     lower.includes("berapa") ||
     lower.includes("cari nota") ||
-    lower.includes("cari belanja");
+    lower.includes("cari belanja") ||
+    lower.includes("terakhir") ||
+    lower.includes("pengeluaran terakhir") ||
+    lower.includes("pemasukan terakhir") ||
+    lower.includes("transaksi terakhir") ||
+    lower.includes("belanja terakhir");
 
   if (!isQuestionLike) {
     return { isQuery: false, replyText: "" };

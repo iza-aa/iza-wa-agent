@@ -135,6 +135,7 @@ export class GoogleDriveService {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
+          redirect: "follow",
         });
 
         const data = (await scriptRes.json()) as any;
