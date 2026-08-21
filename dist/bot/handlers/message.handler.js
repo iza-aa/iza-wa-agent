@@ -7,10 +7,9 @@ import { parseAudioVoiceNote } from "../../ai/parsers/audio.parser.js";
 import { executeNaturalQuerySearch } from "../../ai/parsers/search.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
-import { formatTransactionSuccess, formatPendingApprovalNotification, formatDuplicateWarning, formatBudgetWarning, } from "../formatters/reply.formatter.js";
+import { formatTransactionSuccess, formatDuplicateWarning, formatBudgetWarning, } from "../formatters/reply.formatter.js";
 import { DuplicateDetectorService } from "../../services/duplicate-detector.service.js";
 import { logger } from "../../utils/logger.js";
-import { config } from "../../config/env.js";
 export class MessageHandler {
     userRepo;
     trxRepo;
@@ -121,35 +120,16 @@ export class MessageHandler {
             direction: "inbound",
             content: body,
         });
-        // 2. Whitelist / Access Control Check (Must be BEFORE any command or message processing)
-        const isAllowed = await this.userRepo.isWhitelisted(senderPhone, pushName);
-        let user = await this.userRepo.getUser(senderPhone, pushName);
-        if (!isAllowed) {
-            if (user && user.status === "blocked") {
-                logger.warn({ senderPhone, pushName }, "Blocked user attempted to message bot");
-                await sock.sendMessage(remoteJid, {
-                    text: "🚫 Nomor Anda telah diblokir dari sistem ini.",
-                }, { quoted: msg });
-                return;
-            }
-            const superAdminPhone = config.SUPER_ADMIN_PHONE;
-            logger.warn({ senderPhone, pushName }, "Unauthorized user attempted to message bot");
+        // 2. User Access & Status Check
+        const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
+        if (user.status === "blocked") {
+            logger.warn({ senderPhone, pushName }, "Blocked user attempted to message bot");
             await sock.sendMessage(remoteJid, {
-                text: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nPermintaan akses telah dikirimkan ke Super Admin untuk persetujuan.",
+                text: "🚫 Akses nomor Anda telah dinonaktifkan oleh Super Admin.",
             }, { quoted: msg });
-            // Notify Super Admin
-            try {
-                const superAdminJid = superAdminPhone + "@s.whatsapp.net";
-                await sock.sendMessage(superAdminJid, {
-                    text: formatPendingApprovalNotification(senderPhone, pushName),
-                });
-            }
-            catch (adminNotifyErr) {
-                logger.error({ adminNotifyErr }, "Failed to notify Super Admin of new user");
-            }
             return;
         }
-        // 3. Super Admin & Command Check (Only for authorized users)
+        // 3. Command Check (Super Admin vs Member commands)
         if (body.startsWith("/")) {
             const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
             if (handled) {
@@ -157,16 +137,7 @@ export class MessageHandler {
                 return;
             }
         }
-        const isSuperAdminUser = await this.userRepo.isSuperAdminAsync(senderPhone);
-        if (!user && isSuperAdminUser) {
-            user = await this.userRepo.upsertUser({
-                phone_number: senderPhone,
-                name: "Super Admin (" + pushName + ")",
-                role: "super_admin",
-                status: "active",
-            });
-        }
-        const userName = user?.name || pushName;
+        const userName = user.name || pushName;
         // 4. Handle Media Messages (Receipt Photos & Voice Notes)
         if (hasMedia) {
             // CASE A: Image / Receipt / Nota / PDF Invoice

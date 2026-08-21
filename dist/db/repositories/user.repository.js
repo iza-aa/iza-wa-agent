@@ -113,6 +113,25 @@ export class UserRepository {
         }
         return null;
     }
+    async getOrCreateUser(identifier, pushName) {
+        const cleaned = this.cleanIdentifier(identifier);
+        let user = await this.getUser(cleaned, pushName);
+        if (!user) {
+            const isSuper = this.isSuperAdmin(cleaned);
+            const displayName = pushName && pushName.trim().length > 1 && pushName !== "." && pushName !== "User"
+                ? pushName.trim()
+                : isSuper
+                    ? "Super Admin"
+                    : "Member";
+            user = await this.upsertUser({
+                phone_number: cleaned,
+                name: displayName,
+                role: isSuper ? "super_admin" : "member",
+                status: "active",
+            });
+        }
+        return user;
+    }
     async isWhitelisted(identifier, pushName) {
         const cleaned = this.cleanIdentifier(identifier);
         const user = await this.getUser(cleaned, pushName);
@@ -121,15 +140,9 @@ export class UserRepository {
                 this.removeSuperAdminIdentifier(cleaned);
                 return false;
             }
-            if (user.status === "active") {
-                if (user.role === "super_admin") {
-                    this.addSuperAdminIdentifier(cleaned);
-                }
-                return true;
-            }
-            return false;
+            return true;
         }
-        return this.superAdminList.includes(cleaned);
+        return true; // Allow new members to record transactions, while admin commands remain locked
     }
     async upsertUser(user) {
         const cleaned = this.cleanIdentifier(user.phone_number);

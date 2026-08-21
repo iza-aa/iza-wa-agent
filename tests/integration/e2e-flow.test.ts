@@ -19,6 +19,12 @@ describe("E2E WhatsApp Flow Integration (Baileys)", () => {
         role: "super_admin",
         status: "active",
       }),
+      getOrCreateUser: vi.fn().mockResolvedValue({
+        phone_number: "6281346367235",
+        name: "Rezki Haikal",
+        role: "super_admin",
+        status: "active",
+      }),
       upsertUser: vi.fn().mockResolvedValue({}),
       listActiveUsers: vi.fn().mockResolvedValue([]),
     };
