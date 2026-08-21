@@ -517,30 +517,34 @@ export class GoogleSheetsService {
                         fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
                     },
                 },
-                // Date Format in Transaksi Terbaru
+                // Date Format in Transaksi Terbaru (Whole Column A14:A1000)
                 {
                     repeatCell: {
-                        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 1 },
+                        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 1 },
                         cell: {
                             userEnteredFormat: {
                                 horizontalAlignment: "CENTER",
+                                verticalAlignment: "MIDDLE",
                                 numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+                                textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
                             },
                         },
-                        fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                        fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,numberFormat,textFormat)",
                     },
                 },
-                // Nominal Format in Transaksi Terbaru
+                // Nominal Format in Transaksi Terbaru (Whole Column D14:D1000)
                 {
                     repeatCell: {
-                        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 3, endColumnIndex: 4 },
+                        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 1000, startColumnIndex: 3, endColumnIndex: 4 },
                         cell: {
                             userEnteredFormat: {
                                 horizontalAlignment: "RIGHT",
+                                verticalAlignment: "MIDDLE",
                                 numberFormat: { type: "CURRENCY", pattern: '"Rp"#,##0' },
+                                textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
                             },
                         },
-                        fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+                        fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,numberFormat,textFormat)",
                     },
                 },
                 {

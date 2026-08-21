@@ -520,31 +520,35 @@ export async function setupExactDashboard(sheetId: string = config.GOOGLE_SHEET_
       },
     },
 
-    // --- Styling Date Column in Transaksi Terbaru (Rows 13-35, Col 0) ---
+    // --- Styling Date Column in Transaksi Terbaru (Rows 13-1000, Col 0) ---
     {
       repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 1 },
+        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 1000, startColumnIndex: 0, endColumnIndex: 1 },
         cell: {
           userEnteredFormat: {
             horizontalAlignment: "CENTER",
+            verticalAlignment: "MIDDLE",
             numberFormat: { type: "DATE", pattern: "dd/mm/yyyy" },
+            textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
           },
         },
-        fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+        fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,numberFormat,textFormat)",
       },
     },
 
-    // --- Styling Nominal Column in Transaksi Terbaru (Rows 13-35, Col 3) ---
+    // --- Styling Nominal Column in Transaksi Terbaru (Rows 13-1000, Col 3) ---
     {
       repeatCell: {
-        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 35, startColumnIndex: 3, endColumnIndex: 4 },
+        range: { sheetId: dashSheetId, startRowIndex: 13, endRowIndex: 1000, startColumnIndex: 3, endColumnIndex: 4 },
         cell: {
           userEnteredFormat: {
             horizontalAlignment: "RIGHT",
+            verticalAlignment: "MIDDLE",
             numberFormat: { type: "CURRENCY", pattern: '"Rp"#,##0' },
+            textFormat: { bold: false, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
           },
         },
-        fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+        fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,numberFormat,textFormat)",
       },
     },
 
