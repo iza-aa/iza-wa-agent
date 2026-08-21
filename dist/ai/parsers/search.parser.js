@@ -60,13 +60,104 @@ Format JSON Wajib:
         }
     });
 }
+const MONTH_NAMES = {
+    januari: { month: "01", lastDay: 31 },
+    februari: { month: "02", lastDay: 28 },
+    maret: { month: "03", lastDay: 31 },
+    april: { month: "04", lastDay: 30 },
+    mei: { month: "05", lastDay: 31 },
+    juni: { month: "06", lastDay: 30 },
+    juli: { month: "07", lastDay: 31 },
+    agustus: { month: "08", lastDay: 31 },
+    september: { month: "09", lastDay: 30 },
+    oktober: { month: "10", lastDay: 31 },
+    november: { month: "11", lastDay: 30 },
+    desember: { month: "12", lastDay: 31 },
+};
+const PAYMENT_METHOD_MAP = {
+    mandiri: "Mandiri",
+    bca: "BCA",
+    bri: "BRI",
+    bni: "BNI",
+    bsi: "BSI",
+    cimb: "CIMB",
+    permata: "Permata",
+    danamon: "Danamon",
+    cash: "Cash",
+    tunai: "Cash",
+    qris: "QRIS",
+    gopay: "GoPay",
+    ovo: "OVO",
+    dana: "DANA",
+    shopeepay: "ShopeePay",
+    "shopee pay": "ShopeePay",
+    transfer: "Transfer Bank",
+    "transfer bank": "Transfer Bank",
+    tf: "Transfer Bank",
+    debit: "Debit",
+    kredit: "Kredit",
+};
+export function parseDateRange(lower, todayStr) {
+    const [yearStr, monthStr] = todayStr.split("-");
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    // 1. Bulan kemarin / Bulan lalu / Last month
+    if (lower.includes("bulan kemarin") || lower.includes("bulan lalu") || lower.includes("last month")) {
+        const prevMonthNum = month === 1 ? 12 : month - 1;
+        const prevYearNum = month === 1 ? year - 1 : year;
+        const prevMonthStr = String(prevMonthNum).padStart(2, "0");
+        const lastDay = new Date(prevYearNum, prevMonthNum, 0).getDate();
+        return {
+            start_date: `${prevYearNum}-${prevMonthStr}-01`,
+            end_date: `${prevYearNum}-${prevMonthStr}-${lastDay}`,
+            period_label: `Bulan Lalu (${prevMonthStr}/${prevYearNum})`,
+        };
+    }
+    // 2. Bulan ini / This month
+    if (lower.includes("bulan ini") || lower.includes("this month")) {
+        const lastDay = new Date(year, month, 0).getDate();
+        return {
+            start_date: `${year}-${monthStr}-01`,
+            end_date: `${year}-${monthStr}-${lastDay}`,
+            period_label: `Bulan Ini (${monthStr}/${year})`,
+        };
+    }
+    // 3. Specific Month Name (e.g. "bulan juli", "agustus")
+    for (const [mName, mInfo] of Object.entries(MONTH_NAMES)) {
+        if (new RegExp(`\\b${mName}\\b`, "i").test(lower)) {
+            const mNum = parseInt(mInfo.month, 10);
+            const lastDay = new Date(year, mNum, 0).getDate();
+            return {
+                start_date: `${year}-${mInfo.month}-01`,
+                end_date: `${year}-${mInfo.month}-${lastDay}`,
+                period_label: `Bulan ${mName.charAt(0).toUpperCase() + mName.slice(1)} ${year}`,
+            };
+        }
+    }
+    // 4. Hari ini / Today
+    if (lower.includes("hari ini") || lower.includes("today")) {
+        return {
+            start_date: todayStr,
+            end_date: todayStr,
+            period_label: `Hari Ini (${todayStr})`,
+        };
+    }
+    // 5. Kemarin (standalone)
+    if (/\bkemarin\b/.test(lower) && !lower.includes("bulan") && !lower.includes("minggu")) {
+        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(yesterday);
+        return {
+            start_date: yStr,
+            end_date: yStr,
+            period_label: `Kemarin (${yStr})`,
+        };
+    }
+    return {};
+}
 export function extractDeterministicSearchIntent(userQuery) {
     const trimmed = userQuery.trim();
     const lower = trimmed.toLowerCase();
     const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-    const [year, month] = today.split("-");
-    const currentMonthStart = `${year}-${month}-01`;
-    const currentMonthEnd = `${year}-${month}-31`;
     // 1. Check general wallet balance
     if (/^(berapa|cek|sisa|total)?\s*(saldo|uang|kas|dompet)(\s*kita|\s*sekarang)?\??$/i.test(lower) ||
         lower === "saldo" ||
@@ -75,36 +166,54 @@ export function extractDeterministicSearchIntent(userQuery) {
         return { intent_type: "wallet_balance" };
     }
     // 2. Check specific bank pocket balance
-    const bankMatch = lower.match(/(?:saldo|uang(?:\s+di)?|kas)\s+(mandiri|bca|bri|bni|cash|qris|tunai)/i);
-    if (bankMatch) {
-        let pocket = bankMatch[1].toUpperCase();
-        if (pocket === "TUNAI")
-            pocket = "CASH";
-        return { intent_type: "multi_pocket_balance", target_pocket: pocket };
+    for (const [key, val] of Object.entries(PAYMENT_METHOD_MAP)) {
+        if (new RegExp(`(?:saldo|uang(?:\\s+di)?|kas)\\s+${key}\\b`, "i").test(lower)) {
+            return { intent_type: "multi_pocket_balance", target_pocket: val.toUpperCase() };
+        }
     }
-    // 3. Check monthly expense / income inquiries
-    const isExpenseInquiry = lower.includes("pengeluaran") || lower.includes("belanja") || lower.includes("keluar");
-    const isIncomeInquiry = lower.includes("pemasukan") || lower.includes("uang masuk") || lower.includes("terima");
-    const isMonthInquiry = lower.includes("bulan ini") || lower.includes("agustus") || lower.includes("month");
-    if (isExpenseInquiry || isIncomeInquiry) {
-        let paymentMethod = undefined;
-        if (lower.includes("cash") || lower.includes("tunai"))
-            paymentMethod = "Cash";
-        else if (lower.includes("mandiri"))
-            paymentMethod = "Mandiri";
-        else if (lower.includes("bca"))
-            paymentMethod = "BCA";
-        else if (lower.includes("bri"))
-            paymentMethod = "BRI";
-        else if (lower.includes("qris"))
-            paymentMethod = "QRIS";
+    // 3. Transactions search
+    const isExpense = lower.includes("pengeluaran") ||
+        lower.includes("belanja") ||
+        lower.includes("keluar") ||
+        lower.includes("beli") ||
+        lower.includes("biaya");
+    const isIncome = lower.includes("pemasukan") ||
+        lower.includes("uang masuk") ||
+        lower.includes("terima") ||
+        lower.includes("gaji") ||
+        lower.includes("masuk");
+    let paymentMethod = undefined;
+    for (const [key, val] of Object.entries(PAYMENT_METHOD_MAP)) {
+        if (new RegExp(`\\b${key}\\b`, "i").test(lower)) {
+            paymentMethod = val;
+            break;
+        }
+    }
+    const dateRange = parseDateRange(lower, today);
+    // 4. Keyword search (e.g. "cari nota indomaret", "cari belanja semen", "cari mitra10")
+    const cariMatch = lower.match(/(?:cari(?:\s+(?:nota|struk|belanja|transaksi))?|lihat nota|cek nota)\s+([^?]+)/i);
+    if (cariMatch) {
+        const rawKw = cariMatch[1].trim();
+        if (rawKw && rawKw.length >= 2) {
+            return {
+                intent_type: "search_transactions",
+                search_params: {
+                    keyword: rawKw,
+                    payment_method: paymentMethod,
+                    start_date: dateRange.start_date,
+                    end_date: dateRange.end_date,
+                },
+            };
+        }
+    }
+    if (isExpense || isIncome || paymentMethod || dateRange.start_date) {
         return {
             intent_type: "search_transactions",
             search_params: {
-                trx_type: isIncomeInquiry ? "income" : "expense",
+                trx_type: isIncome && !isExpense ? "income" : isExpense && !isIncome ? "expense" : undefined,
                 payment_method: paymentMethod,
-                start_date: isMonthInquiry ? currentMonthStart : undefined,
-                end_date: isMonthInquiry ? currentMonthEnd : undefined,
+                start_date: dateRange.start_date,
+                end_date: dateRange.end_date,
             },
         };
     }
@@ -171,10 +280,18 @@ export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin
             limit: 30,
         });
         if (results.length === 0) {
-            let notFound = `🔍 *Pencarian Riwayat Transaksi:*\n\nTidak ditemukan transaksi yang cocok untuk: *"${userQuery}"*`;
+            let notFound = `🔍 *HASIL PENCARIAN TRANSAKSI*\n`;
+            notFound += `📝 *Pertanyaan:* "${userQuery}"\n`;
+            notFound += `📊 *Ditemukan:* 0 transaksi\n`;
+            notFound += `💰 *Total Nilai:* *Rp 0*\n`;
+            notFound += `────────────────────────\n\n`;
+            notFound += `ℹ️ Tidak ditemukan transaksi yang sesuai dengan kriteria`;
+            if (params.payment_method)
+                notFound += ` melalui *${params.payment_method}*`;
             if (params.start_date || params.end_date) {
                 notFound += ` pada periode ${params.start_date || ""} s/d ${params.end_date || ""}`;
             }
+            notFound += `.\n\n💡 _Coba gunakan kata kunci lain atau periksa rentang tanggal transaksi._`;
             return { isQuery: true, replyText: notFound };
         }
         let totalAmount = 0;
