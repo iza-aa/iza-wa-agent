@@ -9,6 +9,7 @@ import { CommandHandler } from "./command.handler.js";
 import { parseTransactionText } from "../../ai/parsers/text.parser.js";
 import { parseReceiptVision } from "../../ai/parsers/receipt-vision.parser.js";
 import { parseAudioVoiceNote } from "../../ai/parsers/audio.parser.js";
+import { executeNaturalQuerySearch } from "../../ai/parsers/search.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
 import {
@@ -60,7 +61,9 @@ export class MessageHandler {
       setTimeout(() => this.processedMessageIds.delete(msgId), 60_000);
     }
 
-    const senderPhone = this.cleanPhone(remoteJid);
+    const isGroup = remoteJid.endsWith("@g.us");
+    const rawParticipant = msg.key.participant || msg.participant;
+    const senderPhone = isGroup && rawParticipant ? this.cleanPhone(rawParticipant) : this.cleanPhone(remoteJid);
     const pushName = msg.pushName || "User";
 
     // Extract text body
@@ -78,7 +81,20 @@ export class MessageHandler {
     const isDocument = !!messageContent.documentMessage;
     const hasMedia = isImage || isAudio || isDocument;
 
-    logger.info({ senderPhone, pushName, hasMedia, isImage, isAudio }, "Processing incoming Baileys message");
+    // Group anti-spam filter: In groups, only respond if message is media, command, mentions bot, or transaction keywords
+    if (isGroup && !hasMedia) {
+      const lowerBody = body.toLowerCase().trim();
+      const isCommand = lowerBody.startsWith("/");
+      const mentionsBot = lowerBody.includes("bot") || lowerBody.includes("agent") || (msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || []).some((j: string) => j.includes("62881082854818"));
+      const isTrxKeyword = /^(beli|bayar|pengeluaran|pemasukan|belanja|kasbon|gaji|bensin|makan|saldo|rekap|laporan)\b/i.test(lowerBody);
+
+      if (!isCommand && !mentionsBot && !isTrxKeyword) {
+        // Silently skip general group chatter
+        return;
+      }
+    }
+
+    logger.info({ senderPhone, pushName, isGroup, hasMedia, isImage, isAudio }, "Processing incoming Baileys message");
 
     // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
     try {
@@ -259,13 +275,34 @@ export class MessageHandler {
 
       // CASE B: Audio / Voice Note
       if (isAudio) {
-        await sock.sendMessage(remoteJid, { text: "🎧 *Mendengarkan rekaman suara & memproses transaksi...*" }, { quoted: msg });
+        await sock.sendMessage(remoteJid, { text: "🎧 *Mendengarkan rekaman suara...*" }, { quoted: msg });
 
         const mediaBuffer = (await downloadMediaMessage(msg, "buffer", {}, { reuploadRequest: sock.updateMediaMessage })) as Buffer;
         const mimeType = messageContent.audioMessage?.mimetype || "audio/ogg";
 
         const audioResult = await parseAudioVoiceNote(mediaBuffer, mimeType);
-        const { transcription, is_complete, clarification_question, transaction } = audioResult;
+        const { transcription, is_question, is_complete, clarification_question, transaction } = audioResult;
+
+        // Sub-case 1: Voice Q&A / Tanya Saldo / Cari Riwayat via Voice Note
+        if (is_question) {
+          const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
+          const queryRes = await executeNaturalQuerySearch(
+            audioResult.question_text || transcription,
+            this.trxRepo,
+            isSuperAdmin,
+            senderPhone
+          );
+          const reply = `🗣️ *Transkrip Suara:* "${transcription}"\n\n${queryRes.replyText || "Pertanyaan tidak dapat diproses."}`;
+          await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+          await this.chatRepo.logMessage({
+            user_phone: senderPhone,
+            user_name: "Bot",
+            message_type: "text",
+            direction: "outbound",
+            content: reply,
+          });
+          return;
+        }
 
         if (!is_complete || !transaction || transaction.total_amount <= 0) {
           const reply =
@@ -287,6 +324,13 @@ export class MessageHandler {
         }
 
         const trxId = await this.trxRepo.generateTransactionId(transaction.date);
+
+        // Check for potential duplicate within last 10 minutes
+        const potentialDuplicate = await this.duplicateDetector.detectDuplicate(
+          transaction.total_amount,
+          transaction.merchant,
+          10
+        );
 
         const transactionRecord = await this.trxRepo.createTransaction(
           {
@@ -321,6 +365,9 @@ export class MessageHandler {
         const wallet = await this.trxRepo.getWalletBalance();
         let replyText = "🗣️ *Transkrip:* \"" + transcription + "\"\n\n";
         replyText += formatTransactionSuccess(transactionRecord, transaction.items, isSuperAdmin, wallet.balance);
+        if (potentialDuplicate) {
+          replyText = formatDuplicateWarning(potentialDuplicate, transaction.total_amount, transaction.merchant) + "\n\n────────────────────────\n\n" + replyText;
+        }
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
       }
@@ -328,6 +375,26 @@ export class MessageHandler {
 
     // 5. Handle Text Messages
     if (body.trim().length > 0) {
+      const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
+
+      // Check if message is a natural query or question (e.g. "Berapa saldo kas?", "Cari nota bensin")
+      try {
+        const queryCheck = await executeNaturalQuerySearch(body, this.trxRepo, isSuperAdmin, senderPhone);
+        if (queryCheck.isQuery) {
+          await sock.sendMessage(remoteJid, { text: queryCheck.replyText }, { quoted: msg });
+          await this.chatRepo.logMessage({
+            user_phone: senderPhone,
+            user_name: "Bot",
+            message_type: "text",
+            direction: "outbound",
+            content: queryCheck.replyText,
+          });
+          return;
+        }
+      } catch (searchErr) {
+        logger.debug({ searchErr }, "Query search check bypass to standard text parser");
+      }
+
       const history = await this.chatRepo.getRecentChatHistory(senderPhone, 3);
       const historyStrings = history.map((h) => (h.direction === "inbound" ? "User: " : "Bot: ") + h.content);
 
@@ -392,7 +459,6 @@ export class MessageHandler {
         logger.error({ sheetErr }, "Failed to append row to Google Sheet");
       }
 
-      const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
       const wallet = await this.trxRepo.getWalletBalance();
       let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
       if (potentialDuplicate) {

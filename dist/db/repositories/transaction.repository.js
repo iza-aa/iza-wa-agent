@@ -423,5 +423,60 @@ export class TransactionRepository {
         // If nominal matches exactly within window, flag it
         return data[0];
     }
+    async searchTransactions(filters) {
+        let query = this.supabase
+            .from("transactions")
+            .select("*")
+            .order("date", { ascending: false })
+            .order("created_at", { ascending: false });
+        if (filters.userPhone) {
+            query = query.eq("user_phone", filters.userPhone);
+        }
+        if (filters.start_date) {
+            query = query.gte("date", filters.start_date);
+        }
+        if (filters.end_date) {
+            query = query.lte("date", filters.end_date);
+        }
+        if (filters.category) {
+            query = query.ilike("category", `%${filters.category}%`);
+        }
+        if (filters.merchant) {
+            query = query.ilike("merchant", `%${filters.merchant}%`);
+        }
+        if (filters.payment_method) {
+            query = query.ilike("payment_method", `%${filters.payment_method}%`);
+        }
+        if (filters.limit) {
+            query = query.limit(filters.limit);
+        }
+        else {
+            query = query.limit(30);
+        }
+        const { data, error } = await query;
+        if (error || !data) {
+            logger.error({ error, filters }, "Failed to search transactions");
+            return [];
+        }
+        let results = data;
+        // If keyword filter is provided, do fuzzy match across merchant, category, and raw_text
+        if (filters.keyword) {
+            const kw = filters.keyword.toLowerCase().trim();
+            results = results.filter((t) => {
+                const m = (t.merchant || "").toLowerCase();
+                const c = (t.category || "").toLowerCase();
+                const r = (t.raw_text || "").toLowerCase();
+                return m.includes(kw) || c.includes(kw) || r.includes(kw);
+            });
+        }
+        // If trx_type filter is provided
+        if (filters.trx_type) {
+            results = results.filter((t) => {
+                const isInc = isIncome(t);
+                return filters.trx_type === "income" ? isInc : !isInc;
+            });
+        }
+        return results;
+    }
 }
 //# sourceMappingURL=transaction.repository.js.map
