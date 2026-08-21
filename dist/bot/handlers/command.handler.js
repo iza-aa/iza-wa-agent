@@ -384,9 +384,25 @@ export class CommandHandler {
                 changedFields.push("Catatan");
             }
             if (changedFields.length === 0) {
+                let sameInfo = "";
+                if (parsedEdit.payment_method && parsedEdit.payment_method === existing.trx.payment_method) {
+                    sameInfo += `\n• Metode Pembayaran transaksi ini memang sudah *${existing.trx.payment_method}*`;
+                }
+                if (parsedEdit.merchant && parsedEdit.merchant === existing.trx.merchant) {
+                    sameInfo += `\n• Toko/Sumber memang sudah *${existing.trx.merchant}*`;
+                }
+                if (parsedEdit.category && parsedEdit.category === existing.trx.category) {
+                    sameInfo += `\n• Kategori memang sudah *${existing.trx.category}*`;
+                }
+                if (parsedEdit.total_amount && parsedEdit.total_amount === existing.trx.total_amount) {
+                    sameInfo += `\n• Nominal memang sudah *${formatRupiah(existing.trx.total_amount)}*`;
+                }
                 return {
                     handled: true,
-                    responseMessage: "ℹ️ Tidak ada perubahan yang terdeteksi dari instruksi: \"" + editInstruction + "\".",
+                    responseMessage: "ℹ️ *Tidak Ada Perubahan:*" +
+                        (sameInfo
+                            ? sameInfo + "\n\n_Semua data sudah sesuai dengan yang Anda instruksikan._"
+                            : `\nTidak ada kolom yang berbeda dari instruksi: "${editInstruction}".`),
                 };
             }
             const updatedTrx = await this.trxRepo.updateTransaction(targetId, updates);
