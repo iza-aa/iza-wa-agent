@@ -1104,6 +1104,11 @@ export class GoogleSheetsService {
       return hasId || hasContent;
     });
 
+    if (validRows.length === 0) {
+      logger.warn("No valid rows found in Google Sheet during sync, skipping database wipe to protect data integrity");
+      return { syncedCount: 0 };
+    }
+
     const { getSupabaseClient } = await import("../db/supabase.js");
     const supabase = getSupabaseClient();
     await supabase.from("receipt_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");

@@ -39,9 +39,17 @@ export async function parseReceiptVision(imageBuffer, mimeType = "image/jpeg", u
         try {
             const parsedJson = JSON.parse(textResponse);
             const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+            let parsedDate = parsedJson.date || todayStr;
+            const dmyMatch = parsedDate.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+            if (dmyMatch) {
+                parsedDate = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, "0")}-${dmyMatch[1].padStart(2, "0")}`;
+            }
+            else if (!/^\d{4}-\d{2}-\d{2}$/.test(parsedDate)) {
+                parsedDate = todayStr;
+            }
             const normalizedTrx = {
                 merchant: parsedJson.merchant || "Toko / Merchant",
-                date: parsedJson.date || todayStr,
+                date: parsedDate,
                 category: parsedJson.category || "Makanan & Minuman",
                 subtotal: Number(parsedJson.subtotal || parsedJson.total_amount || 0),
                 tax: Number(parsedJson.tax || 0),

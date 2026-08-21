@@ -11,17 +11,7 @@ export const ExtractedItemSchema = z.object({
 export const ExtractedTransactionSchema = z.object({
   merchant: z.string().describe("Nama toko, merchant, penyedia jasa, atau penerima pembayaran"),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Tanggal transaksi format YYYY-MM-DD"),
-  category: z.enum([
-    "Makanan & Minuman",
-    "Belanja Bulanan",
-    "Transportasi & Bensin",
-    "Tagihan & Utilitas",
-    "Kesehatan & Obat",
-    "Pendidikan",
-    "Hiburan & Rekreasi",
-    "Operasional Kantor",
-    "Lain-lain",
-  ]).default("Lain-lain").describe("Kategori utama pengeluaran"),
+  category: z.string().default("Lain-lain").describe("Kategori utama pengeluaran / pemasukan"),
   subtotal: z.number().default(0).describe("Subtotal sebelum pajak/diskon"),
   tax: z.number().default(0).describe("Pajak / PPN / Service charge"),
   discount: z.number().default(0).describe("Diskon / Potongan harga"),
