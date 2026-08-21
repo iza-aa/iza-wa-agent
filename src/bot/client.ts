@@ -25,6 +25,8 @@ import pino from "pino";
 import { UserRepository } from "../db/repositories/user.repository.js";
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
 import { ChatRepository } from "../db/repositories/chat.repository.js";
+import { BudgetRepository } from "../db/repositories/budget.repository.js";
+import { BillRepository } from "../db/repositories/bill.repository.js";
 import { MessageHandler } from "./handlers/message.handler.js";
 import { getSupabaseClient } from "../db/supabase.js";
 import { config } from "../config/env.js";
@@ -55,7 +57,9 @@ export function createWhatsAppBot(): { start: () => Promise<void> } {
     await userRepo.syncSuperAdminsFromDB();
     const trxRepo = new TransactionRepository(supabase);
     const chatRepo = new ChatRepository(supabase);
-    const messageHandler = new MessageHandler(userRepo, trxRepo, chatRepo);
+    const budgetRepo = new BudgetRepository(supabase);
+    const billRepo = new BillRepository(supabase);
+    const messageHandler = new MessageHandler(userRepo, trxRepo, chatRepo, budgetRepo, billRepo);
 
     sock.ev.on("creds.update", saveCreds);
 

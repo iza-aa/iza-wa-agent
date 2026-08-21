@@ -1,16 +1,19 @@
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
+import { BillRepository } from "../db/repositories/bill.repository.js";
 import { getGlobalSocket } from "../bot/socket-holder.js";
-import { formatDailyRecap } from "../bot/formatters/reply.formatter.js";
+import { formatDailyRecap, formatBillReminder } from "../bot/formatters/reply.formatter.js";
 import { logger } from "../utils/logger.js";
 
 export class SchedulerService {
   private timer: NodeJS.Timeout | null = null;
   private lastRecapDate: string = "";
+  private lastBillCheckDate: string = "";
 
   constructor(
     private trxRepo: TransactionRepository,
-    private userRepo: UserRepository
+    private userRepo: UserRepository,
+    private billRepo?: BillRepository
   ) {}
 
   start(): void {
@@ -51,11 +54,63 @@ export class SchedulerService {
     const hour = parseInt(hourStr, 10);
     const minute = parseInt(minuteStr, 10);
 
-    // 1. Daily Recap at 20:00 WITA (between 20:00 and 20:05)
+    // 1. Morning Bill Reminders at 08:00 WITA (between 08:00 and 08:05)
+    if (hour === 8 && minute < 5 && this.lastBillCheckDate !== datePart) {
+      logger.info({ makassarTimeStr }, "Triggering morning bill reminders to Super Admins...");
+      await this.sendMorningBillReminders(datePart);
+      this.lastBillCheckDate = datePart;
+    }
+
+    // 2. Daily Recap at 20:00 WITA (between 20:00 and 20:05)
     if (hour === 20 && minute < 5 && this.lastRecapDate !== datePart) {
       logger.info({ makassarTimeStr }, "Triggering nightly daily recap to Super Admins...");
       await this.sendNightlyRecap(datePart);
       this.lastRecapDate = datePart;
+    }
+  }
+
+  async sendMorningBillReminders(targetDate?: string): Promise<{ success: boolean; reminderCount: number }> {
+    if (!this.billRepo) return { success: false, reminderCount: 0 };
+
+    const dateStr = targetDate || new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+    const [year, month, dayStr] = dateStr.split("-");
+    const currentDay = parseInt(dayStr, 10);
+    const currentMonth = `${year}-${month}`;
+
+    const sock = getGlobalSocket();
+    if (!sock) return { success: false, reminderCount: 0 };
+
+    try {
+      const bills = await this.billRepo.listActiveBills();
+      const users = await this.userRepo.listActiveUsers();
+      const superAdmins = users.filter((u) => u.role === "super_admin" && u.status === "active");
+
+      let reminderCount = 0;
+      for (const bill of bills) {
+        if (bill.last_paid_period === currentMonth) continue;
+
+        const reminderDays = bill.reminder_days_before || 3;
+        const daysLeft = bill.due_day - currentDay;
+
+        // Trigger reminder if due today or within reminder window (e.g. H-3 to H-0)
+        if (daysLeft >= 0 && daysLeft <= reminderDays) {
+          const reminderText = formatBillReminder(bill, daysLeft);
+          for (const admin of superAdmins) {
+            const jid = `${admin.phone_number}@s.whatsapp.net`;
+            try {
+              await sock.sendMessage(jid, { text: reminderText });
+              reminderCount++;
+            } catch (err) {
+              logger.error({ err, jid }, "Failed to send bill reminder");
+            }
+          }
+        }
+      }
+
+      return { success: true, reminderCount };
+    } catch (err) {
+      logger.error({ err }, "Error sending morning bill reminders");
+      return { success: false, reminderCount: 0 };
     }
   }
 

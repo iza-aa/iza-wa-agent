@@ -80,12 +80,14 @@ async function bootstrap() {
         const { getSupabaseClient } = await import("./db/supabase.js");
         const { TransactionRepository } = await import("./db/repositories/transaction.repository.js");
         const { UserRepository } = await import("./db/repositories/user.repository.js");
+        const { BillRepository } = await import("./db/repositories/bill.repository.js");
         const { SchedulerService } = await import("./services/scheduler.service.js");
         const supabase = getSupabaseClient();
         const trxRepo = new TransactionRepository(supabase);
         const userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
+        const billRepo = new BillRepository(supabase);
         await userRepo.syncSuperAdminsFromDB();
-        const scheduler = new SchedulerService(trxRepo, userRepo);
+        const scheduler = new SchedulerService(trxRepo, userRepo, billRepo);
         scheduler.start();
         logger.info("Background Scheduler Service is active and monitoring daily schedule");
     }

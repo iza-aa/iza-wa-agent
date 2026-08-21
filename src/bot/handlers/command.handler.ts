@@ -1,5 +1,9 @@
 import { UserRepository } from "../../db/repositories/user.repository.js";
 import { TransactionRepository, TransactionRecord, isIncome } from "../../db/repositories/transaction.repository.js";
+import { BudgetRepository } from "../../db/repositories/budget.repository.js";
+import { BillRepository } from "../../db/repositories/bill.repository.js";
+import { pdfReportService } from "../../services/pdf-report.service.js";
+import { getGlobalSocket } from "../socket-holder.js";
 import {
   formatUserList,
   formatHelpMessage,
@@ -13,6 +17,11 @@ import {
   formatMultiPocketBalance,
   formatDailyRecap,
   formatTransferSuccess,
+  formatBudgetList,
+  formatBudgetSetSuccess,
+  formatBillList,
+  formatBillCreatedSuccess,
+  formatBillPaidSuccess,
 } from "../formatters/reply.formatter.js";
 import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
@@ -23,7 +32,9 @@ import { logger } from "../../utils/logger.js";
 export class CommandHandler {
   constructor(
     private userRepo: UserRepository,
-    private trxRepo: TransactionRepository
+    private trxRepo: TransactionRepository,
+    private budgetRepo?: BudgetRepository,
+    private billRepo?: BillRepository
   ) {}
 
   async handleCommand(
@@ -716,9 +727,300 @@ export class CommandHandler {
       return { handled: true, responseMessage: summary };
     }
 
+    if (command === "/export" || command === "/unduh" || command === "/pdf" || command === "/laporanpdf") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Fitur download laporan PDF hanya dapat diakses oleh Super Admin.",
+        };
+      }
+
+      const now = new Date();
+      let targetMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+
+      // Handle format: /export pdf 2026-08 or /export 2026-08 or /export pdf
+      for (let i = 1; i < parts.length; i++) {
+        const p = parts[i].trim();
+        if (/^\d{4}-\d{2}$/.test(p)) {
+          targetMonth = p;
+        } else if (/^\d{1,2}$/.test(p)) {
+          targetMonth = `${now.getFullYear()}-${p.padStart(2, "0")}`;
+        }
+      }
+
+      try {
+        const summary = await this.trxRepo.getMonthlySummary(targetMonth);
+        const [year, month] = targetMonth.split("-");
+        const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate();
+        const transactions = await this.trxRepo.getTransactionsByDateRange(
+          `${targetMonth}-01`,
+          `${targetMonth}-${lastDay.toString().padStart(2, "0")}`
+        );
+
+        const pdfBuffer = await pdfReportService.generateMonthlyReportPdf({
+          targetMonth,
+          totalIncome: summary.totalIncome || 0,
+          totalExpense: summary.totalExpense !== undefined ? summary.totalExpense : summary.total,
+          netCashflow: summary.netCashflow !== undefined ? summary.netCashflow : (summary.totalIncome || 0) - (summary.totalExpense || summary.total),
+          count: summary.count,
+          byCategory: summary.byCategory || {},
+          transactions,
+        });
+
+        const sock = getGlobalSocket();
+        if (sock) {
+          const jid = senderPhone.includes("@") ? senderPhone : `${senderPhone}@s.whatsapp.net`;
+          await sock.sendMessage(jid, {
+            document: pdfBuffer,
+            mimetype: "application/pdf",
+            fileName: `Laporan_Kas_${targetMonth}.pdf`,
+            caption: `📄 *Laporan Arus Kas Bulanan (${targetMonth})*\n\nBerikut file dokumen PDF resmi arus kas Anda.`,
+          });
+          return {
+            handled: true,
+            responseMessage: `📄 *Dokumen PDF Laporan Keuangan (${targetMonth}) berhasil dibuat dan sedang dikirimkan ke chat Anda...*`,
+          };
+        }
+
+        return {
+          handled: true,
+          responseMessage: `✅ Laporan PDF (${targetMonth}) selesai dibuat.`,
+        };
+      } catch (pdfErr) {
+        logger.error({ pdfErr }, "Failed to generate PDF report");
+        return {
+          handled: true,
+          responseMessage: "⚠️ Gagal membuat file dokumen PDF laporan keuangan.",
+        };
+      }
+    }
+
+    if (command === "/budget" || command === "/anggaran" || command === "/limit") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Pengaturan batas anggaran hanya dapat diakses oleh Super Admin.",
+        };
+      }
+
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+      const sub = parts[1]?.trim().toLowerCase();
+
+      // Case A: /budget or /budget cek
+      if (!sub || sub === "cek" || sub === "status" || sub === "daftar" || sub === "list") {
+        if (!this.budgetRepo) {
+          return { handled: true, responseMessage: "ℹ️ Modul anggaran belum terpasang." };
+        }
+        const budgets = await this.budgetRepo.getBudgetsForMonth(currentMonth);
+        const monthlySummary = await this.trxRepo.getMonthlySummary(currentMonth);
+        return {
+          handled: true,
+          responseMessage: formatBudgetList(budgets, monthlySummary.byCategory || {}, currentMonth),
+        };
+      }
+
+      // Case B: /budget hapus <kategori>
+      if (sub === "hapus" || sub === "delete" || sub === "reset") {
+        const catToDelete = parts.slice(2).join(" ").trim();
+        if (!catToDelete) {
+          return {
+            handled: true,
+            responseMessage: "❌ Format salah. Gunakan: `/budget hapus <kategori>`\nContoh: `/budget hapus Operasional`",
+          };
+        }
+        if (this.budgetRepo) {
+          await this.budgetRepo.deleteBudget(catToDelete, currentMonth);
+        }
+        return {
+          handled: true,
+          responseMessage: `🗑️ Batas anggaran untuk kategori *${catToDelete}* (${currentMonth}) berhasil dihapus.`,
+        };
+      }
+
+      // Case C: /budget <kategori> <nominal> (e.g. /budget Operasional 4000000 or /budget Makan 3jt)
+      let category = "";
+      let rawNominal = "";
+
+      // Find nominal at the end of args
+      const lastArg = parts[parts.length - 1];
+      const parsedAmount = parseHumanNominal(lastArg);
+
+      if (parsedAmount > 0) {
+        rawNominal = lastArg;
+        category = parts.slice(1, parts.length - 1).join(" ").trim();
+      }
+
+      if (!category || parsedAmount <= 0) {
+        return {
+          handled: true,
+          responseMessage: "❌ Format salah. Gunakan: `/budget <kategori> <nominal>`\n\nContoh:\n• `/budget Operasional 4000000`\n• `/budget Makanan 3jt`\n• `/budget cek`",
+        };
+      }
+
+      if (this.budgetRepo) {
+        await this.budgetRepo.upsertBudget(category, currentMonth, parsedAmount);
+      }
+
+      const monthlySummary = await this.trxRepo.getMonthlySummary(currentMonth);
+      const matchedKey = Object.keys(monthlySummary.byCategory || {}).find(
+        (k) => k.toLowerCase().includes(category.toLowerCase()) || category.toLowerCase().includes(k.toLowerCase())
+      );
+      const spent = matchedKey ? monthlySummary.byCategory[matchedKey] : 0;
+
+      return {
+        handled: true,
+        responseMessage: formatBudgetSetSuccess(category, parsedAmount, spent),
+      };
+    }
+
+    if (command === "/tagihan" || command === "/bill" || command === "/bills") {
+      if (!isSuperAdmin) {
+        return {
+          handled: true,
+          responseMessage: "⚠️ Menu tagihan rutin bulanan hanya dapat diakses oleh Super Admin.",
+        };
+      }
+
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, "0")}`;
+      const sub = parts[1]?.trim().toLowerCase();
+
+      // Case A: /tagihan or /tagihan daftar
+      if (!sub || sub === "daftar" || sub === "list" || sub === "cek" || sub === "status") {
+        if (!this.billRepo) {
+          return { handled: true, responseMessage: "ℹ️ Modul tagihan rutin belum aktif." };
+        }
+        const bills = await this.billRepo.listActiveBills();
+        return {
+          handled: true,
+          responseMessage: formatBillList(bills, currentMonth),
+        };
+      }
+
+      // Case B: /tagihan tambah <Nama> <Nominal> [tgl <1-31>]
+      // e.g. /tagihan tambah Listrik Toko 750000 tgl 20
+      if (sub === "tambah" || sub === "add" || sub === "buat") {
+        const remaining = parts.slice(2).join(" ").trim();
+        // Regex to extract due day
+        const dueMatch = remaining.match(/(?:tgl|tanggal|\btgl\b|\bday\b)\s*(\d{1,2})/i);
+        let dueDay = dueMatch ? parseInt(dueMatch[1], 10) : 20;
+
+        // Clean due string
+        const withoutDue = remaining.replace(/(?:tgl|tanggal|\btgl\b|\bday\b)\s*\d{1,2}/gi, "").trim();
+        const subParts = withoutDue.split(" ");
+        const lastPart = subParts[subParts.length - 1];
+        const nominal = parseHumanNominal(lastPart);
+        const billName = subParts.slice(0, subParts.length - 1).join(" ").trim();
+
+        if (!billName || nominal <= 0 || dueDay < 1 || dueDay > 31) {
+          return {
+            handled: true,
+            responseMessage: "❌ Format salah. Gunakan: `/tagihan tambah <Nama_Tagihan> <Nominal> tgl <1-31>`\n\nContoh:\n• `/tagihan tambah Listrik Toko 750000 tgl 20`\n• `/tagihan tambah Wifi Indihome 350000 tgl 15`",
+          };
+        }
+
+        const created = this.billRepo
+          ? await this.billRepo.createBill({ bill_name: billName, amount: nominal, due_day: dueDay })
+          : { bill_name: billName, amount: nominal, due_day: dueDay };
+
+        return {
+          handled: true,
+          responseMessage: formatBillCreatedSuccess(created),
+        };
+      }
+
+      // Case C: /tagihan bayar <Nama_Tagihan>
+      if (sub === "bayar" || sub === "pay" || sub === "lunas") {
+        const billNameToPay = parts.slice(2).join(" ").trim();
+        if (!billNameToPay) {
+          return {
+            handled: true,
+            responseMessage: "❌ Format salah. Gunakan: `/tagihan bayar <Nama_Tagihan>`\nContoh: `/tagihan bayar Listrik Toko`",
+          };
+        }
+
+        const bill = this.billRepo ? await this.billRepo.getBillByName(billNameToPay) : null;
+        if (!bill) {
+          return {
+            handled: true,
+            responseMessage: `⚠️ Tagihan dengan nama *${billNameToPay}* tidak ditemukan di daftar.`,
+          };
+        }
+
+        if (this.billRepo) {
+          await this.billRepo.markBillPaid(bill.bill_name, currentMonth);
+        }
+
+        // Record expense transaction
+        const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+        const trxId = await this.trxRepo.generateTransactionId(todayStr);
+        const trx = await this.trxRepo.createTransaction({
+          id: trxId,
+          user_phone: senderPhone,
+          user_name: "Super Admin",
+          date: todayStr,
+          merchant: bill.bill_name,
+          category: bill.category || "Tagihan & Utilitas",
+          subtotal: bill.amount,
+          tax: 0,
+          discount: 0,
+          total_amount: bill.amount,
+          payment_method: bill.payment_method || "Cash",
+          confidence_score: 1.0,
+          raw_text: `Bayar tagihan bulanan: ${bill.bill_name}`,
+        });
+
+        try {
+          await googleSheetsService.appendTransaction(trx, []);
+        } catch (sheetErr) {
+          logger.error({ sheetErr }, "Failed to append bill transaction to sheets");
+        }
+
+        return {
+          handled: true,
+          responseMessage: formatBillPaidSuccess(bill.bill_name, bill.amount, currentMonth),
+        };
+      }
+
+      // Case D: /tagihan hapus <Nama_Tagihan>
+      if (sub === "hapus" || sub === "delete") {
+        const billNameToDelete = parts.slice(2).join(" ").trim();
+        if (!billNameToDelete) {
+          return {
+            handled: true,
+            responseMessage: "❌ Format salah. Gunakan: `/tagihan hapus <Nama_Tagihan>`\nContoh: `/tagihan hapus Wifi`",
+          };
+        }
+        if (this.billRepo) {
+          await this.billRepo.deleteBill(billNameToDelete);
+        }
+        return {
+          handled: true,
+          responseMessage: `🗑️ Tagihan *${billNameToDelete}* berhasil dihapus dari daftar pengingat rutin.`,
+        };
+      }
+    }
+
     return {
       handled: true,
       responseMessage: "❓ Perintah tidak dikenal. Ketik `/menu` untuk melihat daftar panduan & perintah.",
     };
   }
 }
+
+function parseHumanNominal(raw: string): number {
+  if (!raw) return 0;
+  let clean = raw.toLowerCase().trim();
+  let multiplier = 1;
+  if (clean.includes("jt") || clean.includes("juta")) {
+    multiplier = 1000000;
+    clean = clean.replace(/jt|juta/g, "").trim();
+  } else if (clean.includes("rb") || clean.includes("ribu") || clean.includes("k")) {
+    multiplier = 1000;
+    clean = clean.replace(/rb|ribu|k/g, "").trim();
+  }
+  const num = parseFloat(clean.replace(/[^0-9.]/g, ""));
+  return Math.round((isNaN(num) ? 0 : num) * multiplier);
+}
+

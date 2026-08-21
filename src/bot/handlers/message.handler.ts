@@ -5,6 +5,8 @@ type WASocket = any;
 import { UserRepository } from "../../db/repositories/user.repository.js";
 import { TransactionRepository } from "../../db/repositories/transaction.repository.js";
 import { ChatRepository } from "../../db/repositories/chat.repository.js";
+import { BudgetRepository } from "../../db/repositories/budget.repository.js";
+import { BillRepository } from "../../db/repositories/bill.repository.js";
 import { CommandHandler } from "./command.handler.js";
 import { parseTransactionText } from "../../ai/parsers/text.parser.js";
 import { parseReceiptVision } from "../../ai/parsers/receipt-vision.parser.js";
@@ -16,6 +18,7 @@ import {
   formatTransactionSuccess,
   formatPendingApprovalNotification,
   formatDuplicateWarning,
+  formatBudgetWarning,
 } from "../formatters/reply.formatter.js";
 import { DuplicateDetectorService } from "../../services/duplicate-detector.service.js";
 import { logger } from "../../utils/logger.js";
@@ -29,10 +32,36 @@ export class MessageHandler {
   constructor(
     private userRepo: UserRepository,
     private trxRepo: TransactionRepository,
-    private chatRepo: ChatRepository
+    private chatRepo: ChatRepository,
+    private budgetRepo?: BudgetRepository,
+    private billRepo?: BillRepository
   ) {
-    this.commandHandler = new CommandHandler(userRepo, trxRepo);
+    this.commandHandler = new CommandHandler(userRepo, trxRepo, budgetRepo, billRepo);
     this.duplicateDetector = new DuplicateDetectorService(trxRepo);
+  }
+
+  private async checkBudgetAlert(category: string, dateStr: string): Promise<string | null> {
+    if (!this.budgetRepo || category.startsWith("Pemasukan")) return null;
+    const monthStr = dateStr.slice(0, 7);
+    const budget = await this.budgetRepo.getBudgetByCategory(category, monthStr);
+    if (!budget || budget.limit_amount <= 0) return null;
+
+    const monthly = await this.trxRepo.getMonthlySummary(monthStr);
+    const matchedKey = Object.keys(monthly.byCategory || {}).find(
+      (k) => k.toLowerCase().includes(category.toLowerCase()) || category.toLowerCase().includes(k.toLowerCase())
+    );
+    const spent = matchedKey ? monthly.byCategory[matchedKey] : 0;
+    const percent = (spent / budget.limit_amount) * 100;
+
+    if (percent >= 100 && !budget.is_alerted_100) {
+      await this.budgetRepo.markAlerted(category, monthStr, 100);
+      return formatBudgetWarning(category, spent, budget.limit_amount, percent);
+    } else if (percent >= 80 && percent < 100 && !budget.is_alerted_80) {
+      await this.budgetRepo.markAlerted(category, monthStr, 80);
+      return formatBudgetWarning(category, spent, budget.limit_amount, percent);
+    }
+
+    return null;
   }
 
   cleanPhone(from: string): string {
@@ -262,12 +291,16 @@ export class MessageHandler {
           logger.error({ sheetErr }, "Failed to append row to Google Sheet");
         }
 
-        // Reply Success (with duplicate warning if detected)
+        // Reply Success (with duplicate warning or budget warning if detected)
         const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
         const wallet = await this.trxRepo.getWalletBalance();
+        const budgetNotice = await this.checkBudgetAlert(parsed.category, parsed.date);
         let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
         if (potentialDuplicate) {
           replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+        }
+        if (budgetNotice) {
+          replyText += "\n\n────────────────────────\n\n" + budgetNotice;
         }
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
@@ -363,10 +396,14 @@ export class MessageHandler {
 
         const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
         const wallet = await this.trxRepo.getWalletBalance();
+        const budgetNotice = await this.checkBudgetAlert(transaction.category, transaction.date);
         let replyText = "🗣️ *Transkrip:* \"" + transcription + "\"\n\n";
         replyText += formatTransactionSuccess(transactionRecord, transaction.items, isSuperAdmin, wallet.balance);
         if (potentialDuplicate) {
           replyText = formatDuplicateWarning(potentialDuplicate, transaction.total_amount, transaction.merchant) + "\n\n────────────────────────\n\n" + replyText;
+        }
+        if (budgetNotice) {
+          replyText += "\n\n────────────────────────\n\n" + budgetNotice;
         }
         await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
         return;
@@ -460,9 +497,13 @@ export class MessageHandler {
       }
 
       const wallet = await this.trxRepo.getWalletBalance();
+      const budgetNotice = await this.checkBudgetAlert(parsed.category, parsed.date);
       let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
       if (potentialDuplicate) {
         replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+      }
+      if (budgetNotice) {
+        replyText += "\n\n────────────────────────\n\n" + budgetNotice;
       }
       await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
       await this.chatRepo.logMessage({

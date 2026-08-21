@@ -162,6 +162,20 @@ export class TransactionRepository {
         }
         return (data || []);
     }
+    async getTransactionsByDateRange(startDate, endDate) {
+        const { data, error } = await this.supabase
+            .from("transactions")
+            .select("*")
+            .gte("date", startDate)
+            .lte("date", endDate)
+            .order("date", { ascending: true })
+            .order("created_at", { ascending: true });
+        if (error) {
+            logger.error({ error, startDate, endDate }, "Failed to fetch transactions by date range");
+            return [];
+        }
+        return (data || []);
+    }
     async updateGSheetRow(trxId, rowIndex) {
         await this.supabase
             .from("transactions")

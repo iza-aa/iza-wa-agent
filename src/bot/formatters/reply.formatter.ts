@@ -262,13 +262,19 @@ export function formatHelpMessage(isSuperAdmin: boolean): string {
     msg += "🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
     msg += "👑 *Menu Khusus Super Admin:*\n";
     msg += "• `/saldo` - Melihat status kas, pemasukan, pengeluaran & sisa saldo\n";
+    msg += "• `/saldo detail` - Melihat rincian saldo per bank/kas fisik\n";
+    msg += "• `/transfer <dari> <ke> <nominal>` - Mutasi kas antar kantong/bank\n";
     msg += "• `/pemasukan <nominal> <keterangan>` - Mencatat pemasukan dana baru\n";
+    msg += "• `/export pdf [YYYY-MM]` - Download dokumen laporan resmi PDF\n";
+    msg += "• `/budget [kategori] [nominal]` - Pantau batas anggaran & limit boros\n";
+    msg += "• `/tagihan <tambah|daftar|bayar>` - Pengingat tagihan rutin bulanan\n";
+    msg += "• `/rekapmalam` - Kirim rekap harian malam secara manual\n";
     msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";
     msg += "• `/edit <ID_TRX> [koreksi]` - Mengedit data transaksi (toko, nominal, tanggal, dll)\n";
     msg += "• `/laporan [YYYY-MM]` - Laporan arus kas bulanan & persentase kategori\n";
     msg += "• `/rekap [jumlah]` - Riwayat transaksi terakhir beserta ID transaksi\n";
     msg += "• `/batal` - Membatalkan transaksi terakhir yang baru dicatat\n";
-    msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik (contoh: `/hapus TRX-20260820-LX8Y`)\n";
+    msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik\n";
     msg += "• `/tambah <nomor> [nama]` - Mendaftarkan anggota baru\n";
     msg += "• `/blokir <nomor>` - Memblokir akses nomor tertentu\n";
     msg += "• `/pengguna` - Melihat daftar anggota aktif\n";
@@ -398,3 +404,86 @@ export function formatMonthlyReport(
 
   return msg;
 }
+
+export function formatBudgetList(
+  budgets: { category: string; limit_amount: number }[],
+  expensesByCategory: { [cat: string]: number },
+  monthStr: string
+): string {
+  if (budgets.length === 0) {
+    return `📊 *STATUS BATAS ANGGARAN (${monthStr})*\n\nℹ️ Belum ada anggaran bulanan yang disetel.\n\n💡 _Untuk menyetel anggaran kategori, ketik:_\n\`/budget <kategori> <nominal>\`\n_Contoh: \`/budget Operasional 4000000\`_`;
+  }
+
+  let msg = `📊 *STATUS BATAS ANGGARAN (${monthStr})*\n\n`;
+
+  for (const b of budgets) {
+    const matchedKey = Object.keys(expensesByCategory).find(
+      (k) => k.toLowerCase().includes(b.category.toLowerCase()) || b.category.toLowerCase().includes(k.toLowerCase())
+    );
+    const spent = matchedKey ? expensesByCategory[matchedKey] : 0;
+    const percent = b.limit_amount > 0 ? (spent / b.limit_amount) * 100 : 0;
+    const remaining = b.limit_amount - spent;
+
+    let statusEmoji = "✅ Aman";
+    if (percent >= 100) statusEmoji = "🚨 OVER BUDGET!";
+    else if (percent >= 80) statusEmoji = "⚠️ Mendekati Limit!";
+
+    msg += `🏷️ *${b.category}:*\n`;
+    msg += ` • Terpakai: *${formatRupiah(spent)}* (${percent.toFixed(1)}%)\n`;
+    msg += ` • Batas Limit: ${formatRupiah(b.limit_amount)}\n`;
+    msg += ` • Sisa Anggaran: *${remaining >= 0 ? formatRupiah(remaining) : "-" + formatRupiah(Math.abs(remaining))}* (${statusEmoji})\n\n`;
+  }
+
+  msg += `💡 _Ubah limit kapan saja dengan: \`/budget <kategori> <nominal>\`_\n_Hapus limit dengan: \`/budget hapus <kategori>\`_`;
+  return msg.trim();
+}
+
+export function formatBudgetSetSuccess(category: string, amount: number, spent: number): string {
+  const percent = amount > 0 ? ((spent / amount) * 100).toFixed(1) : "0";
+  return `✅ *Batas Anggaran Berhasil Disetel!*\n\n🏷️ *Kategori:* ${category}\n💰 *Limit Bulanan:* *${formatRupiah(amount)}*\n📊 *Pengeluaran Saat Ini:* ${formatRupiah(spent)} (${percent}%)\n\n💡 _Bot akan otomatis mengingatkan saat belanja kategori ini mencapai 80% dan 100%._`;
+}
+
+export function formatBudgetWarning(category: string, currentExpense: number, limitAmount: number, percent: number): string {
+  if (percent >= 100) {
+    return `🚨 *PERINGATAN OVER BUDGET!*\nPengeluaran kategori *${category}* bulan ini telah mencapai *${formatRupiah(currentExpense)}* (Melebihi batas limit *${formatRupiah(limitAmount)}* / ${percent.toFixed(1)}%).`;
+  }
+  return `⚠️ *PERINGATAN ANGGARAN (80%)*\nPengeluaran kategori *${category}* bulan ini sudah mencapai *${formatRupiah(currentExpense)}* (${percent.toFixed(1)}% dari limit *${formatRupiah(limitAmount)}*).`;
+}
+
+export function formatBillList(
+  bills: { bill_name: string; amount: number; due_day: number; category?: string; last_paid_period?: string }[],
+  currentMonth: string
+): string {
+  if (bills.length === 0) {
+    return `⏰ *DAFTAR TAGIHAN RUTIN BULANAN*\n\nℹ️ Belum ada tagihan rutin yang terdaftar.\n\n💡 _Untuk mendaftarkan tagihan baru, ketik:_\n\`/tagihan tambah <Nama_Tagihan> <Nominal> <Tgl_Jatuh_Tempo>\`\n_Contoh: \`/tagihan tambah Listrik Toko 750000 tgl 20\`_`;
+  }
+
+  let msg = `⏰ *DAFTAR TAGIHAN RUTIN BULANAN*\n\n`;
+
+  for (const b of bills) {
+    const isPaidThisMonth = b.last_paid_period === currentMonth;
+    const statusText = isPaidThisMonth ? "✅ LUNAS" : "⏳ BELUM BAYAR";
+
+    msg += `📌 *${b.bill_name}*\n`;
+    msg += ` • Nominal: *${formatRupiah(b.amount)}*\n`;
+    msg += ` • Jatuh Tempo: Setiap tanggal *${b.due_day}*\n`;
+    msg += ` • Status (${currentMonth}): *${statusText}*\n\n`;
+  }
+
+  msg += `💡 _Tandai sudah lunas: \`/tagihan bayar <nama>\`_\n_Hapus tagihan: \`/tagihan hapus <nama>\`_`;
+  return msg.trim();
+}
+
+export function formatBillReminder(bill: { bill_name: string; amount: number; due_day: number }, daysLeft: number): string {
+  const urgency = daysLeft === 0 ? "🚨 *HARI INI JATUH TEMPO!*" : `⏳ *Jatuh tempo dalam ${daysLeft} hari lagi!*`;
+  return `⏰ *PENGINGAT TAGIHAN BULANAN*\n\n${urgency}\n📌 *Tagihan:* ${bill.bill_name}\n💰 *Nominal:* *${formatRupiah(bill.amount)}*\n📅 *Tanggal Jatuh Tempo:* Tgl ${bill.due_day}\n\n💡 _Jika sudah dibayar, ketik:_ \`/tagihan bayar ${bill.bill_name}\``;
+}
+
+export function formatBillCreatedSuccess(bill: { bill_name: string; amount: number; due_day: number }): string {
+  return `✅ *Tagihan Rutin Berhasil Didaftarkan!*\n\n📌 *Nama Tagihan:* ${bill.bill_name}\n💰 *Nominal:* *${formatRupiah(bill.amount)}*\n📅 *Jatuh Tempo:* Setiap tanggal *${bill.due_day}*\n\n💡 _Bot akan otomatis mengirimkan japri pengingat pada H-3 jam 08:00 WITA jika belum dibayar._`;
+}
+
+export function formatBillPaidSuccess(billName: string, amount: number, period: string): string {
+  return `✅ *Tagihan ${billName} Telah Ditandai LUNAS (${period})!*\n\n💰 *Nominal:* ${formatRupiah(amount)}\n🧾 Transaksi pengeluaran telah otomatis dicatat ke dalam kas.`;
+}
+
