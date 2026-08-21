@@ -12,6 +12,7 @@ const envSchema = z.object({
   GOOGLE_PRIVATE_KEY: z.string().min(1).transform((val) => val.replace(/\\n/g, "\n")),
   GOOGLE_SHEET_ID: z.string().min(1),
   GOOGLE_DRIVE_FOLDER_ID: z.string().min(1),
+  GOOGLE_APPS_SCRIPT_URL: z.string().url().optional().or(z.literal("")),
   PORT: z.string().optional().default("3000"),
   NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
 });

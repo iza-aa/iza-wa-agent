@@ -86,15 +86,49 @@ export class GoogleDriveService {
         const finalMimeType = isPdf ? "application/pdf" : "image/webp";
         const extension = isPdf ? ".pdf" : ".webp";
         const finalFileName = fileName.endsWith(extension) ? fileName : fileName + extension;
-        // 1. Simultaneous upload to Supabase Storage
+        // 1. Simultaneous upload to Supabase Storage (Cloud CDN backup)
         this.uploadToSupabaseStorage(bufferToUpload, fileName).catch((supaErr) => {
             logger.warn({ supaErr }, "Background Supabase storage upload notice");
         });
-        // 2. Upload to Google Drive (Primary)
+        const now = new Date();
+        const year = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(0, 4);
+        const month = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(5, 7);
+        // 2. If Google Apps Script Web App URL is configured, upload directly to User's Google Drive
+        if (config.GOOGLE_APPS_SCRIPT_URL && config.GOOGLE_APPS_SCRIPT_URL.startsWith("http")) {
+            try {
+                const payload = {
+                    rootFolderId: config.GOOGLE_DRIVE_FOLDER_ID,
+                    year,
+                    month,
+                    userName,
+                    fileName: finalFileName,
+                    mimeType: finalMimeType,
+                    base64Data: bufferToUpload.toString("base64"),
+                };
+                const scriptRes = await fetch(config.GOOGLE_APPS_SCRIPT_URL, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                const data = (await scriptRes.json());
+                if (data && data.status === "success" && data.fileId) {
+                    logger.info({ fileId: data.fileId, webViewLink: data.webViewLink, userName }, "Receipt successfully uploaded to Google Drive via Apps Script");
+                    return {
+                        fileId: data.fileId,
+                        webViewLink: data.webViewLink,
+                        downloadLink: data.downloadLink || data.webViewLink,
+                    };
+                }
+                else {
+                    logger.warn({ data }, "Apps Script returned non-success response, falling back");
+                }
+            }
+            catch (scriptErr) {
+                logger.warn({ err: scriptErr.message }, "Apps Script upload failed, trying standard Drive API");
+            }
+        }
+        // 3. Upload to Google Drive via Service Account (Standard)
         try {
-            const now = new Date();
-            const year = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(0, 4);
-            const month = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(now).slice(5, 7);
             const rootFolderId = config.GOOGLE_DRIVE_FOLDER_ID;
             const yearFolderId = await this.getOrCreateFolder(year, rootFolderId);
             const monthFolderId = await this.getOrCreateFolder(month, yearFolderId);
