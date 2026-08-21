@@ -3,6 +3,7 @@ import { UserRepository } from "../db/repositories/user.repository.js";
 import { BillRepository } from "../db/repositories/bill.repository.js";
 import { getGlobalSocket } from "../bot/socket-holder.js";
 import { formatDailyRecap, formatBillReminder } from "../bot/formatters/reply.formatter.js";
+import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 
 export class SchedulerService {
@@ -69,6 +70,31 @@ export class SchedulerService {
     }
   }
 
+  private async getSuperAdminJids(): Promise<string[]> {
+    const phones = new Set<string>();
+
+    // 1. From environment config
+    for (const p of config.SUPER_ADMIN_PHONE) {
+      if (p && p.length <= 14) {
+        phones.add(p);
+      }
+    }
+
+    // 2. From database
+    try {
+      const users = await this.userRepo.listActiveUsers();
+      for (const u of users) {
+        if (u.role === "super_admin" && u.status === "active" && u.phone_number.length <= 14) {
+          phones.add(u.phone_number);
+        }
+      }
+    } catch (err) {
+      logger.warn({ err }, "Could not fetch users from database for Super Admin notifications, using config phones");
+    }
+
+    return Array.from(phones).map((p) => `${p}@s.whatsapp.net`);
+  }
+
   async sendMorningBillReminders(targetDate?: string): Promise<{ success: boolean; reminderCount: number }> {
     if (!this.billRepo) return { success: false, reminderCount: 0 };
 
@@ -82,8 +108,7 @@ export class SchedulerService {
 
     try {
       const bills = await this.billRepo.listActiveBills();
-      const users = await this.userRepo.listActiveUsers();
-      const superAdmins = users.filter((u) => u.role === "super_admin" && u.status === "active");
+      const superAdminJids = await this.getSuperAdminJids();
 
       let reminderCount = 0;
       for (const bill of bills) {
@@ -95,8 +120,7 @@ export class SchedulerService {
         // Trigger reminder if due today or within reminder window (e.g. H-3 to H-0)
         if (daysLeft >= 0 && daysLeft <= reminderDays) {
           const reminderText = formatBillReminder(bill, daysLeft);
-          for (const admin of superAdmins) {
-            const jid = `${admin.phone_number}@s.whatsapp.net`;
+          for (const jid of superAdminJids) {
             try {
               await sock.sendMessage(jid, { text: reminderText });
               reminderCount++;
@@ -130,24 +154,21 @@ export class SchedulerService {
       const wallet = await this.trxRepo.getWalletBalance();
       const messageText = formatDailyRecap(dailySummary, wallet);
 
-      // Get active super admins from database
-      const users = await this.userRepo.listActiveUsers();
-      const superAdmins = users.filter((u) => u.role === "super_admin" && u.status === "active");
+      const superAdminJids = await this.getSuperAdminJids();
 
-      if (superAdmins.length === 0) {
-        logger.warn("No active Super Admins found in DB to receive nightly recap");
+      if (superAdminJids.length === 0) {
+        logger.warn("No active Super Admins found to receive nightly recap");
         return { success: false, recipientCount: 0 };
       }
 
       let sentCount = 0;
-      for (const admin of superAdmins) {
-        const jid = `${admin.phone_number}@s.whatsapp.net`;
+      for (const jid of superAdminJids) {
         try {
           await sock.sendMessage(jid, { text: messageText });
-          logger.info({ jid, phone: admin.phone_number }, "Nightly recap sent to Super Admin");
+          logger.info({ jid }, "Nightly recap sent to Super Admin");
           sentCount++;
         } catch (sendErr) {
-          logger.error({ sendErr, phone: admin.phone_number }, "Failed to send nightly recap to Super Admin");
+          logger.error({ sendErr, jid }, "Failed to send nightly recap to Super Admin");
         }
       }
 

@@ -179,38 +179,37 @@ export function formatUserList(users) {
 }
 export function formatHelpMessage(isSuperAdmin) {
     let msg = "🤖 *PANDUAN PENGGUNAAN BOT KEUANGAN & DOMPET*\n\n";
-    msg += "Anda dapat mencatat pengeluaran & pemasukan dengan mudah:\n";
-    msg += "1. 📸 *Kirim Foto Struk / Bukti Transfer*\n";
-    msg += "2. 🎙️ *Kirim Voice Note WA* (contoh: \"Beli bensin 50rb di Pertamina\")\n";
-    msg += "3. 💬 *Kirim Pesan Teks Bebas* (contoh: \"Makan siang 25k\" atau \"Pemasukan 5jt gaji\")\n";
-    msg += "4. 💵 *Catat Pemasukan Cepat*: Ketik `/pemasukan <nominal> <keterangan> [metode]` (contoh: `/pemasukan 100000 sumbangan BCA`)\n";
-    msg += "5. 💳 *Cek Saldo Kas Dompet*: Ketik `/saldo` (atau `/dompet`)\n";
-    msg += "6. ✏️ *Ganti Nama Penginput*: Ketik `/nama [Nama Anda]` (contoh: `/nama Budi`)\n";
-    msg += "7. 🔄 *Sinkronkan Spreadsheet*: Ketik `/sync`\n\n";
+    msg += "Anda dapat mencatat dan memantau keuangan dengan mudah:\n";
+    msg += "1. 📸 *Foto Struk / Nota*: Kirim foto struk belanja untuk dicatat otomatis.\n";
+    msg += "2. 🎙️ *Voice Note*: Kirim rekaman suara (contoh: _\"Beli bensin 50rb Pertamina cash\"_).\n";
+    msg += "3. 💬 *Pesan Teks*: Ketik belanja bebas (contoh: _\"Makan siang 25k\"_).\n";
+    msg += "4. 🔍 *Pencarian AI*: Tanyakan langsung (contoh: _\"Berapa kali beli bensin bulan ini?\"_).\n";
+    msg += "5. 📊 *Cek Riwayat*: Ketik `/rekap` (melihat riwayat transaksi terakhir).\n";
+    msg += "6. ✏️ *Ganti Nama*: Ketik `/nama [Nama Anda]` (contoh: `/nama Budi`).\n\n";
     if (isSuperAdmin) {
-        msg += "🔗 *Buka Spreadsheet & Drive*: Ketik `/link` (atau `/sheet`)\n\n";
-        msg += "👑 *Menu Khusus Super Admin:*\n";
+        msg += "👑 *MENU KHUSUS SUPER ADMIN:*\n";
         msg += "• `/saldo` - Melihat status kas, pemasukan, pengeluaran & sisa saldo\n";
-        msg += "• `/saldo detail` - Melihat rincian saldo per bank/kas fisik\n";
-        msg += "• `/transfer <dari> <ke> <nominal>` - Mutasi kas antar kantong/bank\n";
-        msg += "• `/pemasukan <nominal> <keterangan>` - Mencatat pemasukan dana baru\n";
+        msg += "• `/saldo detail` - Melihat rincian saldo per bank/kas fisik (Mandiri, Cash, dll)\n";
+        msg += "• `/transfer <dari> <ke> <nominal>` - Mutasi kas antar kantong/rekening\n";
         msg += "• `/export pdf [YYYY-MM]` - Download dokumen laporan resmi PDF\n";
+        msg += "• `/pemasukan <nominal> <keterangan> [metode]` - Mencatat pemasukan dana baru\n";
         msg += "• `/budget [kategori] [nominal]` - Pantau batas anggaran & limit boros\n";
-        msg += "• `/tagihan <tambah|daftar|bayar>` - Pengingat tagihan rutin bulanan\n";
+        msg += "• `/tagihan <tambah|daftar|bayar>` - Pengingat tagihan rutin bulanan (08.00 WITA)\n";
         msg += "• `/rekapmalam` - Kirim rekap harian malam secara manual\n";
-        msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";
-        msg += "• `/edit <ID_TRX> [koreksi]` - Mengedit data transaksi (toko, nominal, tanggal, dll)\n";
         msg += "• `/laporan [YYYY-MM]` - Laporan arus kas bulanan & persentase kategori\n";
-        msg += "• `/rekap [jumlah]` - Riwayat transaksi terakhir beserta ID transaksi\n";
-        msg += "• `/batal` - Membatalkan transaksi terakhir yang baru dicatat\n";
+        msg += "• `/detail <ID_TRX>` - Melihat rincian lengkap transaksi & barang\n";
+        msg += "• `/edit <ID_TRX> [koreksi]` - Mengedit data transaksi yang salah\n";
         msg += "• `/hapus <ID_TRX>` - Menghapus transaksi spesifik\n";
+        msg += "• `/batal` - Membatalkan transaksi terakhir yang baru dicatat\n";
+        msg += "• `/link` - Membuka Spreadsheet & Google Drive\n";
+        msg += "• `/sync` - Sinkronisasi database dengan Google Sheets\n";
+        msg += "• `/pengguna` - Melihat daftar seluruh anggota terdaftar\n";
         msg += "• `/tambah <nomor> [nama]` - Mendaftarkan anggota baru\n";
-        msg += "• `/blokir <nomor>` - Memblokir akses nomor tertentu\n";
-        msg += "• `/pengguna` - Melihat daftar anggota aktif\n";
-        msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses anggota\n";
+        msg += "• `/blokir <nomor>` - Memblokir nomor tertentu\n";
+        msg += "• `/peran <nomor> <super_admin|member>` - Mengubah hak akses peran\n";
     }
     else {
-        msg += "💡 _Seluruh transaksi yang Anda kirimkan akan otomatis dicatat rapi ke sistem dompet keuangan._";
+        msg += "💡 _Seluruh transaksi yang Anda kirimkan akan otomatis dicatat rapi ke sistem pembukuan._";
     }
     return msg;
 }
