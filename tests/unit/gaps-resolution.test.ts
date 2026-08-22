@@ -768,5 +768,31 @@ describe("Comprehensive 43-Gap Resolution Test Suite", () => {
         })
       );
     });
+
+    it("should return helpful how-to guide when user asks how to input expenses", async () => {
+      const { executeNaturalQuerySearch } = await import("../../src/ai/parsers/search.parser.js");
+      const res = await executeNaturalQuerySearch(
+        "Bagaimana caranya menginput data pengeluaran",
+        mockTrxRepo,
+        true,
+        "62811422404"
+      );
+      expect(res.isQuery).toBe(true);
+      expect(res.replyText).toContain("CARA MENCATAT PENGELUARAN BELANJA");
+      expect(res.replyText).toContain("Beli bensin 50rb");
+    });
+
+    it("should return helpful how-to guide when user asks how to input income", async () => {
+      const { executeNaturalQuerySearch } = await import("../../src/ai/parsers/search.parser.js");
+      const res = await executeNaturalQuerySearch(
+        "Gimana cara catat pemasukan?",
+        mockTrxRepo,
+        true,
+        "62811422404"
+      );
+      expect(res.isQuery).toBe(true);
+      expect(res.replyText).toContain("CARA MENCATAT PEMASUKAN UANG");
+      expect(res.replyText).toContain("/pemasukan");
+    });
   });
 });

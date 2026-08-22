@@ -118,6 +118,7 @@ const STOP_WORDS = new Set([
     "transaksi", "hari", "ini", "kemarin", "minggu", "pekan", "lalu", "bulan", "tahun", "toko",
     "nota", "struk", "semua", "kami", "kita", "saya", "ayah", "sekarang", "saat", "dong", "ya", "nih", "kah",
     "januari", "februari", "maret", "april", "mei", "juni", "juli", "agustus", "september", "oktober", "november", "desember",
+    "bagaimana", "gimana", "cara", "caranya", "menginput", "input", "mencatat", "catat", "masukkan", "data", "panduan", "bantuan", "tata", "mau", "tahu", "jumlah",
 ]);
 export function parseDateRange(lower, today) {
     const yStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(today);
@@ -254,6 +255,22 @@ export function extractDeterministicSearchIntent(userQuery) {
     const trimmed = userQuery.trim();
     const lower = trimmed.toLowerCase();
     const today = new Date();
+    // 0. Check General How-To / Panduan / Pertanyaan Cara Input
+    if (/(?:bagaimana|gimana|tata\s+cara|panduan|cara(?:\s+nya)?)\s+(?:cara(?:nya)?\s+)?(?:input|menginput|catat|mencatat|masuk(?:kan)?|tambah(?:kan)?|tulis|rekam|bikin|buat|pakai|penggunaan)\b/i.test(lower) ||
+        /^(?:bagaimana|gimana)\s+(?:cara|caranya|menginput|mencatat|input|catat)\b/i.test(lower) ||
+        /^(?:cara|panduan|bantuan)\s+(?:input|menginput|catat|mencatat|pengeluaran|pemasukan|pakai|penggunaan)\b/i.test(lower) ||
+        /(?:bagaimana|gimana)\s+caranya\s+kalau\s+mau\s+tahu\s+jumlah\s+pemasukan/i.test(lower)) {
+        if (lower.includes("pemasukan") || lower.includes("uang masuk") || lower.includes("saldo")) {
+            return {
+                intent_type: "general_qa",
+                clarification_response: `💡 *CARA MENCATAT PEMASUKAN UANG:*\n\nAnda bisa mencatat pemasukan dengan mudah:\n\n1. ⌨️ *Perintah Cepat:*\n• \`/pemasukan 1.5jt Gaji Bulanan Mandiri\`\n• \`/pemasukan 500rb Penjualan Kopi Cash\`\n• \`/pemasukan 250000 Transfer Masuk BCA\`\n\n2. 🎙️ *Pesan Suara (Voice Note):*\nRekam suara Anda, contoh: *"Pemasukan dari penjualan 500 ribu cash"*.\n\n3. 💬 *Teks Bebas:*\nKetik langsung: *"Pemasukan 500rb penjualan cash"*.\n\n💡 Ketik \`/menu\` untuk melihat panduan lengkap.`,
+            };
+        }
+        return {
+            intent_type: "general_qa",
+            clarification_response: `💡 *CARA MENCATAT PENGELUARAN BELANJA:*\n\nAnda bisa mencatat pengeluaran dengan 4 cara mudah:\n\n1. 💬 *Ketik Teks Langsung (Paling Praktis):*\n• \`Beli bensin 50rb Pertamina cash\`\n• \`Makan siang 35.000 Mandiri\`\n• \`Belanja Kasir 274000 Kafe Mammi tanggal 21 Agustus Cash\`\n\n2. 📸 *Kirim Foto Struk / Nota:*\nCukup foto struk belanja Anda dan kirim ke sini. AI akan otomatis membaca rincian item, total harga, dan menyimpannya ke Google Sheets.\n\n3. 🎙️ *Pesan Suara (Voice Note):*\nRekam suara Anda, contoh: *"Beli token listrik 100 ribu lewat Mandiri"*.\n\n4. ⌨️ *Gunakan Perintah Slash:*\n• \`/pengeluaran 274000 Belanja Kasir Cash\`\n\n💡 Ketik \`/menu\` untuk melihat seluruh panduan & fitur lainnya.`,
+        };
+    }
     // 1. Check general wallet balance
     if (/(?:saldo|uang\s+kas|sisa\s+uang|uang\s+kita|dompet)/i.test(lower) &&
         !lower.includes("pengeluaran") &&
@@ -348,6 +365,11 @@ export async function executeNaturalQuerySearch(userQuery, trxRepo, isSuperAdmin
     const isQuestionLike = endsWithQuestionMark ||
         isExplicitQuestionStart ||
         hasExplicitCariPhrase ||
+        lower.startsWith("bagaimana") ||
+        lower.startsWith("gimana") ||
+        lower.startsWith("cara") ||
+        lower.startsWith("panduan") ||
+        lower.includes("caranya") ||
         lower.includes("saldo") ||
         lower.includes("berapa") ||
         lower.includes("terakhir") ||
