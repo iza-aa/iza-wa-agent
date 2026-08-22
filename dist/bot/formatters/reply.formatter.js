@@ -192,6 +192,7 @@ export function formatHelpMessage(isSuperAdmin) {
     msg += "• 📸 *Foto Struk / Nota:* Kirim foto struk belanja, AI akan membaca total & rincian barang serta menyimpannya ke Google Drive.\n";
     msg += "• 🎙️ *Pesan Suara (Voice Note):* Rekam suara transaksi (contoh: _\"Beli bensin 50rb Pertamina cash\"_).\n";
     msg += "• 💬 *Pesan Teks Bebas:* Ketik belanja biasa (contoh: _\"Beli kopi 25rb cash\"_ atau _\"Pemasukan 5jt Mandiri\"_).\n";
+    msg += "• ⌨️ *Perintah Cepat:* `/pengeluaran 274000 Belanja Kasir Cash` atau `/pemasukan 1.5jt Gaji Mandiri`.\n";
     msg += "• 🔍 *Tanya Riwayat / AI:* Tanyakan transaksi (contoh: _\"Transaksi terakhir apa?\"_, _\"Pengeluaran terakhir apa?\"_, _\"Berapa kali beli bensin bulan ini?\"_).\n";
     msg += "• ✏️ *Ganti Nama Penginput:* `/nama [Nama Anda]` (contoh: `/nama Ayah` atau `/nama Rezki`).\n\n";
     if (isSuperAdmin) {
@@ -201,6 +202,7 @@ export function formatHelpMessage(isSuperAdmin) {
         msg += "• `/saldo` - Ringkasan sisa saldo kas & arus kas bulan ini\n";
         msg += "• `/saldo detail` - Rincian saldo per bank/kas fisik (Mandiri, Cash, dll)\n";
         msg += "• `/pemasukan <nominal> <ket> [metode]` - Catat pemasukan saldo baru\n";
+        msg += "• `/pengeluaran <nominal> <ket> [metode]` - Catat pengeluaran belanja/kasir\n";
         msg += "• `/transfer <dari> <ke> <nominal>` - Mutasi kas antar rekening/kantong\n\n";
         msg += "📊 *Laporan & Riwayat:*\n";
         msg += "• `/terakhir [jumlah]` atau `/riwayat` - Rekap transaksi terakhir\n";
