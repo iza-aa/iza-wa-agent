@@ -137,7 +137,7 @@ export class GoogleSheetsService {
             ];
             await this.sheetsClient.spreadsheets.values.update({
                 spreadsheetId: sheetId,
-                range: this.sheetTitle + "!A4:L4",
+                range: this.sheetTitle + "!A1:L1",
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
                     values: [headers],
@@ -185,7 +185,7 @@ export class GoogleSheetsService {
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
                     values: [
-                        ['=IFERROR(QUERY(Transaksi!A5:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND A IS NOT NULL GROUP BY E ORDER BY SUM(G) DESC LABEL E \'\', SUM(G) \'\'"); {"Belum ada pengeluaran"\\ 0})', ""]
+                        ['=IFERROR(QUERY(Transaksi!A2:L; "SELECT E, SUM(G) WHERE D = \'Pengeluaran\' AND A IS NOT NULL GROUP BY E ORDER BY SUM(G) DESC LABEL E \'\', SUM(G) \'\'"); {"Belum ada pengeluaran"\\ 0})', ""]
                     ],
                 },
             });
@@ -1013,7 +1013,7 @@ export class GoogleSheetsService {
     async syncFromSheetToDatabase(trxRepo, sheetId = config.GOOGLE_SHEET_ID) {
         const res = await this.sheetsClient.spreadsheets.values.get({
             spreadsheetId: sheetId,
-            range: this.sheetTitle + "!A5:L",
+            range: this.sheetTitle + "!A2:L",
         });
         const rows = res.data.values || [];
         const validRows = rows.filter((r) => {
@@ -1042,7 +1042,7 @@ export class GoogleSheetsService {
                 try {
                     await this.sheetsClient.spreadsheets.values.update({
                         spreadsheetId: sheetId,
-                        range: this.sheetTitle + "!A" + (i + 5),
+                        range: this.sheetTitle + "!A" + (i + 2),
                         valueInputOption: "USER_ENTERED",
                         requestBody: { values: [[id]] },
                     });
@@ -1077,7 +1077,7 @@ export class GoogleSheetsService {
                 raw_text: rawText,
                 status: isInc ? "income" : "recorded",
                 confidence_score: 1.0,
-                gsheet_row_index: i + 5,
+                gsheet_row_index: i + 2,
             });
             syncedCount++;
         }
