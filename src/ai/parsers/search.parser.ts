@@ -343,6 +343,14 @@ export function extractDeterministicSearchIntent(userQuery: string): SearchInten
   }
 
   // 3. Transactions search
+  // If the text contains a nominal and is NOT an explicit inquiry, do not classify as search
+  const hasNominal = /(?:rp\.?\s*)?\b\d+(?:[\.,]\d+)*(?:\s*(?:rb|ribu|k|jt|juta|milyar))?\b/i.test(trimmed);
+  const isExplicitSearch = /^(berapa|cek|cari|search|find|lihat|total|rekap|laporan|riwayat|ada|apakah)\b/i.test(lower) || trimmed.endsWith("?") || lower.includes("cari nota") || lower.includes("cari belanja");
+
+  if (hasNominal && !isExplicitSearch) {
+    return null;
+  }
+
   const isExpense =
     lower.includes("pengeluaran") ||
     lower.includes("belanja") ||
@@ -400,19 +408,28 @@ export async function executeNaturalQuerySearch(
   const trimmed = (userQuery || "").trim();
   const lower = trimmed.toLowerCase();
 
+  // Guard: If the text contains a clear transaction nominal (e.g. "274000", "50rb", "Rp 50.000")
+  // and is NOT an explicit inquiry (does not start with 'berapa', 'cek', 'cari', 'lihat', 'total', etc. and doesn't end with '?'),
+  // it is definitely a new transaction recording, NOT a query!
+  const hasNominal = /(?:rp\.?\s*)?\b\d+(?:[\.,]\d+)*(?:\s*(?:rb|ribu|k|jt|juta|milyar))?\b/i.test(trimmed);
+  const isExplicitQuestionStart = /^(berapa|cek|cari|search|find|lihat|rekap|laporan|riwayat|apakah|bagaimana|mana|siapa|total(?:\s+(?:pengeluaran|pemasukan|saldo|kas|belanja))?)\b/i.test(lower);
+  const endsWithQuestionMark = trimmed.endsWith("?");
+  const hasExplicitCariPhrase = lower.includes("cari nota") || lower.includes("cari belanja") || lower.includes("cek nota") || lower.includes("lihat nota");
+
+  if (hasNominal && !isExplicitQuestionStart && !endsWithQuestionMark && !hasExplicitCariPhrase) {
+    return { isQuery: false, replyText: "" };
+  }
+
   // Fast heuristic: Only evaluate if the text contains question indicators or inquiry keywords
   const isQuestionLike =
-    trimmed.endsWith("?") ||
-    /^(berapa|cek|saldo|dompet|kas|riwayat|cari|rekap|laporan|apakah|bagaimana|mana|total|siapa|ada|terakhir|transaksi|pengeluaran|pemasukan)\b/i.test(lower) ||
+    endsWithQuestionMark ||
+    isExplicitQuestionStart ||
+    hasExplicitCariPhrase ||
     lower.includes("saldo") ||
     lower.includes("berapa") ||
-    lower.includes("cari nota") ||
-    lower.includes("cari belanja") ||
     lower.includes("terakhir") ||
-    lower.includes("pengeluaran") ||
-    lower.includes("pemasukan") ||
-    lower.includes("transaksi") ||
-    lower.includes("belanja");
+    lower.startsWith("rekap") ||
+    lower.startsWith("laporan");
 
   if (!isQuestionLike) {
     return { isQuery: false, replyText: "" };

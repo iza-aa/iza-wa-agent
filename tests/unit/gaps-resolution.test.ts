@@ -717,4 +717,56 @@ describe("Comprehensive 43-Gap Resolution Test Suite", () => {
       expect(formatted).toContain("5.500.000");
     });
   });
+
+  // ==========================================
+  // NATURAL TRANSACTION VS QUERY SEARCH
+  // ==========================================
+  describe("Natural Transaction vs Query Search", () => {
+    it("should NOT intercept transaction with nominal as query search", async () => {
+      const { executeNaturalQuerySearch } = await import("../../src/ai/parsers/search.parser.js");
+      const res = await executeNaturalQuerySearch(
+        "Belanja Kasir 274000 Kafe Mammi tanggal 21 Agustus Cash",
+        mockTrxRepo,
+        true,
+        "62811422404"
+      );
+      expect(res.isQuery).toBe(false);
+    });
+
+    it("should extract date and clean merchant in /pemasukan", async () => {
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand(
+        "62811422404",
+        "/Pemasukan 1351000 Kafe Mammi tanggal 21 Agustus Mandiri"
+      );
+      expect(res.handled).toBe(true);
+      expect(mockTrxRepo.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          merchant: "Kafe Mammi",
+          date: "2026-08-21",
+          total_amount: 1351000,
+          payment_method: "Mandiri",
+          status: "income",
+        })
+      );
+    });
+
+    it("should support /pengeluaran with date and pocket", async () => {
+      const handler = new CommandHandler(mockUserRepo, mockTrxRepo);
+      const res = await handler.handleCommand(
+        "62811422404",
+        "/pengeluaran 274000 Belanja Kasir Kafe Mammi tanggal 21 Agustus Cash"
+      );
+      expect(res.handled).toBe(true);
+      expect(mockTrxRepo.createTransaction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          merchant: "Belanja Kasir Kafe Mammi",
+          date: "2026-08-21",
+          total_amount: 274000,
+          payment_method: "Cash",
+          status: "expense",
+        })
+      );
+    });
+  });
 });

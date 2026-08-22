@@ -58,6 +58,66 @@ export function parseIndonesianMonth(raw) {
     }
     return currentYearMonth;
 }
+const INDO_MONTHS_MAP = {
+    januari: "01", jan: "01",
+    februari: "02", feb: "02",
+    maret: "03", mar: "03",
+    april: "04", apr: "04",
+    mei: "05",
+    juni: "06", jun: "06",
+    juli: "07", jul: "07",
+    agustus: "08", ags: "08", agt: "08",
+    september: "09", sep: "09",
+    oktober: "10", okt: "10",
+    november: "11", nov: "11",
+    desember: "12", des: "12",
+};
+export function extractTransactionDate(text) {
+    const makassarToday = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+    let date = makassarToday;
+    let cleanText = text;
+    // 1. Check "kemarin"
+    if (/\bkemarin\b/i.test(cleanText)) {
+        const d = new Date();
+        d.setDate(d.getDate() - 1);
+        date = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(d);
+        cleanText = cleanText.replace(/\bkemarin\b/gi, "").trim();
+        return { cleanText, date };
+    }
+    // 2. Pattern: "tanggal 21 Agustus 2026" or "tanggal 21 Agustus" or "tgl 21 Ags"
+    const indMonthRegex = /(?:tanggal|tgl|date)?\s*(\d{1,2})\s+(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember|jan|feb|mar|apr|jun|jul|ags|agt|sep|okt|nov|des)(?:\s+(\d{4}))?/i;
+    const indMatch = cleanText.match(indMonthRegex);
+    if (indMatch) {
+        const day = indMatch[1].padStart(2, "0");
+        const mStr = indMatch[2].toLowerCase();
+        const month = INDO_MONTHS_MAP[mStr] || "08";
+        const year = indMatch[3] || makassarToday.split("-")[0];
+        date = `${year}-${month}-${day}`;
+        cleanText = cleanText.replace(indMatch[0], "").trim();
+        return { cleanText, date };
+    }
+    // 3. Pattern: "tanggal 21/08/2026" or "21-08-2026" or "21/08"
+    const numDateRegex = /(?:tanggal|tgl|date)?\s*(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?/i;
+    const numMatch = cleanText.match(numDateRegex);
+    if (numMatch) {
+        const day = numMatch[1].padStart(2, "0");
+        const month = numMatch[2].padStart(2, "0");
+        let year = numMatch[3] || makassarToday.split("-")[0];
+        if (year.length === 2)
+            year = "20" + year;
+        date = `${year}-${month}-${day}`;
+        cleanText = cleanText.replace(numMatch[0], "").trim();
+        return { cleanText, date };
+    }
+    // 4. Pattern: "2026-08-21"
+    const isoMatch = cleanText.match(/(?:tanggal|tgl|date)?\s*(\d{4}-\d{2}-\d{2})/i);
+    if (isoMatch) {
+        date = isoMatch[1];
+        cleanText = cleanText.replace(isoMatch[0], "").trim();
+        return { cleanText, date };
+    }
+    return { cleanText, date };
+}
 export class CommandHandler {
     userRepo;
     trxRepo;
@@ -357,11 +417,13 @@ export class CommandHandler {
             for (const keyword of sortedKeys) {
                 cleanKeterangan = cleanKeterangan.replace(new RegExp(`\\b${keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "gi"), "").trim();
             }
-            cleanKeterangan = cleanKeterangan || "Pemasukan Kas";
+            // Extract transaction date if specified (e.g. "tanggal 21 Agustus")
+            const dateExtract = extractTransactionDate(cleanKeterangan);
+            cleanKeterangan = dateExtract.cleanText || "Pemasukan Kas";
+            const trxDate = dateExtract.date;
             const user = await this.userRepo.getUser(senderPhone);
             const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
-            const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-            const trxId = await this.trxRepo.generateTransactionId(today);
+            const trxId = await this.trxRepo.generateTransactionId(trxDate);
             let category = "Pemasukan: Lain-lain";
             const lowerKet = cleanKeterangan.toLowerCase();
             if (lowerKet.includes("gaji"))
@@ -376,7 +438,7 @@ export class CommandHandler {
                 id: trxId,
                 user_phone: senderPhone,
                 user_name: userName,
-                date: today,
+                date: trxDate,
                 merchant: cleanKeterangan,
                 category: category,
                 subtotal: nominal,
@@ -394,6 +456,98 @@ export class CommandHandler {
             }
             catch (sheetErr) {
                 logger.error({ sheetErr }, "Failed to append income row to Google Sheet");
+            }
+            const wallet = await this.trxRepo.getWalletBalance();
+            const reply = formatTransactionSuccess(transactionRecord, [], isSuperAdmin, wallet.balance);
+            return { handled: true, responseMessage: reply };
+        }
+        if (command === "/pengeluaran" || command === "/keluar" || command === "/expense" || command === "/belanja") {
+            const rawArgs = parts.slice(1);
+            if (rawArgs.length === 0) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/pengeluaran <nominal> [keterangan/toko] [metode]`\n\n*Contoh Penggunaan:*\n• `/pengeluaran 274000 Belanja Kasir Kafe Mammi Cash`\n• `/pengeluaran 50rb Bensin Pertamina Mandiri`\n• `/pengeluaran Beli Kopi 25rb QRIS`",
+                };
+            }
+            // Scan for nominal
+            let nominal = 0;
+            let nominalIdx = -1;
+            for (let i = 0; i < rawArgs.length; i++) {
+                const token = rawArgs[i];
+                const parsed = parseHumanNominal(token);
+                if (parsed > 0 && (/^rp\.?\s*[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)?$/i.test(token) || /[\d\.,]+(?:rb|ribu|k|jt|juta|milyar)/i.test(token) || /^\d{4,}$/.test(token))) {
+                    nominal = parsed;
+                    nominalIdx = i;
+                    break;
+                }
+            }
+            if (nominal <= 0 && rawArgs.length > 0) {
+                const firstParsed = parseHumanNominal(rawArgs[0]);
+                if (firstParsed > 0) {
+                    nominal = firstParsed;
+                    nominalIdx = 0;
+                }
+            }
+            if (nominal <= 0) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Nominal pengeluaran tidak valid. Gunakan contoh:\n• `/pengeluaran 274000 Belanja Kasir Cash`\n• `/pengeluaran 50rb Bensin Pertamina Mandiri`",
+                };
+            }
+            const nonNominalTokens = rawArgs.filter((_, idx) => idx !== nominalIdx);
+            const remainingText = nonNominalTokens.join(" ").trim() || "Pengeluaran";
+            let detectedMethod = getCanonicalPaymentMethod(remainingText) || "Cash";
+            // Clean the detected method keyword from description
+            let cleanKeterangan = remainingText;
+            const sortedKeys = Object.keys(CANONICAL_PAYMENT_MAP).sort((a, b) => b.length - a.length);
+            for (const keyword of sortedKeys) {
+                cleanKeterangan = cleanKeterangan.replace(new RegExp(`\\b${keyword.replace(/[-\/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "gi"), "").trim();
+            }
+            const dateExtract = extractTransactionDate(cleanKeterangan);
+            cleanKeterangan = dateExtract.cleanText || "Pengeluaran Kasir";
+            const trxDate = dateExtract.date;
+            const user = await this.userRepo.getUser(senderPhone);
+            const userName = user?.name || (isSuperAdmin ? "Super Admin" : "Anggota");
+            const trxId = await this.trxRepo.generateTransactionId(trxDate);
+            let category = "Operasional Kantor";
+            const lowerKet = cleanKeterangan.toLowerCase();
+            if (lowerKet.includes("makan") || lowerKet.includes("kopi") || lowerKet.includes("snack") || lowerKet.includes("minum") || lowerKet.includes("dapur") || lowerKet.includes("bubuk") || lowerKet.includes("sirup") || lowerKet.includes("beku")) {
+                category = "Makanan & Minuman";
+            }
+            else if (lowerKet.includes("bensin") || lowerKet.includes("pertamina") || lowerKet.includes("parkir") || lowerKet.includes("tol") || lowerKet.includes("grab") || lowerKet.includes("gojek")) {
+                category = "Transportasi & Bensin";
+            }
+            else if (lowerKet.includes("listrik") || lowerKet.includes("pln") || lowerKet.includes("token") || lowerKet.includes("air") || lowerKet.includes("wifi") || lowerKet.includes("pulsa") || lowerKet.includes("internet")) {
+                category = "Tagihan & Utilitas";
+            }
+            else if (lowerKet.includes("gaji") || lowerKet.includes("kasir") || lowerKet.includes("kasbon") || lowerKet.includes("atk") || lowerKet.includes("karyawan") || lowerKet.includes("operasional")) {
+                category = "Operasional Kantor";
+            }
+            else if (lowerKet.includes("obat") || lowerKet.includes("dokter") || lowerKet.includes("apotek") || lowerKet.includes("klinik")) {
+                category = "Kesehatan & Obat";
+            }
+            const transactionRecord = await this.trxRepo.createTransaction({
+                id: trxId,
+                user_phone: senderPhone,
+                user_name: userName,
+                date: trxDate,
+                merchant: cleanKeterangan,
+                category: category,
+                subtotal: nominal,
+                tax: 0,
+                discount: 0,
+                total_amount: nominal,
+                payment_method: detectedMethod,
+                raw_text: trimmed,
+                status: "expense",
+                confidence_score: 1.0,
+            });
+            try {
+                const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, []);
+                await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
+            }
+            catch (sheetErr) {
+                logger.error({ sheetErr }, "Failed to append expense row to Google Sheet");
             }
             const wallet = await this.trxRepo.getWalletBalance();
             const reply = formatTransactionSuccess(transactionRecord, [], isSuperAdmin, wallet.balance);
