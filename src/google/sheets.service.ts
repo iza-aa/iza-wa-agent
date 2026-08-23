@@ -1276,14 +1276,24 @@ export class GoogleSheetsService {
         "Keperluan", // G (Dapur, Barista, Waiters, Kasir, Kafe)
         "Keterangan", // H
         "Penginput", // I
+        "", // J
+        "ID_Pengeluaran", // K
+        "Tanggal_Pengeluaran", // L
       ];
 
       await this.sheetsClient.spreadsheets.values.update({
         spreadsheetId: sheetId,
-        range: this.dataRincianTitle + "!A1:I1",
+        range: this.dataRincianTitle + "!A1:L2",
         valueInputOption: "USER_ENTERED",
         requestBody: {
-          values: [dataHeaders],
+          values: [
+            dataHeaders,
+            [
+              "", "", "", "", "", "", "", "", "", "",
+              '={"SEMUA"; IFERROR(FILTER(Transaksi!A2:A; Transaksi!D2:D="Pengeluaran"; Transaksi!A2:A<>""); "")}',
+              '={"SEMUA"; IFERROR(UNIQUE(FILTER(TEXT(Transaksi!C2:C; "yyyy-mm-dd"); Transaksi!D2:D="Pengeluaran"; Transaksi!C2:C<>"")); "")}',
+            ],
+          ],
         },
       });
 
@@ -1320,12 +1330,12 @@ export class GoogleSheetsService {
       const rincianValues: any[][] = [];
       // Row 1: Title
       rincianValues.push(["BELANJA HARIAN", "", "", "", "", "", ""]);
-      // Row 2: Control Selector (ID Dropdown + Calendar Date Picker + Divisi Dropdown)
+      // Row 2: Control Selector (ID Dropdown + Date Dropdown + Divisi Dropdown)
       rincianValues.push([
         "🔘 ID PENGELUARAN:",
         "SEMUA",
         "📅 FILTER TANGGAL:",
-        "",
+        "SEMUA",
         "🏷️ KEPERLUAN:",
         "SEMUA",
         '=IF(AND(B2<>""; B2<>"SEMUA"); IFERROR("👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE); ""); "")',
@@ -1346,7 +1356,7 @@ export class GoogleSheetsService {
       // Row 5: Dynamic Multi-Filter Query
       rincianValues.push([
         '=IF(B5<>""; 1; "")',
-        '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; "") & IF(AND(D2<>""; D2<>"SEMUA"); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "") & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
+        '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; "") & IF(AND(D2<>""; D2<>"SEMUA"); " AND C = \'" & IF(ISDATE(D2); TEXT(D2; "yyyy-mm-dd"); D2) & "\'"; "") & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
         "",
         "",
         "",
@@ -1420,7 +1430,7 @@ export class GoogleSheetsService {
               fields: "userEnteredFormat(backgroundColor,verticalAlignment,textFormat)",
             },
           },
-          // 4. Data Validation: ID Dropdown on B2 (Cell B2)
+          // 4. Data Validation: ID Pengeluaran Dropdown on B2 (Only Pengeluaran IDs)
           {
             setDataValidation: {
               range: {
@@ -1433,14 +1443,14 @@ export class GoogleSheetsService {
               rule: {
                 condition: {
                   type: "ONE_OF_RANGE",
-                  values: [{ userEnteredValue: "=Transaksi!A2:A" }],
+                  values: [{ userEnteredValue: "=Data_Rincian!K2:K" }],
                 },
                 showCustomUi: true,
                 strict: false,
               },
             },
           },
-          // 5. Data Validation: Calendar Date Picker on D2 (Cell D2)
+          // 5. Data Validation: Tanggal Pengeluaran Dropdown on D2 (Only Pengeluaran Dates)
           {
             setDataValidation: {
               range: {
@@ -1452,7 +1462,8 @@ export class GoogleSheetsService {
               },
               rule: {
                 condition: {
-                  type: "DATE_IS_VALID",
+                  type: "ONE_OF_RANGE",
+                  values: [{ userEnteredValue: "=Data_Rincian!L2:L" }],
                 },
                 showCustomUi: true,
                 strict: false,
