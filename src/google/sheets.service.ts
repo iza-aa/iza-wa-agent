@@ -879,8 +879,9 @@ export class GoogleSheetsService {
 
       await this.sheetsClient.spreadsheets.values.append({
         spreadsheetId: sheetId,
-        range: "'Log_Pesan'!A:F",
+        range: "Log_Pesan!A:F",
         valueInputOption: "USER_ENTERED",
+        insertDataOption: "OVERWRITE",
         requestBody: {
           values: [
             [
@@ -894,8 +895,9 @@ export class GoogleSheetsService {
           ],
         },
       });
+      logger.info({ phone, name, message }, "Successfully appended message to Log_Pesan");
     } catch (err) {
-      logger.warn({ err, phone, message }, "Could not append message log to Google Sheets");
+      logger.error({ err, phone, message }, "Error appending message log to Google Sheets");
     }
   }
 
