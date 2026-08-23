@@ -56,18 +56,15 @@ export default async function handler(req: any, res: any) {
 
       logger.info(
         { rawPhone, cleanPhone, officialName, messageContent },
-        "Supabase Webhook: Syncing chat to Google Sheets Log_Pesan"
+        "Supabase Webhook: Chat log event received (handled directly by Baileys bot)"
       );
 
-      await googleSheetsService.appendMessageLog(
-        cleanPhone,
-        officialName,
-        messageContent,
-        msgType
-      );
+      // Note: Google Sheets Log_Pesan is appended directly by the Baileys handler on VPS.
+      // We do not re-append here to prevent duplicate entries in Google Sheets.
 
       return res.status(200).json({
         status: "success",
+        message: "Handled directly by Baileys bot",
         synced: {
           phone: cleanPhone,
           name: officialName,
