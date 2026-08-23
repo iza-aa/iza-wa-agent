@@ -1181,6 +1181,45 @@ export class GoogleSheetsService {
       syncedCount++;
     }
 
+    // Sync items from Data_Rincian tab to Supabase
+    try {
+      const rincianRes = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: this.dataRincianTitle + "!A2:I",
+      });
+      const rincianRows = rincianRes.data.values || [];
+      if (rincianRows.length > 0) {
+        for (const row of rincianRows) {
+          const trxId = row[1]?.toString().trim();
+          const itemName = row[3]?.toString().trim();
+          if (!trxId || !itemName) continue;
+          const qtyStr = row[4]?.toString().trim() || "1 unit";
+          const qtyMatch = qtyStr.match(/^(\d+)\s*(.*)$/);
+          const qty = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+          const unit = qtyMatch && qtyMatch[2] ? qtyMatch[2].trim() : "unit";
+          const rawPrice = row[5]?.toString().replace(/[^0-9]/g, "");
+          const totalPrice = parseInt(rawPrice, 10) || 0;
+          const dept = row[6]?.toString().trim() || "Kafe";
+          const notes = row[7]?.toString().trim() || "-";
+
+          await trxRepo.addTransactionItems(trxId, [
+            {
+              item_name: itemName,
+              qty,
+              unit,
+              price: qty > 0 ? Math.round(totalPrice / qty) : totalPrice,
+              total_price: totalPrice,
+              department: (["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(dept) ? dept : "Kafe") as any,
+              notes,
+            },
+          ]);
+        }
+        logger.info({ itemsCount: rincianRows.length }, "Synced Data_Rincian items to Supabase");
+      }
+    } catch (rincianErr) {
+      logger.warn({ rincianErr }, "Could not sync Data_Rincian items to Supabase");
+    }
+
     await this.setupDashboardTab(sheetId);
     await this.setupRincianBelanjaTab(sheetId);
     logger.info({ syncedCount }, "Full 2-way sync from Google Sheets to database completed");
