@@ -103,10 +103,13 @@ export class MessageHandler {
                 direction: "inbound",
                 content: body,
             });
-            // Also append to Google Sheets Log_Pesan tab (non-blocking)
-            googleSheetsService
-                .appendMessageLog(senderPhone, pushName, body, msgType)
-                .catch((err) => logger.warn({ err }, "Non-critical: Failed to append to Log_Pesan"));
+            // Also append to Google Sheets Log_Pesan tab (awaited)
+            try {
+                await googleSheetsService.appendMessageLog(senderPhone, pushName, body, msgType);
+            }
+            catch (err) {
+                logger.warn({ err }, "Non-critical: Failed to append to Log_Pesan");
+            }
             // 2. User Access & Status Check
             const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
             if (user.status === "blocked") {

@@ -45,10 +45,13 @@ export class WebhookProcessor {
             direction: "inbound",
             content: body || payload.mediaUrl,
         });
-        // Also append to Google Sheets Log_Pesan tab (non-blocking)
-        googleSheetsService
-            .appendMessageLog(senderPhone, userName, body || payload.mediaUrl || "", msgType)
-            .catch((err) => logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan"));
+        // Also append to Google Sheets Log_Pesan tab (awaited for serverless safety)
+        try {
+            await googleSheetsService.appendMessageLog(senderPhone, userName, body || payload.mediaUrl || "", msgType);
+        }
+        catch (err) {
+            logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan");
+        }
         // 2. Command check
         if (body.startsWith("/")) {
             const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
