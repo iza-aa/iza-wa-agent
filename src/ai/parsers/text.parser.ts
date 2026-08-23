@@ -71,7 +71,7 @@ Format JSON Wajib:
       {
         "item_name": "Nama item / barang",
         "qty": 1,
-        "unit": "ikat | dos | botol | karton | liter | pax | kg | kali | unit",
+        "unit": "ikat | dos | botol | karton | liter | pax | kg | kali | unit | Truk | pack | piring",
         "price": 0,
         "total_price": 0,
         "department": "Dapur | Barista | Waiters | Kasir | Kafe",
@@ -80,7 +80,14 @@ Format JSON Wajib:
     ],
     "confidence_score": 1.0
   }
-}`;
+}
+
+Pedoman Penentuan Department / Divisi Butir Belanja:
+- "Dapur": Ayam, daging, ikan, sayur, buah/pisang, minyak goreng, beras, telur, bumbu dapur, gas LPG, bahan masakan dapur, atau jika pesan menyebutkan "keperluan dapur".
+- "Barista": Biji kopi, sirup, susu cair/kental, bubuk minuman, matcha, cup kopi, sedotan, bahan minuman.
+- "Waiters": Sabun cuci piring, cairan pembersih lantai, kantong sampah, tisu meja, operasional pelayan/kebersihan.
+- "Kasir": Kertas struk kasir, plastik kresek kasir, bolpoin kasir.
+- "Kafe": Token listrik PLN, tagihan WiFi internet, PDAM/air minum galon umum, renovasi, ATK umum, sewa, operasional umum.`;
 
 export async function parseTransactionText(
   userText: string,
@@ -147,13 +154,28 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
           unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
         }
 
+        // Smart department determination
+        let dept: "Dapur" | "Barista" | "Waiters" | "Kasir" | "Kafe" = "Kafe";
+        const rawDept = (it.department || it.keperluan || it.divisi || "").toString().trim().toLowerCase();
+        const userTextLower = userText.toLowerCase();
+
+        if (rawDept.includes("dapur") || rawDept.includes("kitchen")) dept = "Dapur";
+        else if (rawDept.includes("barista") || rawDept.includes("bar") || rawDept.includes("kopi")) dept = "Barista";
+        else if (rawDept.includes("waiter") || rawDept.includes("pelayan") || rawDept.includes("service")) dept = "Waiters";
+        else if (rawDept.includes("kasir") || rawDept.includes("cashier") || rawDept.includes("pos")) dept = "Kasir";
+        else if (rawDept.includes("kafe") || rawDept.includes("cafe")) dept = "Kafe";
+        else if (userTextLower.includes("dapur") || userTextLower.includes("pasar")) dept = "Dapur";
+        else if (userTextLower.includes("barista")) dept = "Barista";
+        else if (userTextLower.includes("waiter")) dept = "Waiters";
+        else if (userTextLower.includes("kasir")) dept = "Kasir";
+
         return {
           item_name: it.item_name || it.name || "Item",
           qty: qty,
           unit: it.unit || "unit",
           price: unitPrice,
           total_price: totalPrice,
-          department: ["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(it.department) ? it.department : "Kafe",
+          department: dept,
           category: it.category || undefined,
           notes: it.notes || undefined,
         };
