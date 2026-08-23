@@ -90,6 +90,16 @@ async function bootstrap() {
         const scheduler = new SchedulerService(trxRepo, userRepo, billRepo);
         scheduler.start();
         logger.info("Background Scheduler Service is active and monitoring daily schedule");
+        // Periodic Background Auto-Sync Google Sheets -> Supabase every 3 minutes
+        setInterval(async () => {
+            try {
+                await googleSheetsService.syncFromSheetToDatabase(trxRepo);
+                logger.debug("Automatic periodic Google Sheets -> Supabase sync completed");
+            }
+            catch (autoSyncErr) {
+                logger.warn({ autoSyncErr }, "Periodic auto-sync encountered an issue");
+            }
+        }, 3 * 60 * 1000);
     }
     catch (schedErr) {
         logger.error({ schedErr }, "Could not start Background Scheduler Service");
