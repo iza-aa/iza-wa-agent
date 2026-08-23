@@ -128,6 +128,37 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
         finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
       }
 
+      const normalizedItems = (rawTrx.items || []).map((it: any) => {
+        const qty = Number(it.qty || it.quantity || 1) || 1;
+        const hasTotalPrice = it.total_price !== undefined && it.total_price !== null && Number(it.total_price) > 0;
+        const hasPrice = it.price !== undefined && it.price !== null && Number(it.price || it.unit_price) > 0;
+
+        let totalPrice = 0;
+        let unitPrice = 0;
+
+        if (hasTotalPrice && hasPrice) {
+          totalPrice = Number(it.total_price);
+          unitPrice = Number(it.price || it.unit_price);
+        } else if (hasTotalPrice) {
+          totalPrice = Number(it.total_price);
+          unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
+        } else if (hasPrice) {
+          totalPrice = Number(it.price || it.unit_price);
+          unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
+        }
+
+        return {
+          item_name: it.item_name || it.name || "Item",
+          qty: qty,
+          unit: it.unit || "unit",
+          price: unitPrice,
+          total_price: totalPrice,
+          department: ["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(it.department) ? it.department : "Kafe",
+          category: it.category || undefined,
+          notes: it.notes || undefined,
+        };
+      });
+
       const normalizedTrx = {
         merchant: rawTrx.merchant || "Penjual",
         date: finalDate,
@@ -138,13 +169,7 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
         total_amount: Number(rawTrx.total_amount || rawTrx.subtotal || 0),
         payment_method: rawTrx.payment_method || "Cash",
         confidence_score: Number(rawTrx.confidence_score || 1.0),
-        items: (rawTrx.items || []).map((it: any) => ({
-          item_name: it.item_name || it.name || "Item",
-          qty: Number(it.qty || it.quantity || 1),
-          price: Number(it.price || it.unit_price || it.total_price || 0),
-          total_price: Number(it.total_price || it.price || 0),
-          category: it.category || undefined,
-        })),
+        items: normalizedItems,
       };
 
       const validatedTrx = ExtractedTransactionSchema.parse(normalizedTrx);

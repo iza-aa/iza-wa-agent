@@ -39,5 +39,41 @@ describe("Gemini AI Pipeline", () => {
       expect(parsed.items.length).toBe(2);
       expect(parsed.merchant).toBe("Indomaret Point");
     });
+
+    it("should correctly validate table items with single price column consumed as-is without auto-multiplication", () => {
+      const rawTableItems = [
+        { item_name: "Sayur 6 ikat", qty: 6, unit: "ikat", price: 1000, total_price: 6000, department: "Dapur" },
+        { item_name: "Sirup", qty: 1, unit: "dos", price: 150000, total_price: 150000, department: "Barista" },
+        { item_name: "Cairan pembersih", qty: 2, unit: "botol", price: 25000, total_price: 50000, department: "Waiters" },
+        { item_name: "Air minum", qty: 3, unit: "karton", price: 40000, total_price: 120000, department: "Kasir" },
+        { item_name: "Minyak Goreng", qty: 5, unit: "liter", price: 24000, total_price: 120000, department: "Dapur" },
+        { item_name: "Ayam", qty: 1, unit: "pax", price: 150000, total_price: 150000, department: "Dapur" },
+        { item_name: "Token Listrik", qty: 1, unit: "kali", price: 500000, total_price: 500000, department: "Kafe", notes: "ID. 3214567891" },
+        { item_name: "Token Listrik", qty: 1, unit: "kali", price: 500000, total_price: 500000, department: "Kafe", notes: "ID. 1234567890" },
+      ];
+
+      const sumTotal = rawTableItems.reduce((acc, it) => acc + it.total_price, 0);
+      expect(sumTotal).toBe(1596000); // 1.596.000, NOT 2.396.000
+
+      const parsed = ExtractedTransactionSchema.parse({
+        merchant: "Belanja Harian",
+        date: "2026-08-01",
+        category: "Operasional Kantor",
+        subtotal: sumTotal,
+        tax: 0,
+        discount: 0,
+        total_amount: sumTotal,
+        payment_method: "Mandiri",
+        items: rawTableItems,
+      });
+
+      expect(parsed.total_amount).toBe(1596000);
+      expect(parsed.items.find(i => i.item_name === "Minyak Goreng")?.total_price).toBe(120000);
+      expect(parsed.items.find(i => i.item_name === "Minyak Goreng")?.price).toBe(24000);
+      expect(parsed.items.find(i => i.item_name === "Air minum")?.total_price).toBe(120000);
+      expect(parsed.items.find(i => i.item_name === "Air minum")?.price).toBe(40000);
+      expect(parsed.items.find(i => i.item_name === "Sayur 6 ikat")?.total_price).toBe(6000);
+      expect(parsed.items.find(i => i.item_name === "Sayur 6 ikat")?.price).toBe(1000);
+    });
   });
 });

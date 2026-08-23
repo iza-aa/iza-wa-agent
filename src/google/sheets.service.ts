@@ -1320,15 +1320,15 @@ export class GoogleSheetsService {
       const rincianValues: any[][] = [];
       // Row 1: Title
       rincianValues.push(["BELANJA HARIAN", "", "", "", "", "", ""]);
-      // Row 2: Control Selector
+      // Row 2: Control Selector (ID Dropdown + Calendar Date Picker + Divisi Dropdown)
       rincianValues.push([
-        "🔘 PILIH ID TRANSAKSI:",
+        "🔘 ID PENGELUARAN:",
         "SEMUA",
-        "📅 Tanggal:",
-        '=IF(OR(ISBLANK(B2); B2="SEMUA"); "-"; IFERROR(TEXT(VLOOKUP(B2; Transaksi!A:C; 3; FALSE); "dd/mm/yyyy"); "-"))',
-        "💰 Total Transaksi:",
-        '=IF(OR(ISBLANK(B2); B2="SEMUA"); IFERROR(TEXT(SUM(Data_Rincian!F2:F); "Rp #,##0"); "-"); IFERROR(TEXT(VLOOKUP(B2; Transaksi!A:G; 7; FALSE); "Rp #,##0"); "-"))',
-        '=IF(OR(ISBLANK(B2); B2="SEMUA"); "-"; IFERROR("👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE); "-"))',
+        "📅 FILTER TANGGAL:",
+        "",
+        "🏷️ KEPERLUAN:",
+        "SEMUA",
+        '=IF(AND(B2<>""; B2<>"SEMUA"); IFERROR("👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE); ""); "")',
       ]);
       // Row 3: Spacer
       rincianValues.push(["", "", "", "", "", "", ""]);
@@ -1343,10 +1343,10 @@ export class GoogleSheetsService {
         "KETERANGAN",
       ]);
 
-      // Row 5: Dynamic Query
+      // Row 5: Dynamic Multi-Filter Query
       rincianValues.push([
         '=IF(B5<>""; 1; "")',
-        '=IF(OR(ISBLANK(B2); B2="SEMUA"); IFERROR(QUERY(Data_Rincian!B2:H; "SELECT C, D, E, F, G, H WHERE B IS NOT NULL ORDER BY C DESC"; 0); ""); IFERROR(QUERY(Data_Rincian!B2:H; "SELECT C, D, E, F, G, H WHERE B = \'" & B2 & "\'"; 0); ""))',
+        '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; "") & IF(AND(D2<>""; D2<>"SEMUA"); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "") & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
         "",
         "",
         "",
@@ -1420,7 +1420,73 @@ export class GoogleSheetsService {
               fields: "userEnteredFormat(backgroundColor,verticalAlignment,textFormat)",
             },
           },
-          // 4. Table Header (A4:G4) Styling
+          // 4. Data Validation: ID Dropdown on B2 (Cell B2)
+          {
+            setDataValidation: {
+              range: {
+                sheetId: rincianSheetId,
+                startRowIndex: 1,
+                endRowIndex: 2,
+                startColumnIndex: 1,
+                endColumnIndex: 2,
+              },
+              rule: {
+                condition: {
+                  type: "ONE_OF_RANGE",
+                  values: [{ userEnteredValue: "=Transaksi!A2:A" }],
+                },
+                showCustomUi: true,
+                strict: false,
+              },
+            },
+          },
+          // 5. Data Validation: Calendar Date Picker on D2 (Cell D2)
+          {
+            setDataValidation: {
+              range: {
+                sheetId: rincianSheetId,
+                startRowIndex: 1,
+                endRowIndex: 2,
+                startColumnIndex: 3,
+                endColumnIndex: 4,
+              },
+              rule: {
+                condition: {
+                  type: "DATE_IS_VALID",
+                },
+                showCustomUi: true,
+                strict: false,
+              },
+            },
+          },
+          // 6. Data Validation: Department / Keperluan Dropdown on F2 (Cell F2)
+          {
+            setDataValidation: {
+              range: {
+                sheetId: rincianSheetId,
+                startRowIndex: 1,
+                endRowIndex: 2,
+                startColumnIndex: 5,
+                endColumnIndex: 6,
+              },
+              rule: {
+                condition: {
+                  type: "ONE_OF_LIST",
+                  values: [
+                    { userEnteredValue: "SEMUA" },
+                    { userEnteredValue: "Dapur" },
+                    { userEnteredValue: "Barista" },
+                    { userEnteredValue: "Waiters" },
+                    { userEnteredValue: "Kasir" },
+                    { userEnteredValue: "Kafe" },
+                  ],
+                },
+                showCustomUi: true,
+                strict: false,
+              },
+            },
+          },
+          // 7. Table Header (A4:G4) Styling
           {
             repeatCell: {
               range: { sheetId: rincianSheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 7 },
@@ -1435,7 +1501,7 @@ export class GoogleSheetsService {
               fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
             },
           },
-          // 5. Table Data Rows (A5:G35) Borders & Alignments
+          // 8. Table Data Rows (A5:G35) Borders & Alignments
           {
             updateBorders: {
               range: { sheetId: rincianSheetId, startRowIndex: 3, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 7 },
@@ -1447,7 +1513,7 @@ export class GoogleSheetsService {
               innerVertical: { style: "SOLID", width: 1, color: { red: 0.85, green: 0.85, blue: 0.85 } },
             },
           },
-          // 6. Number formatting for Currency Column E (Col 4)
+          // 9. Number formatting for Currency Column E (Col 4)
           {
             repeatCell: {
               range: { sheetId: rincianSheetId, startRowIndex: 4, endRowIndex: 43, startColumnIndex: 4, endColumnIndex: 5 },
@@ -1460,7 +1526,7 @@ export class GoogleSheetsService {
               fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
             },
           },
-          // 7. Center alignment for No (Col A), Tanggal (Col B), Qty (Col D), Keperluan (Col F)
+          // 10. Center alignment for No (Col A), Tanggal (Col B), Qty (Col D), Keperluan (Col F)
           ...([0, 1, 3, 5].map((cIdx) => ({
             repeatCell: {
               range: { sheetId: rincianSheetId, startRowIndex: 4, endRowIndex: 35, startColumnIndex: cIdx, endColumnIndex: cIdx + 1 },
@@ -1472,28 +1538,28 @@ export class GoogleSheetsService {
               fields: "userEnteredFormat(horizontalAlignment)",
             },
           }))),
-          // 8. Merge Summary Row 37: A37:D37 "JUMLAH"
+          // 11. Merge Summary Row 37: A37:D37 "JUMLAH"
           {
             mergeCells: {
               range: { sheetId: rincianSheetId, startRowIndex: 36, endRowIndex: 37, startColumnIndex: 0, endColumnIndex: 4 },
               mergeType: "MERGE_ALL",
             },
           },
-          // 9. Merge Summary Row 38..42: A38:C42 "JUMLAH  PENGELUARAN"
+          // 12. Merge Summary Row 38..42: A38:C42 "JUMLAH  PENGELUARAN"
           {
             mergeCells: {
               range: { sheetId: rincianSheetId, startRowIndex: 37, endRowIndex: 42, startColumnIndex: 0, endColumnIndex: 3 },
               mergeType: "MERGE_ALL",
             },
           },
-          // 10. Merge Row 43: A43:C43
+          // 13. Merge Row 43: A43:C43
           {
             mergeCells: {
               range: { sheetId: rincianSheetId, startRowIndex: 42, endRowIndex: 43, startColumnIndex: 0, endColumnIndex: 3 },
               mergeType: "MERGE_ALL",
             },
           },
-          // 11. Summary Borders (Row 37..43)
+          // 14. Summary Borders (Row 37..43)
           {
             updateBorders: {
               range: { sheetId: rincianSheetId, startRowIndex: 36, endRowIndex: 43, startColumnIndex: 0, endColumnIndex: 7 },
