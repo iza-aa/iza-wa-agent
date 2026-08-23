@@ -112,7 +112,7 @@ export class TransactionRepository {
         delete payload.type;
         const { data, error } = await this.supabase
             .from("transactions")
-            .insert(payload)
+            .upsert(payload, { onConflict: "id" })
             .select()
             .single();
         if (error) {
