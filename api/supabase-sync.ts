@@ -56,18 +56,14 @@ export default async function handler(req: any, res: any) {
 
       logger.info(
         { rawPhone, cleanPhone, officialName, messageContent },
-        "Supabase Webhook Trigger: Syncing chat_logs to Google Sheets Log_Pesan"
+        "Supabase Webhook Trigger received (handled directly by Baileys bot on VPS)"
       );
 
-      await googleSheetsService.appendMessageLog(
-        cleanPhone,
-        officialName,
-        messageContent,
-        msgType
-      );
-
+      // Note: Google Sheets Log_Pesan is written directly by Baileys MessageHandler on VPS.
+      // We return 200 OK here to satisfy the Supabase Database Webhook trigger without duplicate writes.
       return res.status(200).json({
         status: "success",
+        message: "Handled directly by Baileys bot on VPS",
         synced: {
           phone: cleanPhone,
           name: officialName,
