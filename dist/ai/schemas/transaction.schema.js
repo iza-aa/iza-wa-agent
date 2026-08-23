@@ -2,12 +2,12 @@ import { z } from "zod";
 export const ExtractedItemSchema = z.object({
     item_name: z.string().describe("Nama barang atau jasa"),
     qty: z.number().default(1).describe("Jumlah unit barang"),
-    unit: z.string().optional().default("unit").describe("Satuan barang (contoh: ikat, dos, botol, karton, liter, pax, kg, kali)"),
+    unit: z.string().nullable().optional().transform((val) => val || "unit").describe("Satuan barang (contoh: ikat, dos, botol, karton, liter, pax, kg, kali)"),
     price: z.number().describe("Harga per unit barang dalam Rupiah"),
     total_price: z.number().describe("Total harga untuk item ini (qty * price)"),
-    department: z.enum(["Dapur", "Barista", "Waiters", "Kasir", "Kafe"]).default("Kafe").describe("Pos divisi keperluan: Dapur (makanan/masakan), Barista (minuman/kopi/sirup), Waiters (kebersihan/service), Kasir (struk/plastik), Kafe (utilitas/listrik/operasional umum)"),
-    category: z.string().optional().describe("Kategori spesifik item jika relevan"),
-    notes: z.string().optional().describe("Keterangan tambahan atau nomor meteran"),
+    department: z.enum(["Dapur", "Barista", "Waiters", "Kasir", "Kafe"]).nullable().optional().transform((val) => val || "Kafe").describe("Pos divisi keperluan: Dapur (makanan/masakan), Barista (minuman/kopi/sirup), Waiters (kebersihan/service), Kasir (struk/plastik), Kafe (utilitas/listrik/operasional umum)"),
+    category: z.string().nullable().optional().transform((val) => val || undefined).describe("Kategori spesifik item jika relevan"),
+    notes: z.string().nullable().optional().transform((val) => val || "").describe("Keterangan tambahan atau nomor meteran"),
 });
 export const ExtractedTransactionSchema = z.object({
     merchant: z.string().describe("Nama toko, merchant, penyedia jasa, atau penerima pembayaran"),

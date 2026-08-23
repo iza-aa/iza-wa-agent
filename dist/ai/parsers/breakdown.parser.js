@@ -3,7 +3,7 @@ import { ExtractedItemSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
 import { z } from "zod";
 const BreakdownResponseSchema = z.object({
-    target_id: z.string().optional(),
+    target_id: z.string().nullable().optional().transform((val) => val || undefined),
     items: z.array(ExtractedItemSchema).default([]),
     total_calculated: z.number().default(0),
 });

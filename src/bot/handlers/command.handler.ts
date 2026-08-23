@@ -734,24 +734,27 @@ export class CommandHandler {
     }
 
     if (command === "/rinci" || command === "/rincibelanja" || command === "/breakdown") {
-      const targetArg = parts[1]?.trim();
+      const lines = trimmed.split("\n");
+      const firstLineTokens = lines[0].trim().split(/\s+/);
+      const targetArg = firstLineTokens[1]?.trim();
+
       if (!targetArg) {
         return {
           handled: true,
-          responseMessage: "❌ Format salah. Gunakan: `/rinci <ID_TRANSAKSI> <daftar rincian barang>`\n\n*Contoh:*\n`/rinci H070\n- Sayur 6 ikat 6rb Dapur\n- Sirup 1 dos 150rb Barista\n- Token Listrik 500rb Kafe`",
+          responseMessage: "❌ Format salah. Gunakan: `/rinci <ID_TRANSAKSI> <daftar rincian barang>`\n\n*Contoh:*\n`/rinci H095\n- Kertas Thermal 10 roll 80rb Kasir\n- Plastik 2 pack 50rb Kasir\n- Sirup 2 botol 150rb Barista`",
         };
       }
 
-      // Check if targetArg is an ID (e.g. H070 or T026-H070)
+      // Check if targetArg is an ID (e.g. H095 or T026-H095)
       const existingTrx = await this.trxRepo.findTransactionByIdOrShortCode(targetArg);
-      let rawItemsText = parts.slice(2).join(" ").trim();
+      let rawItemsText = lines.slice(1).join("\n").trim();
 
-      if (!existingTrx) {
-        // Maybe user typed: /rinci H070 - Sayur... on multiple lines where 1st line has both ID and item
-        rawItemsText = parts.slice(1).join(" ").trim();
+      if (!rawItemsText) {
+        // Single-line format: /rinci H095 Kertas Thermal 10 roll 80rb Kasir
+        rawItemsText = firstLineTokens.slice(2).join(" ").trim();
       }
 
-      const parsedBreakdown = await parseBreakdownItems(rawItemsText || targetArg);
+      const parsedBreakdown = await parseBreakdownItems(rawItemsText || trimmed);
       const finalTargetId = existingTrx ? existingTrx.id : (parsedBreakdown.target_id ? (await this.trxRepo.findTransactionByIdOrShortCode(parsedBreakdown.target_id))?.id : null);
 
       if (!finalTargetId) {
