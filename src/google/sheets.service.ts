@@ -877,25 +877,40 @@ export class GoogleSheetsService {
       }).format(now);
       const cleanPhone = phone.startsWith("62") ? "+" + phone : phone;
 
-      await this.sheetsClient.spreadsheets.values.append({
+      const rowData = [
+        nowWITA,
+        makassarDate,
+        cleanPhone,
+        name || "User",
+        message || "",
+        messageType,
+      ];
+
+      const response = await this.sheetsClient.spreadsheets.values.append({
         spreadsheetId: sheetId,
         range: "Log_Pesan!A:F",
         valueInputOption: "USER_ENTERED",
         insertDataOption: "INSERT_ROWS",
         requestBody: {
-          values: [
-            [
-              nowWITA,
-              makassarDate,
-              cleanPhone,
-              name || "User",
-              message || "",
-              messageType,
-            ],
-          ],
+          values: [rowData],
         },
       });
-      logger.info({ phone, name, message }, "Successfully appended message to Log_Pesan");
+
+      const updates = response.data.updates || {};
+      logger.info(
+        {
+          phone,
+          name,
+          message,
+          updatedRange: updates.updatedRange,
+          updatedRows: updates.updatedRows,
+          updatedCells: updates.updatedCells,
+          updatedColumns: updates.updatedColumns,
+          spreadsheetId: updates.spreadsheetId,
+          tableRange: response.data.tableRange,
+        },
+        "appendMessageLog API response"
+      );
     } catch (err) {
       logger.error({ err, phone, message }, "Error appending message log to Google Sheets");
     }
