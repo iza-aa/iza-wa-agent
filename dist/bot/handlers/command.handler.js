@@ -910,16 +910,49 @@ export class CommandHandler {
                 role = "super_admin";
                 userName = userName.replace(/admin/gi, "").trim() || "Admin";
             }
+            let autoLid = undefined;
+            try {
+                const consonantSkeleton = (str) => str
+                    .toLowerCase()
+                    .replace(/j/g, "z")
+                    .replace(/c/g, "k")
+                    .replace(/q/g, "k")
+                    .replace(/x/g, "s")
+                    .replace(/[aeiou]/g, "")
+                    .replace(/[^a-z0-9]/g, "");
+                const targetSkeleton = consonantSkeleton(userName);
+                const { data: recentLogs } = await this.userRepo.supabase
+                    .from("chat_logs")
+                    .select("user_phone, user_name")
+                    .order("created_at", { ascending: false })
+                    .limit(30);
+                const matchedLog = (recentLogs || []).find((l) => {
+                    const rawP = (l.user_phone || "").replace(/[^0-9]/g, "");
+                    const isLid = rawP.length >= 14 && !rawP.startsWith("62");
+                    if (!isLid)
+                        return false;
+                    const logSkeleton = consonantSkeleton(l.user_name || "");
+                    return logSkeleton === targetSkeleton || (targetSkeleton.length >= 2 && logSkeleton.includes(targetSkeleton));
+                });
+                if (matchedLog) {
+                    autoLid = (matchedLog.user_phone || "").replace(/[^0-9]/g, "");
+                }
+            }
+            catch (e) {
+                // non-critical
+            }
             await this.userRepo.upsertUser({
                 phone_number: targetPhone,
                 name: userName,
                 role: role,
                 status: "active",
+                target_sheet_id: autoLid,
             });
             const roleLabel = role === "super_admin" ? "Super Admin" : "Anggota";
+            const lidNote = autoLid ? ` (LID Terhubung: \`${autoLid}\`)` : "";
             return {
                 handled: true,
-                responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai *" + roleLabel + "*!",
+                responseMessage: "✅ Nomor `+" + targetPhone + "` (" + userName + ") berhasil didaftarkan & diaktifkan sebagai *" + roleLabel + "*!" + lidNote,
             };
         }
         // Gap 31: Unblock user command (/aktifkan & /unblock)

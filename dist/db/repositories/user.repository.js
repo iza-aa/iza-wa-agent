@@ -96,25 +96,35 @@ export class UserRepository {
             const { data: dbUsers } = await this.supabase
                 .from("users")
                 .select("*")
-                .lt("phone_number", "100000000000000")
                 .eq("status", "active");
-            if (dbUsers && dbUsers.length > 0) {
+            const normalUsers = (dbUsers || []).filter((u) => u.phone_number.length <= 13);
+            if (normalUsers.length > 0) {
                 const pushNameLower = pushName.trim().toLowerCase();
                 const pushNameWords = pushNameLower.split(/\s+/).filter((w) => w.length >= 2);
-                // Helper to normalize nickname phonetics (e.g., jeki <-> zaky, c <-> k)
-                const normalizePhonetic = (str) => str.replace(/j/g, "z").replace(/c/g, "k").replace(/y/g, "i").replace(/[^a-z0-9]/g, "");
-                const pushPhonetics = pushNameWords.map(normalizePhonetic);
-                const match = dbUsers.find((u) => {
+                // Helper to extract phonetic consonant skeleton (e.g. jeki -> zk, zaky -> zk, c -> k)
+                const consonantSkeleton = (str) => str
+                    .toLowerCase()
+                    .replace(/j/g, "z")
+                    .replace(/c/g, "k")
+                    .replace(/q/g, "k")
+                    .replace(/x/g, "s")
+                    .replace(/[aeiou]/g, "")
+                    .replace(/[^a-z0-9]/g, "");
+                const pushSkeletons = pushNameWords.map(consonantSkeleton).filter(Boolean);
+                const match = normalUsers.find((u) => {
                     const dbNameLower = u.name.toLowerCase().trim();
                     const dbNameWords = dbNameLower.split(/\s+/).filter((w) => w.length >= 2);
-                    const dbPhonetics = dbNameWords.map(normalizePhonetic);
-                    // Direct match
+                    const dbSkeletons = dbNameWords.map(consonantSkeleton).filter(Boolean);
+                    // Direct substring match
                     const directMatch = pushNameLower.includes(dbNameLower) ||
                         dbNameLower.includes(pushNameLower) ||
                         dbNameWords.some((dbWord) => pushNameWords.includes(dbWord));
-                    // Phonetic/nickname match (e.g. jeki <-> zaky, malla <-> sipalingmalla)
-                    const phoneticMatch = dbPhonetics.some((dp) => pushPhonetics.some((pp) => pp.includes(dp) || dp.includes(pp) || (pp.length >= 3 && dp.startsWith(pp.slice(0, 3)))));
-                    return directMatch || phoneticMatch;
+                    // Phonetic consonant skeleton match (e.g. jeki [zk] == zaky [zk])
+                    const skeletonMatch = dbSkeletons.some((ds) => pushSkeletons.some((ps) => ds === ps || (ds.length >= 2 && ps.includes(ds)) || (ps.length >= 2 && ds.includes(ps))));
+                    // If this user has no LID yet and only 1 unlinked user exists in DB
+                    const unlinkedUsers = normalUsers.filter((du) => !du.target_sheet_id);
+                    const isSingleUnlinked = unlinkedUsers.length === 1 && unlinkedUsers[0].phone_number === u.phone_number;
+                    return directMatch || skeletonMatch || isSingleUnlinked;
                 });
                 if (match) {
                     logger.info({ lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number }, "Dynamically linking incoming WhatsApp LID to registered user record");
