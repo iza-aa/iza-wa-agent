@@ -160,26 +160,18 @@ export class UserRepository {
     return null;
   }
 
-  async getOrCreateUser(identifier: string, pushName?: string): Promise<UserRecord> {
+  async getOrCreateUser(identifier: string, pushName?: string): Promise<UserRecord | null> {
     const cleaned = this.cleanIdentifier(identifier);
     let user = await this.getUser(cleaned, pushName);
-    if (!user) {
-      const isSuper = this.isSuperAdmin(cleaned);
-      const displayName =
-        pushName && pushName.trim().length > 1 && pushName !== "." && pushName !== "User"
-          ? pushName.trim()
-          : isSuper
-          ? "Super Admin"
-          : "Member";
-
+    if (!user && this.isSuperAdmin(cleaned)) {
       user = await this.upsertUser({
         phone_number: cleaned,
-        name: displayName,
-        role: isSuper ? "super_admin" : "member",
-        status: isSuper ? "active" : "pending",
+        name: "Super Admin",
+        role: "super_admin",
+        status: "active",
       });
     }
-    return user!;
+    return user;
   }
 
   async isWhitelisted(identifier: string, pushName?: string): Promise<boolean> {
