@@ -16,6 +16,7 @@ export const KNOWN_LID_TO_PHONE_MAP: Record<string, { phone: string; name: strin
   "168096866255025": { phone: "62811422404", name: "Ayah" },
   "232130131046571": { phone: "6281346367235", name: "Rezki Haikal" },
   "160632196358183": { phone: "6281524121044", name: "Malla Naks Mammy" },
+  "270819246739591": { phone: "6281226419468", name: "Ikhwan (Alfi)" },
 };
 
 export class UserRepository {
@@ -195,15 +196,9 @@ export class UserRepository {
         if (match) {
           logger.info(
             { lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number, status: match.status, role: match.role },
-            "Auto-linking WhatsApp LID to registered user by name match"
+            "Matched WhatsApp LID to registered user - using official phone record"
           );
-          const linkedUser = await this.upsertUser({
-            phone_number: cleaned,
-            name: match.name,
-            role: match.role,
-            status: match.status,
-          });
-          return linkedUser;
+          return match as UserRecord;
         }
       }
     }
@@ -227,7 +222,7 @@ export class UserRepository {
         phone_number: cleaned,
         name: displayName,
         role: isSuper ? "super_admin" : "member",
-        status: "active",
+        status: isSuper ? "active" : "pending",
       });
     }
     return user!;
