@@ -95,11 +95,33 @@ export class MessageHandler {
         }
         try {
             // 1. User Access & Status Check
-            const user = await this.userRepo.getUser(senderPhone, pushName);
+            let user = await this.userRepo.getUser(senderPhone, pushName);
             if (!user || user.status !== "active") {
-                logger.warn({ senderPhone, pushName }, "Unregistered or inactive user attempted to message bot");
+                // One-Time Phone Verification Handshake: Check if user sent a phone number
+                const digitsOnly = body.replace(/[^0-9]/g, "");
+                const isPhoneNumberInput = (digitsOnly.startsWith("08") || digitsOnly.startsWith("628") || digitsOnly.startsWith("8")) &&
+                    digitsOnly.length >= 9 &&
+                    digitsOnly.length <= 15;
+                if (isPhoneNumberInput) {
+                    const targetPhone = normalizePhoneNumber(digitsOnly);
+                    const linkedUser = await this.userRepo.linkLidByPhoneNumber(targetPhone, senderPhone);
+                    if (linkedUser) {
+                        logger.info({ senderLid: senderPhone, phone: targetPhone, name: linkedUser.name }, "Successfully completed One-Time Phone Verification Handshake");
+                        await sock.sendMessage(remoteJid, {
+                            text: `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mencatat transaksi, kirim foto nota/struk, atau ketik \`/menu\` untuk melihat panduan.`,
+                        }, { quoted: msg });
+                        return;
+                    }
+                    else {
+                        await sock.sendMessage(remoteJid, {
+                            text: `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.`,
+                        }, { quoted: msg });
+                        return;
+                    }
+                }
+                logger.warn({ senderPhone, pushName }, "Unregistered user prompted for one-time phone verification handshake");
                 await sock.sendMessage(remoteJid, {
-                    text: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nHubungi Super Admin untuk didaftarkan.",
+                    text: `👋 *HALO! SELAMAT DATANG DI IZA BOT*\n━━━━━━━━━━━━━━━━━━━━━━━━\n\nAkun WhatsApp Anda belum terhubung dengan nomor anggota di sistem.\n\n👉 *Silakan balas pesan ini dengan mengetik NOMOR HP Anda yang telah didaftarkan:*\nContoh: \`08123456789\`\n\n_Setelah terhubung, Anda dapat langsung mencatat transaksi & melihat laporan kas._`,
                 }, { quoted: msg });
                 return;
             }

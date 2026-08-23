@@ -66,12 +66,40 @@ export class WebhookProcessor {
     const cleanPhone = user ? user.phone_number : senderPhone;
     const displayName = user ? user.name : (payload.name || userName);
 
-    // 2. Strict Whitelist Check (Reject if not registered in users table)
+    // 2. Strict Whitelist Check (With One-Time Phone Verification Handshake)
     const isAllowed = user && user.status === "active";
     if (!isAllowed) {
-      logger.warn({ senderPhone, cleanPhone, userName }, "Unauthorized user attempted webhook access");
+      // Check if user is replying with their registered phone number
+      const digitsOnly = body.replace(/[^0-9]/g, "");
+      const isPhoneNumberInput =
+        (digitsOnly.startsWith("08") || digitsOnly.startsWith("628") || digitsOnly.startsWith("8")) &&
+        digitsOnly.length >= 9 &&
+        digitsOnly.length <= 15;
+
+      if (isPhoneNumberInput) {
+        const targetPhone = normalizePhoneNumber(digitsOnly);
+        const linkedUser = await this.userRepo.linkLidByPhoneNumber(targetPhone, senderPhone);
+
+        if (linkedUser) {
+          logger.info(
+            { senderLid: senderPhone, phone: targetPhone, name: linkedUser.name },
+            "Successfully completed One-Time Phone Verification Handshake via Webhook"
+          );
+          return {
+            reply: `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mencatat transaksi, kirim foto nota/struk, atau ketik \`/menu\` untuk melihat panduan.`,
+            success: true,
+          };
+        } else {
+          return {
+            reply: `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.`,
+            success: false,
+          };
+        }
+      }
+
+      logger.warn({ senderPhone, cleanPhone, userName }, "Unauthorized user prompted for one-time phone verification");
       return {
-        reply: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nHubungi Super Admin untuk didaftarkan.",
+        reply: `👋 *HALO! SELAMAT DATANG DI IZA BOT*\n━━━━━━━━━━━━━━━━━━━━━━━━\n\nAkun WhatsApp Anda belum terhubung dengan nomor anggota di sistem.\n\n👉 *Silakan balas pesan ini dengan mengetik NOMOR HP Anda yang telah didaftarkan:*\nContoh: \`08123456789\`\n\n_Setelah terhubung, Anda dapat langsung mencatat transaksi & melihat laporan kas._`,
         success: false,
       };
     }

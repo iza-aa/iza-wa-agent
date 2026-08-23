@@ -248,6 +248,26 @@ export class UserRepository {
     return data as UserRecord;
   }
 
+  async linkLidByPhoneNumber(phoneNumber: string, lid: string): Promise<UserRecord | null> {
+    const cleanedPhone = this.cleanIdentifier(phoneNumber);
+    const cleanedLid = this.getRawIdentifier(lid);
+
+    const { data, error } = await this.supabase
+      .from("users")
+      .update({ target_sheet_id: cleanedLid, updated_at: new Date().toISOString() })
+      .eq("phone_number", cleanedPhone)
+      .eq("status", "active")
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      logger.error({ error, phone: cleanedPhone, lid: cleanedLid }, "Failed to link LID by phone number");
+      return null;
+    }
+
+    return data as UserRecord | null;
+  }
+
   async listActiveUsers(): Promise<UserRecord[]> {
     const { data, error } = await this.supabase
       .from("users")
