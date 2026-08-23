@@ -1101,8 +1101,11 @@ export class GoogleSheetsService {
             await supabase.from("transactions").upsert(chunk, { onConflict: "id" });
         }
         // 2. Clean up transactions deleted from sheet
-        if (validIds.length > 0) {
-            await supabase.from("transactions").delete().not("id", "in", `(${validIds.map(id => `"${id}"`).join(",")})`);
+        const { data: dbTrxs } = await supabase.from("transactions").select("id");
+        const dbIds = (dbTrxs || []).map((t) => t.id);
+        const idsToDelete = dbIds.filter((dbId) => !validIds.includes(dbId));
+        if (idsToDelete.length > 0) {
+            await supabase.from("transactions").delete().in("id", idsToDelete);
         }
         const syncedCount = trxPayloads.length;
         // 3. Sync items from Data_Rincian tab to Supabase
