@@ -881,7 +881,7 @@ export class GoogleSheetsService {
         spreadsheetId: sheetId,
         range: "Log_Pesan!A:F",
         valueInputOption: "USER_ENTERED",
-        insertDataOption: "OVERWRITE",
+        insertDataOption: "INSERT_ROWS",
         requestBody: {
           values: [
             [

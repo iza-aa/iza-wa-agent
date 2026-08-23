@@ -8,10 +8,6 @@
     {
       "source": "/api/health",
       "destination": "/api/health"
-    },
-    {
-      "source": "/api/debug-log",
-      "destination": "/api/debug-log"
     }
   ]
 }
