@@ -815,7 +815,7 @@ export class GoogleSheetsService {
             logger.warn({ err }, "Could not setup dashboard tab automatically");
         }
     }
-    async appendMessageLog(phone, name, message, messageType = "text", sheetId = config.GOOGLE_SHEET_ID) {
+    async appendMessageLog(phone, name, message, messageType = "text", sheetId = "1ozOTR4cRFvhCJhBmnqHVhpak4C1802Ic1C_cZhe7Hi8") {
         try {
             const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
             const now = new Date();
@@ -858,7 +858,7 @@ export class GoogleSheetsService {
             throw err;
         }
     }
-    async appendTransaction(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
+    async appendTransaction(trx, items = [], sheetId = "1ozOTR4cRFvhCJhBmnqHVhpak4C1802Ic1C_cZhe7Hi8") {
         const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
         const isInc = isIncome(trx);

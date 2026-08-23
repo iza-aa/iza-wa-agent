@@ -867,7 +867,7 @@ export class GoogleSheetsService {
     name: string,
     message: string,
     messageType: string = "text",
-    sheetId: string = config.GOOGLE_SHEET_ID
+    sheetId: string = "1ozOTR4cRFvhCJhBmnqHVhpak4C1802Ic1C_cZhe7Hi8"
   ): Promise<void> {
     try {
       const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
@@ -920,7 +920,7 @@ export class GoogleSheetsService {
   async appendTransaction(
     trx: TransactionRecord,
     items: TransactionItem[] = [],
-    sheetId: string = config.GOOGLE_SHEET_ID
+    sheetId: string = "1ozOTR4cRFvhCJhBmnqHVhpak4C1802Ic1C_cZhe7Hi8"
   ): Promise<{ updatedRange: string; rowIndex: number }> {
     const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
     const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
