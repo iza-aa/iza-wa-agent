@@ -11,6 +11,13 @@ export interface UserRecord {
   updated_at?: string;
 }
 
+export const KNOWN_LID_TO_PHONE_MAP: Record<string, { phone: string; name: string }> = {
+  "216290358743279": { phone: "6281241933754", name: "Jeki (Zaky Irsyad Rais)" },
+  "168096866255025": { phone: "62811422404", name: "Ayah" },
+  "232130131046571": { phone: "6281346367235", name: "Rezki Haikal" },
+  "160632196358183": { phone: "6281524121044", name: "Malla Naks Mammy" },
+};
+
 export class UserRepository {
   private superAdminList: string[];
 
@@ -26,6 +33,14 @@ export class UserRepository {
   }
 
   cleanIdentifier(id: string): string {
+    const raw = id.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
+    if (KNOWN_LID_TO_PHONE_MAP[raw]) {
+      return KNOWN_LID_TO_PHONE_MAP[raw].phone;
+    }
+    return raw;
+  }
+
+  getRawIdentifier(id: string): string {
     return id.replace(/@s\.whatsapp\.net|@c\.us|@lid|@g\.us/g, "").replace(/[^0-9]/g, "");
   }
 
@@ -322,12 +337,17 @@ export class UserRepository {
       this.removeSuperAdminIdentifier(cleanedPhone);
     }
 
-    // Fetch all users to match against phone or name
+    // Fetch all users to match against phone or name or linked LID
     const { data: allUsers } = await this.supabase.from("users").select("*");
     const matched = (allUsers || []).filter((u: any) => {
       const matchPhone = cleanedPhone && cleanedPhone.length >= 4 && (u.phone_number === cleanedPhone || u.phone_number.includes(cleanedPhone));
       const matchName = rawTarget.length >= 2 && u.name.toLowerCase().includes(rawTarget.toLowerCase());
-      return matchPhone || matchName;
+      
+      // Also check if u.phone_number is a LID mapped to this phone
+      const mappedPhone = KNOWN_LID_TO_PHONE_MAP[u.phone_number]?.phone;
+      const matchLid = mappedPhone && cleanedPhone && mappedPhone === cleanedPhone;
+
+      return matchPhone || matchName || matchLid;
     });
 
     const affected: UserRecord[] = [];
