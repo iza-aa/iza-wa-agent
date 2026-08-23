@@ -1,8 +1,9 @@
 import { isIncome } from "../../db/repositories/transaction.repository.js";
 import { pdfReportService } from "../../services/pdf-report.service.js";
 import { getGlobalSocket } from "../socket-holder.js";
-import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction, formatTransactionDetail, formatTransactionUpdated, formatTransactionSuccess, formatWalletBalance, formatMultiPocketBalance, formatDailyRecap, formatTransferSuccess, formatBudgetList, formatBudgetSetSuccess, formatBillList, formatBillCreatedSuccess, formatBillPaidSuccess, } from "../formatters/reply.formatter.js";
+import { formatUserList, formatHelpMessage, formatRupiah, formatMonthlyReport, formatDeletedTransaction, formatTransactionDetail, formatTransactionUpdated, formatTransactionSuccess, formatWalletBalance, formatMultiPocketBalance, formatDailyRecap, formatTransferSuccess, formatBudgetList, formatBudgetSetSuccess, formatBillList, formatBillCreatedSuccess, formatBillPaidSuccess, formatBreakdownSuccess, } from "../formatters/reply.formatter.js";
 import { parseTransactionEdit } from "../../ai/parsers/edit.parser.js";
+import { parseBreakdownItems } from "../../ai/parsers/breakdown.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
 import { config } from "../../config/env.js";
@@ -630,6 +631,62 @@ export class CommandHandler {
             return {
                 handled: true,
                 responseMessage: formatTransactionDetail(data.trx, data.items),
+            };
+        }
+        if (command === "/rinci" || command === "/rincibelanja" || command === "/breakdown") {
+            const targetArg = parts[1]?.trim();
+            if (!targetArg) {
+                return {
+                    handled: true,
+                    responseMessage: "❌ Format salah. Gunakan: `/rinci <ID_TRANSAKSI> <daftar rincian barang>`\n\n*Contoh:*\n`/rinci H070\n- Sayur 6 ikat 6rb Dapur\n- Sirup 1 dos 150rb Barista\n- Token Listrik 500rb Kafe`",
+                };
+            }
+            // Check if targetArg is an ID (e.g. H070 or T026-H070)
+            const existingTrx = await this.trxRepo.findTransactionByIdOrShortCode(targetArg);
+            let rawItemsText = parts.slice(2).join(" ").trim();
+            if (!existingTrx) {
+                // Maybe user typed: /rinci H070 - Sayur... on multiple lines where 1st line has both ID and item
+                rawItemsText = parts.slice(1).join(" ").trim();
+            }
+            const parsedBreakdown = await parseBreakdownItems(rawItemsText || targetArg);
+            const finalTargetId = existingTrx ? existingTrx.id : (parsedBreakdown.target_id ? (await this.trxRepo.findTransactionByIdOrShortCode(parsedBreakdown.target_id))?.id : null);
+            if (!finalTargetId) {
+                return {
+                    handled: true,
+                    responseMessage: `⚠️ ID Transaksi \`${targetArg}\` tidak ditemukan di database. Pastikan ID transaksi sudah benar (contoh: \`/rinci H070 Sayur 6rb Dapur\`).`,
+                };
+            }
+            const targetTrx = existingTrx || (await this.trxRepo.findTransactionByIdOrShortCode(finalTargetId));
+            if (!targetTrx) {
+                return {
+                    handled: true,
+                    responseMessage: `⚠️ Transaksi dengan ID \`${finalTargetId}\` tidak ditemukan.`,
+                };
+            }
+            if (!isSuperAdmin && targetTrx.user_phone !== senderPhone) {
+                return {
+                    handled: true,
+                    responseMessage: "⚠️ Anda hanya dapat menambahkan rincian nota transaksi yang Anda input sendiri.",
+                };
+            }
+            if (!parsedBreakdown.items || parsedBreakdown.items.length === 0) {
+                return {
+                    handled: true,
+                    responseMessage: "⚠️ AI tidak dapat mendeteksi daftar barang dari teks Anda. Contoh format:\n`/rinci " + (targetTrx.id.split("-")[1] || targetTrx.id) + "\n1. Sayur 6 ikat 6rb Dapur\n2. Sirup 1 dos 150rb Barista`",
+                };
+            }
+            // Save items to Supabase
+            await this.trxRepo.addTransactionItems(targetTrx.id, parsedBreakdown.items);
+            // Append items to Google Sheets Data_Rincian tab
+            try {
+                await googleSheetsService.appendTransactionItems(targetTrx.id, targetTrx.date, parsedBreakdown.items, targetTrx.user_name);
+            }
+            catch (sheetErr) {
+                logger.error({ sheetErr, trxId: targetTrx.id }, "Failed to append items to Google Sheets Data_Rincian");
+            }
+            return {
+                handled: true,
+                responseMessage: formatBreakdownSuccess(targetTrx, parsedBreakdown.items),
             };
         }
         if (command === "/nama" || command === "/setnama" || command === "/gantinama") {

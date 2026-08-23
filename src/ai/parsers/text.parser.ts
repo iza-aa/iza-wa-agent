@@ -69,10 +69,13 @@ Format JSON Wajib:
     "payment_method": "Cash | Mandiri | BCA | BRI | BNI | BSI | QRIS | Transfer Bank | Lainnya",
     "items": [
       {
-        "item_name": "Nama item / keterangan",
+        "item_name": "Nama item / barang",
         "qty": 1,
+        "unit": "ikat | dos | botol | karton | liter | pax | kg | kali | unit",
         "price": 0,
-        "total_price": 0
+        "total_price": 0,
+        "department": "Dapur | Barista | Waiters | Kasir | Kafe",
+        "notes": ""
       }
     ],
     "confidence_score": 1.0

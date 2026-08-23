@@ -2,11 +2,17 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../../utils/logger.js";
 
 export interface TransactionItem {
+  id?: string;
+  transaction_id?: string;
   item_name: string;
   qty: number;
+  unit?: string;
   price: number;
   total_price: number;
+  department?: "Dapur" | "Barista" | "Waiters" | "Kasir" | "Kafe" | string;
   category?: string;
+  notes?: string;
+  created_at?: string;
 }
 
 export interface TransactionRecord {
@@ -287,6 +293,65 @@ export class TransactionRepository {
       trx: trx as TransactionRecord,
       items: (items || []) as TransactionItem[],
     };
+  }
+
+  async addTransactionItems(transactionId: string, items: TransactionItem[]): Promise<TransactionItem[]> {
+    if (!items || items.length === 0) return [];
+    const trx = await this.findTransactionByIdOrShortCode(transactionId);
+    if (!trx) {
+      throw new Error(`Transaksi dengan ID ${transactionId} tidak ditemukan.`);
+    }
+
+    const realId = trx.id;
+    const itemsPayload = items.map((it) => {
+      const dept = it.department || it.category || trx.category || "Kafe";
+      const unitSuffix = it.unit && it.unit !== "unit" ? ` (${it.qty || 1} ${it.unit})` : "";
+      const nameWithUnit = it.item_name.includes("(") ? it.item_name : `${it.item_name}${unitSuffix}`;
+      return {
+        transaction_id: realId,
+        item_name: nameWithUnit,
+        qty: it.qty || 1,
+        price: it.price,
+        total_price: it.total_price || (it.qty || 1) * it.price,
+        category: dept,
+      };
+    });
+
+    const { data, error } = await this.supabase
+      .from("receipt_items")
+      .insert(itemsPayload)
+      .select();
+
+    if (error) {
+      logger.error({ error, trxId: realId }, "Failed to add transaction items");
+      throw error;
+    }
+
+    return (data || []) as TransactionItem[];
+  }
+
+  async deleteTransactionItems(transactionId: string): Promise<void> {
+    const trx = await this.findTransactionByIdOrShortCode(transactionId);
+    if (!trx) return;
+    const { error } = await this.supabase
+      .from("receipt_items")
+      .delete()
+      .eq("transaction_id", trx.id);
+    if (error) {
+      logger.error({ error, trxId: trx.id }, "Failed to delete receipt items");
+    }
+  }
+
+  async getAllReceiptItems(): Promise<TransactionItem[]> {
+    const { data, error } = await this.supabase
+      .from("receipt_items")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error) {
+      logger.error({ error }, "Failed to fetch all receipt items");
+      return [];
+    }
+    return (data || []) as TransactionItem[];
   }
 
   async updateTransaction(id: string, updates: Partial<TransactionRecord>): Promise<TransactionRecord | null> {

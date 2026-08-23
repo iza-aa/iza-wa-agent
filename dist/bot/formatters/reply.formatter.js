@@ -22,10 +22,12 @@ export function formatTransactionSuccess(trx, items = [], isSuperAdmin = false, 
     }
     reply += "👤 *Penginput:* " + trx.user_name + "\n";
     if (items && items.length > 0) {
-        reply += "\n📋 *Rincian:* \n";
+        reply += "\n📋 *Rincian Butir Belanja:*\n";
         items.forEach((it) => {
-            const qtyStr = (it.qty && it.qty > 1) ? " (" + it.qty + "x)" : "";
-            reply += " • " + it.item_name + qtyStr + " - " + formatRupiah(it.price) + "\n";
+            const qtyStr = it.unit && it.unit !== "unit" ? ` (${it.qty} ${it.unit})` : (it.qty && it.qty > 1 ? ` (${it.qty}x)` : "");
+            const total = it.total_price || (it.qty * it.price);
+            const deptTag = it.department ? ` _[${it.department}]_` : "";
+            reply += ` • ${it.item_name}${qtyStr} -> *${formatRupiah(total)}*${deptTag}\n`;
         });
     }
     if (currentBalance !== undefined) {
@@ -246,18 +248,73 @@ export function formatTransactionDetail(trx, items = []) {
         msg += "📝 *Catatan / Teks:* _" + trx.raw_text + "_\n";
     }
     if (items && items.length > 0) {
-        msg += "\n📋 *Rincian Barang / Keterangan (" + items.length + " item):*\n";
-        items.forEach((it, i) => {
-            const qty = it.qty || 1;
-            const price = Number(it.price) || 0;
-            const subtotal = price * qty;
-            msg += " " + (i + 1) + ". " + it.item_name + " (" + qty + "x @" + formatRupiah(price) + ") -> *" + formatRupiah(subtotal) + "*\n";
+        msg += "\n📋 *Rincian Butir Belanja (" + items.length + " item):*\n";
+        // Group by department
+        const groups = {};
+        items.forEach((it) => {
+            const dept = it.department || it.category || "Kafe";
+            if (!groups[dept])
+                groups[dept] = [];
+            groups[dept].push(it);
         });
+        const deptIcons = {
+            Dapur: "🍳",
+            Barista: "☕",
+            Waiters: "🍽️",
+            Kasir: "🧾",
+            Kafe: "🏢",
+        };
+        for (const [dept, dItems] of Object.entries(groups)) {
+            const icon = deptIcons[dept] || "📦";
+            msg += `\n${icon} *${dept.toUpperCase()}:*\n`;
+            dItems.forEach((it, i) => {
+                const qtyStr = it.unit && it.unit !== "unit" ? ` (${it.qty} ${it.unit})` : (it.qty > 1 ? ` (${it.qty}x)` : "");
+                const price = Number(it.price) || 0;
+                const subtotal = it.total_price || (price * (it.qty || 1));
+                const noteStr = it.notes ? ` _[${it.notes}]_` : "";
+                msg += ` ${i + 1}. ${it.item_name}${qtyStr} -> *${formatRupiah(subtotal)}*${noteStr}\n`;
+            });
+        }
     }
     if (trx.gdrive_web_view_link) {
         msg += "\n📁 *Foto Bukti / Struk:* \n" + trx.gdrive_web_view_link + "\n";
     }
     return msg;
+}
+export function formatBreakdownSuccess(trx, items) {
+    let msg = `✅ *Rincian Belanja Berhasil Ditambahkan!*\n\n`;
+    msg += `🧾 *ID Transaksi:* \`${trx.id}\`\n`;
+    msg += `📅 *Tanggal:* ${trx.date}\n`;
+    msg += `🏪 *Tempat / Toko:* *${trx.merchant}*\n`;
+    msg += `💰 *Total Transaksi:* *${formatRupiah(trx.total_amount)}*\n\n`;
+    // Group items by department
+    const groups = {};
+    items.forEach((it) => {
+        const dept = it.department || it.category || "Kafe";
+        if (!groups[dept])
+            groups[dept] = [];
+        groups[dept].push(it);
+    });
+    const deptIcons = {
+        Dapur: "🍳",
+        Barista: "☕",
+        Waiters: "🍽️",
+        Kasir: "🧾",
+        Kafe: "🏢",
+    };
+    for (const [dept, dItems] of Object.entries(groups)) {
+        const icon = deptIcons[dept] || "📦";
+        msg += `${icon} *${dept.toUpperCase()}:*\n`;
+        dItems.forEach((it, i) => {
+            const qtyStr = it.unit && it.unit !== "unit" ? ` (${it.qty} ${it.unit})` : (it.qty > 1 ? ` (${it.qty}x)` : "");
+            const total = it.total_price || (it.qty * it.price);
+            const noteStr = it.notes ? ` _[${it.notes}]_` : "";
+            msg += ` ${i + 1}. ${it.item_name}${qtyStr} -> *${formatRupiah(total)}*${noteStr}\n`;
+        });
+        msg += "\n";
+    }
+    msg += `📊 *Tersimpan Otomatis:* Buka tab *'Rincian Belanja'* di Google Sheets untuk melihat lembar nota harian.`;
+    return msg.trim();
 }
 export function formatTransactionUpdated(trx, updatedFields) {
     const isInc = isIncome(trx);

@@ -44,6 +44,8 @@ export class GoogleSheetsService {
   private sheetsClient: any;
   private sheetTitle = "Transaksi";
   private dasborTitle = "Dashboard";
+  private rincianTitle = "Rincian Belanja";
+  private dataRincianTitle = "Data_Rincian";
 
   constructor() {
     const auth = new google.auth.JWT({
@@ -167,7 +169,10 @@ export class GoogleSheetsService {
       // Setup or refresh Dashboard tab (Sesuai Foto 1 & 2)
       await this.setupDashboardTab(sheetId);
 
-      logger.info({ sheetId }, "Google Sheet initialized with Transaksi (A:L) and Dashboard");
+      // Setup or refresh Rincian Belanja & Data_Rincian tabs
+      await this.setupRincianBelanjaTab(sheetId);
+
+      logger.info({ sheetId }, "Google Sheet initialized with Transaksi, Dashboard, and Rincian Belanja");
     } catch (error) {
       logger.error({ error, sheetId }, "Error ensuring Google Sheet initialized");
       throw error;
@@ -903,6 +908,14 @@ export class GoogleSheetsService {
       await this.formatTransactionRow(rowIndex, sheetId);
     }
 
+    if (items && items.length > 0) {
+      try {
+        await this.appendTransactionItems(trx.id, trx.date, items, trx.user_name, sheetId);
+      } catch (itemErr) {
+        logger.warn({ itemErr, trxId: trx.id }, "Could not append items to Data_Rincian");
+      }
+    }
+
     logger.info({ trxId: trx.id, updatedRange, rowIndex }, "Transaction appended to Google Sheet");
     return { updatedRange, rowIndex };
   }
@@ -1169,8 +1182,341 @@ export class GoogleSheetsService {
     }
 
     await this.setupDashboardTab(sheetId);
+    await this.setupRincianBelanjaTab(sheetId);
     logger.info({ syncedCount }, "Full 2-way sync from Google Sheets to database completed");
     return { syncedCount };
+  }
+
+  async appendTransactionItems(
+    trxId: string,
+    date: string,
+    items: TransactionItem[],
+    userName: string = "User",
+    sheetId: string = config.GOOGLE_SHEET_ID
+  ): Promise<void> {
+    if (!items || items.length === 0) return;
+
+    // Ensure Data_Rincian exists
+    await this.setupRincianBelanjaTab(sheetId);
+
+    const rows = items.map((it, idx) => {
+      const uniqueId = `${trxId}-I${String(idx + 1).padStart(2, "0")}`;
+      const qtyUnit = it.unit && it.unit !== "unit" ? `${it.qty} ${it.unit}` : `${it.qty || 1} unit`;
+      const dept = it.department || it.category || "Kafe";
+      const itemPrice = it.total_price || ((it.qty || 1) * it.price);
+      return [
+        uniqueId, // A: ID Item
+        trxId, // B: ID Transaksi
+        date, // C: Tanggal
+        it.item_name, // D: Jenis Belanja
+        qtyUnit, // E: Jumlah Satuan
+        itemPrice, // F: Harga
+        dept, // G: Keperluan
+        it.notes || "-", // H: Keterangan
+        userName, // I: Penginput
+      ];
+    });
+
+    await this.sheetsClient.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: this.dataRincianTitle + "!A:I",
+      valueInputOption: "USER_ENTERED",
+      insertDataOption: "OVERWRITE",
+      requestBody: {
+        values: rows,
+      },
+    });
+
+    logger.info({ trxId, itemsCount: items.length }, "Appended items to Data_Rincian sheet");
+  }
+
+  async setupRincianBelanjaTab(sheetId: string = config.GOOGLE_SHEET_ID): Promise<void> {
+    try {
+      const spreadsheet = await this.sheetsClient.spreadsheets.get({
+        spreadsheetId: sheetId,
+      });
+
+      const existingSheets = spreadsheet.data.sheets || [];
+
+      // 1. Ensure 'Data_Rincian' sheet exists
+      let dataRincianSheet = existingSheets.find(
+        (s: any) => s.properties?.title === this.dataRincianTitle
+      );
+      if (!dataRincianSheet) {
+        const addData = await this.sheetsClient.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: this.dataRincianTitle,
+                    gridProperties: {
+                      frozenRowCount: 1,
+                      rowCount: 500,
+                      columnCount: 12,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+        dataRincianSheet = addData.data.replies?.[0]?.addSheet;
+      }
+
+      // Headers for Data_Rincian
+      const dataHeaders = [
+        "ID Item", // A
+        "ID Transaksi", // B
+        "Tanggal", // C
+        "Jenis Belanja", // D
+        "Jumlah Satuan", // E
+        "Harga", // F
+        "Keperluan", // G (Dapur, Barista, Waiters, Kasir, Kafe)
+        "Keterangan", // H
+        "Penginput", // I
+      ];
+
+      await this.sheetsClient.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: this.dataRincianTitle + "!A1:I1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [dataHeaders],
+        },
+      });
+
+      // 2. Ensure 'Rincian Belanja' sheet exists
+      let rincianSheet = existingSheets.find(
+        (s: any) => s.properties?.title === this.rincianTitle
+      );
+      let rincianSheetId = rincianSheet?.properties?.sheetId;
+
+      if (!rincianSheet) {
+        const addRincian = await this.sheetsClient.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: {
+            requests: [
+              {
+                addSheet: {
+                  properties: {
+                    title: this.rincianTitle,
+                    gridProperties: {
+                      rowCount: 60,
+                      columnCount: 10,
+                      frozenRowCount: 4,
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+        rincianSheetId = addRincian.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
+      }
+
+      // Build values for Rincian Belanja tab matching user's photo
+      const rincianValues: any[][] = [];
+      // Row 1: Title
+      rincianValues.push(["BELANJA HARIAN", "", "", "", "", "", ""]);
+      // Row 2: Control Selector
+      rincianValues.push([
+        "🔘 PILIH ID TRANSAKSI:",
+        "SEMUA",
+        "📅 Tanggal:",
+        '=IF(OR(ISBLANK(B2); B2="SEMUA"); "-"; IFERROR(TEXT(VLOOKUP(B2; Transaksi!A:C; 3; FALSE); "dd/mm/yyyy"); "-"))',
+        "💰 Total Transaksi:",
+        '=IF(OR(ISBLANK(B2); B2="SEMUA"); IFERROR(TEXT(SUM(Data_Rincian!F2:F); "Rp #,##0"); "-"); IFERROR(TEXT(VLOOKUP(B2; Transaksi!A:G; 7; FALSE); "Rp #,##0"); "-"))',
+        '=IF(OR(ISBLANK(B2); B2="SEMUA"); "-"; IFERROR("👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE); "-"))',
+      ]);
+      // Row 3: Spacer
+      rincianValues.push(["", "", "", "", "", "", ""]);
+      // Row 4: Table Headers
+      rincianValues.push([
+        "NO.",
+        "TANGGAL PEMBELIAN",
+        "JENIS BELANJA",
+        "JUMLAH SATUAN",
+        "HARGA",
+        "KEPERLUAN",
+        "KETERANGAN",
+      ]);
+
+      // Row 5: Dynamic Query
+      rincianValues.push([
+        '=IF(B5<>""; 1; "")',
+        '=IF(OR(ISBLANK(B2); B2="SEMUA"); IFERROR(QUERY(Data_Rincian!B2:H; "SELECT C, D, E, F, G, H WHERE B IS NOT NULL ORDER BY C DESC"; 0); ""); IFERROR(QUERY(Data_Rincian!B2:H; "SELECT C, D, E, F, G, H WHERE B = \'" & B2 & "\'"; 0); ""))',
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
+
+      // Rows 6..35: Numbering formulas
+      for (let r = 6; r <= 35; r++) {
+        rincianValues.push([`=IF(B${r}<>""; ${r - 4}; "")`, "", "", "", "", "", ""]);
+      }
+
+      // Row 36: Empty Spacer
+      rincianValues.push(["", "", "", "", "", "", ""]);
+
+      // Row 37: Subtotal Baris
+      rincianValues.push(["JUMLAH", "", "", "", '=SUM(E5:E35)', "", ""]);
+
+      // Row 38..43: Breakdown per Keperluan (Sesuai Foto)
+      rincianValues.push(["JUMLAH  PENGELUARAN", "", "", "DAPUR", '=SUMIFS(E5:E35; F5:F35; "Dapur")', "", ""]);
+      rincianValues.push(["", "", "", "BARISTA", '=SUMIFS(E5:E35; F5:F35; "Barista")', "", ""]);
+      rincianValues.push(["", "", "", "WAITERS", '=SUMIFS(E5:E35; F5:F35; "Waiters")', "", ""]);
+      rincianValues.push(["", "", "", "KASIR", '=SUMIFS(E5:E35; F5:F35; "Kasir")', "", ""]);
+      rincianValues.push(["", "", "", "KAFE", '=SUMIFS(E5:E35; F5:F35; "Kafe")', "", ""]);
+      rincianValues.push(["", "", "", "JUMLAH", '=SUM(E38:E42)', "", ""]);
+
+      await this.sheetsClient.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: this.rincianTitle + "!A1:G43",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: rincianValues,
+        },
+      });
+
+      // Format cells, merges, borders, and styles
+      if (rincianSheetId !== undefined) {
+        const formatRequests: any[] = [
+          // 1. Merge Title A1:G1
+          {
+            mergeCells: {
+              range: { sheetId: rincianSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 7 },
+              mergeType: "MERGE_ALL",
+            },
+          },
+          // 2. Title Styling (A1:G1)
+          {
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 0, endRowIndex: 1, startColumnIndex: 0, endColumnIndex: 7 },
+              cell: {
+                userEnteredFormat: {
+                  horizontalAlignment: "CENTER",
+                  verticalAlignment: "MIDDLE",
+                  textFormat: { bold: true, fontSize: 13, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+                },
+              },
+              fields: "userEnteredFormat(horizontalAlignment,verticalAlignment,textFormat)",
+            },
+          },
+          // 3. Control Row (A2:G2) Styling
+          {
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 0, endColumnIndex: 7 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.95, green: 0.96, blue: 0.98 },
+                  verticalAlignment: "MIDDLE",
+                  textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 0.15, green: 0.2, blue: 0.3 } },
+                },
+              },
+              fields: "userEnteredFormat(backgroundColor,verticalAlignment,textFormat)",
+            },
+          },
+          // 4. Table Header (A4:G4) Styling
+          {
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 3, endRowIndex: 4, startColumnIndex: 0, endColumnIndex: 7 },
+              cell: {
+                userEnteredFormat: {
+                  backgroundColor: { red: 0.92, green: 0.94, blue: 0.96 },
+                  horizontalAlignment: "CENTER",
+                  verticalAlignment: "MIDDLE",
+                  textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 0.1, green: 0.1, blue: 0.1 } },
+                },
+              },
+              fields: "userEnteredFormat(backgroundColor,horizontalAlignment,verticalAlignment,textFormat)",
+            },
+          },
+          // 5. Table Data Rows (A5:G35) Borders & Alignments
+          {
+            updateBorders: {
+              range: { sheetId: rincianSheetId, startRowIndex: 3, endRowIndex: 35, startColumnIndex: 0, endColumnIndex: 7 },
+              top: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+              bottom: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+              left: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+              right: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+              innerHorizontal: { style: "SOLID", width: 1, color: { red: 0.85, green: 0.85, blue: 0.85 } },
+              innerVertical: { style: "SOLID", width: 1, color: { red: 0.85, green: 0.85, blue: 0.85 } },
+            },
+          },
+          // 6. Number formatting for Currency Column E (Col 4)
+          {
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 4, endRowIndex: 43, startColumnIndex: 4, endColumnIndex: 5 },
+              cell: {
+                userEnteredFormat: {
+                  horizontalAlignment: "RIGHT",
+                  numberFormat: { type: "CURRENCY", pattern: '"Rp"#,##0' },
+                },
+              },
+              fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+            },
+          },
+          // 7. Center alignment for No (Col A), Tanggal (Col B), Qty (Col D), Keperluan (Col F)
+          ...([0, 1, 3, 5].map((cIdx) => ({
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 4, endRowIndex: 35, startColumnIndex: cIdx, endColumnIndex: cIdx + 1 },
+              cell: {
+                userEnteredFormat: {
+                  horizontalAlignment: "CENTER",
+                },
+              },
+              fields: "userEnteredFormat(horizontalAlignment)",
+            },
+          }))),
+          // 8. Merge Summary Row 37: A37:D37 "JUMLAH"
+          {
+            mergeCells: {
+              range: { sheetId: rincianSheetId, startRowIndex: 36, endRowIndex: 37, startColumnIndex: 0, endColumnIndex: 4 },
+              mergeType: "MERGE_ALL",
+            },
+          },
+          // 9. Merge Summary Row 38..42: A38:C42 "JUMLAH  PENGELUARAN"
+          {
+            mergeCells: {
+              range: { sheetId: rincianSheetId, startRowIndex: 37, endRowIndex: 42, startColumnIndex: 0, endColumnIndex: 3 },
+              mergeType: "MERGE_ALL",
+            },
+          },
+          // 10. Merge Row 43: A43:C43
+          {
+            mergeCells: {
+              range: { sheetId: rincianSheetId, startRowIndex: 42, endRowIndex: 43, startColumnIndex: 0, endColumnIndex: 3 },
+              mergeType: "MERGE_ALL",
+            },
+          },
+          // 11. Summary Borders (Row 37..43)
+          {
+            updateBorders: {
+              range: { sheetId: rincianSheetId, startRowIndex: 36, endRowIndex: 43, startColumnIndex: 0, endColumnIndex: 7 },
+              top: { style: "DOUBLE", width: 2, color: { red: 0.2, green: 0.2, blue: 0.2 } },
+              bottom: { style: "DOUBLE", width: 2, color: { red: 0.2, green: 0.2, blue: 0.2 } },
+              left: { style: "SOLID", width: 1, color: { red: 0.2, green: 0.2, blue: 0.2 } },
+              right: { style: "SOLID", width: 1, color: { red: 0.2, green: 0.2, blue: 0.2 } },
+              innerHorizontal: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+              innerVertical: { style: "SOLID", width: 1, color: { red: 0.7, green: 0.7, blue: 0.7 } },
+            },
+          },
+        ];
+
+        await this.sheetsClient.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: { requests: formatRequests },
+        });
+      }
+
+      logger.info({ sheetId }, "Rincian Belanja and Data_Rincian tabs initialized matching reference design");
+    } catch (err) {
+      logger.error({ err, sheetId }, "Failed to setup Rincian Belanja tab");
+    }
   }
 }
 

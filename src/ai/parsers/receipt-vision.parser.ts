@@ -70,9 +70,12 @@ export async function parseReceiptVision(
         items: (parsedJson.items || []).map((it: any) => ({
           item_name: it.item_name || it.name || "Item",
           qty: Number(it.qty || it.quantity || 1),
+          unit: it.unit || "unit",
           price: Number(it.price || it.unit_price || (it.total_price && it.qty ? it.total_price / it.qty : it.total_price) || 0),
           total_price: Number(it.total_price || (it.price && it.qty ? it.price * it.qty : it.price) || 0),
+          department: ["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(it.department) ? it.department : "Kafe",
           category: it.category || undefined,
+          notes: it.notes || undefined,
         })),
       };
 

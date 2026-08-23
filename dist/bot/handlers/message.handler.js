@@ -176,13 +176,7 @@ export class MessageHandler {
                         gdrive_web_view_link: gdriveLink,
                         raw_text: body,
                         confidence_score: parsed.confidence_score,
-                    }, parsed.items.map((i) => ({
-                        item_name: i.item_name,
-                        qty: i.qty,
-                        price: i.price,
-                        total_price: i.total_price,
-                        category: i.category,
-                    })));
+                    }, parsed.items);
                     // Sync to Google Sheet
                     try {
                         const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, parsed.items);
