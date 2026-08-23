@@ -95,12 +95,19 @@ export class MessageHandler {
         }
         try {
             // 1. User Access & Status Check
-            const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
-            const displayName = user?.name || pushName;
+            const user = await this.userRepo.getUser(senderPhone, pushName);
+            if (!user || user.status !== "active") {
+                logger.warn({ senderPhone, pushName }, "Unregistered or inactive user attempted to message bot");
+                await sock.sendMessage(remoteJid, {
+                    text: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nHubungi Super Admin untuk didaftarkan.",
+                }, { quoted: msg });
+                return;
+            }
+            const displayName = user.name || pushName;
             // 2. Log chat to Supabase and Google Sheets Log_Pesan
             const msgType = isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text";
             await this.chatRepo.logMessage({
-                user_phone: senderPhone,
+                user_phone: user.phone_number,
                 user_name: displayName,
                 message_type: msgType,
                 direction: "inbound",
@@ -108,21 +115,14 @@ export class MessageHandler {
             });
             // Also append to Google Sheets Log_Pesan tab (awaited)
             try {
-                await googleSheetsService.appendMessageLog(senderPhone, displayName, body, msgType);
+                await googleSheetsService.appendMessageLog(user.phone_number, displayName, body, msgType);
             }
             catch (err) {
                 logger.warn({ err }, "Non-critical: Failed to append to Log_Pesan");
             }
-            if (user.status === "blocked") {
-                logger.warn({ senderPhone, pushName }, "Blocked user attempted to message bot");
-                await sock.sendMessage(remoteJid, {
-                    text: "🚫 Akses nomor Anda telah dinonaktifkan oleh Super Admin.",
-                }, { quoted: msg });
-                return;
-            }
             // 3. Command Check (Super Admin vs Member commands)
             if (body.startsWith("/")) {
-                const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
+                const { handled, responseMessage } = await this.commandHandler.handleCommand(user.phone_number, body);
                 if (handled) {
                     await sock.sendMessage(remoteJid, { text: responseMessage }, { quoted: msg });
                     return;

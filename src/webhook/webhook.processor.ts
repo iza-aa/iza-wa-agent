@@ -53,7 +53,7 @@ export class WebhookProcessor {
     logger.info({ senderPhone, userName, hasMedia: !!payload.mediaUrl }, "Processing incoming Webhook");
 
     // 1. Resolve registered user for official display name
-    let user = await this.userRepo.getUser(senderPhone);
+    let user = await this.userRepo.getUser(senderPhone, userName);
     if (!user && this.userRepo.isSuperAdmin(senderPhone)) {
       user = await this.userRepo.upsertUser({
         phone_number: senderPhone,
@@ -62,41 +62,26 @@ export class WebhookProcessor {
         status: "active",
       });
     }
-    const displayName = user?.name || payload.name || userName;
 
-    // 2. Log chat to Supabase and Google Sheets Log_Pesan
-    const msgType = payload.mediaType || (payload.mediaUrl ? "image" : "text");
-    await this.chatRepo.logMessage({
-      user_phone: senderPhone,
-      user_name: displayName,
-      message_type: msgType,
-      direction: "inbound",
-      content: body || payload.mediaUrl,
-    });
+    const cleanPhone = user ? user.phone_number : senderPhone;
+    const displayName = user ? user.name : (payload.name || userName);
 
-    // Also append to Google Sheets Log_Pesan tab (awaited for serverless safety)
-    try {
-      await googleSheetsService.appendMessageLog(senderPhone, displayName, body || payload.mediaUrl || "", msgType);
-    } catch (err: any) {
-      logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan");
+    // 2. Strict Whitelist Check (Reject if not registered in users table)
+    const isAllowed = user && user.status === "active";
+    if (!isAllowed) {
+      logger.warn({ senderPhone, cleanPhone, userName }, "Unauthorized user attempted webhook access");
+      return {
+        reply: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nHubungi Super Admin untuk didaftarkan.",
+        success: false,
+      };
     }
 
     // 3. Command check
     if (body.startsWith("/")) {
-      const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
+      const { handled, responseMessage } = await this.commandHandler.handleCommand(cleanPhone, body);
       if (handled) {
         return { reply: responseMessage, success: true };
       }
-    }
-
-    // 4. Whitelist check
-    const isAllowed = await this.userRepo.isWhitelisted(senderPhone);
-    if (!isAllowed) {
-      logger.warn({ senderPhone }, "Unauthorized user attempted webhook access");
-      return {
-        reply: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nPermintaan akses telah dikirimkan ke Super Admin untuk persetujuan.",
-        success: false,
-      };
     }
 
     // 4. Handle Media (Image / Receipt)
