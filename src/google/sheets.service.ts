@@ -874,6 +874,10 @@ export class GoogleSheetsService {
     const typeLabel = isInc ? "Pemasukan" : "Pengeluaran";
     const paymentMethod = trx.payment_method || "-";
 
+    const cleanRawText = trx.raw_text
+      ? trx.raw_text.replace(/\r?\n\s*[-•*]?\s*/g, " • ").replace(/\s+/g, " ").trim()
+      : "-";
+
     // Row format according to Photo 3 (Columns A:L)
     const rowData = [
       trx.id, // A: ID
@@ -887,7 +891,7 @@ export class GoogleSheetsService {
       cleanPhone, // I: Nomor WhatsApp
       trx.user_name, // J: Nama
       trx.gdrive_web_view_link ? "=HYPERLINK(\"" + trx.gdrive_web_view_link + "\"; \"Lihat Bukti\")" : "-", // K: Link Bukti
-      trx.raw_text || "-", // L: Pesan Asli
+      cleanRawText, // L: Pesan Asli (Single-line flat)
     ];
 
     const response = await this.sheetsClient.spreadsheets.values.append({
@@ -986,6 +990,34 @@ export class GoogleSheetsService {
             },
           },
           fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
+        },
+      });
+
+      // Enforce single-line height (CLIP wrapping & 26px height)
+      requests.push({
+        repeatCell: {
+          range: { sheetId: trxSheetId, startRowIndex: rIdx, endRowIndex: rIdx + 1, startColumnIndex: 0, endColumnIndex: 12 },
+          cell: {
+            userEnteredFormat: {
+              wrapStrategy: "CLIP",
+              verticalAlignment: "MIDDLE",
+            },
+          },
+          fields: "userEnteredFormat(wrapStrategy,verticalAlignment)",
+        },
+      });
+      requests.push({
+        updateDimensionProperties: {
+          range: {
+            sheetId: trxSheetId,
+            dimension: "ROWS",
+            startIndex: rIdx,
+            endIndex: rIdx + 1,
+          },
+          properties: {
+            pixelSize: 26,
+          },
+          fields: "pixelSize",
         },
       });
 
