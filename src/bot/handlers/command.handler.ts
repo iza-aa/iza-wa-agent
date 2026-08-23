@@ -711,6 +711,13 @@ export class CommandHandler {
         };
       }
 
+      // 1. Fast live sync from Data_Rincian to guarantee zero delay between Sheets and WA
+      try {
+        await googleSheetsService.syncFromSheetToDatabase(this.trxRepo);
+      } catch (syncErr) {
+        logger.warn({ syncErr }, "Non-blocking: could not fast sync before /detail");
+      }
+
       const data = await this.trxRepo.getTransactionWithItems(targetId);
       if (!data) {
         return {
