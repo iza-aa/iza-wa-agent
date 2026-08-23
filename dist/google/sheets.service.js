@@ -1230,14 +1230,14 @@ export class GoogleSheetsService {
                 ]);
                 trackerIds.push([dItemId]);
             }
-            // 4. Update Rincian Belanja table (A5:G for visible data, Z5:Z for hidden tracker)
+            // 4. Update Rincian Belanja table (A5:G for visible data, K5:K for hidden tracker)
             await this.sheetsClient.spreadsheets.values.clear({
                 spreadsheetId: sheetId,
                 range: "'Rincian Belanja'!A5:H40",
             });
             await this.sheetsClient.spreadsheets.values.clear({
                 spreadsheetId: sheetId,
-                range: "'Rincian Belanja'!Z5:Z40",
+                range: "'Rincian Belanja'!K5:K40",
             });
             if (displayRows.length > 0) {
                 await this.sheetsClient.spreadsheets.values.update({
@@ -1250,7 +1250,7 @@ export class GoogleSheetsService {
                 });
                 await this.sheetsClient.spreadsheets.values.update({
                     spreadsheetId: sheetId,
-                    range: "'Rincian Belanja'!Z5:Z" + (trackerIds.length + 4),
+                    range: "'Rincian Belanja'!K5:K" + (trackerIds.length + 4),
                     valueInputOption: "USER_ENTERED",
                     requestBody: {
                         values: trackerIds,
