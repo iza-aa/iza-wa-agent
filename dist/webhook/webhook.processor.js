@@ -46,23 +46,12 @@ export class WebhookProcessor {
             content: body || payload.mediaUrl,
         });
         // Also append to Google Sheets Log_Pesan tab (awaited for serverless safety)
-        let sheetLogResult = "not_attempted";
         try {
             await googleSheetsService.appendMessageLog(senderPhone, userName, body || payload.mediaUrl || "", msgType);
-            sheetLogResult = "success";
         }
         catch (err) {
-            sheetLogResult = `error: ${err?.message || String(err)}`;
             logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan");
         }
-        // Debug: store sheet log result in Supabase so we can check remotely
-        await this.chatRepo.logMessage({
-            user_phone: "SYSTEM",
-            user_name: "debug-appendMessageLog",
-            message_type: "text",
-            direction: "outbound",
-            content: `sheetLogResult=${sheetLogResult} | msg=${body} | phone=${senderPhone}`,
-        }).catch(() => { });
         // 2. Command check
         if (body.startsWith("/")) {
             const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);

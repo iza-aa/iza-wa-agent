@@ -8,7 +8,13 @@ const envSchema = z.object({
     SUPER_ADMIN_PHONE: z.string().min(5).transform((val) => val.split(",").map((p) => p.replace(/[^0-9]/g, "")).filter(Boolean)),
     GOOGLE_SERVICE_ACCOUNT_EMAIL: z.string().email(),
     GOOGLE_PRIVATE_KEY: z.string().min(1).transform((val) => val.replace(/\\n/g, "\n")),
-    GOOGLE_SHEET_ID: z.string().min(1),
+    GOOGLE_SHEET_ID: z.string().min(1).transform((val) => {
+        // Auto-migrate legacy spreadsheet ID to current active wa-agent spreadsheet
+        if (val === "1I_ctV76wHndHdBfRAMNfc6vYB1OXyhRPj6jrjVeejF0") {
+            return "1ozOTR4cRFvhCJhBmnqHVhpak4C1802Ic1C_cZhe7Hi8";
+        }
+        return val;
+    }),
     GOOGLE_DRIVE_FOLDER_ID: z.string().min(1),
     GOOGLE_APPS_SCRIPT_URL: z.string().url().optional().or(z.literal("")),
     PORT: z.string().optional().default("3000"),
