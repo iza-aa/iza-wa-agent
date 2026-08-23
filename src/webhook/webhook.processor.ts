@@ -53,13 +53,19 @@ export class WebhookProcessor {
     logger.info({ senderPhone, userName, hasMedia: !!payload.mediaUrl }, "Processing incoming Webhook");
 
     // 1. Log chat
+    const msgType = payload.mediaType || (payload.mediaUrl ? "image" : "text");
     await this.chatRepo.logMessage({
       user_phone: senderPhone,
       user_name: userName,
-      message_type: payload.mediaType || (payload.mediaUrl ? "image" : "text"),
+      message_type: msgType,
       direction: "inbound",
       content: body || payload.mediaUrl,
     });
+
+    // Also append to Google Sheets Log_Pesan tab (non-blocking)
+    googleSheetsService
+      .appendMessageLog(senderPhone, userName, body || payload.mediaUrl || "", msgType)
+      .catch((err) => logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan"));
 
     // 2. Command check
     if (body.startsWith("/")) {
