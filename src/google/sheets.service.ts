@@ -1383,6 +1383,13 @@ export class GoogleSheetsService {
         if (filterDate && filterDate !== "SEMUA" && filterDate !== "-" && dDate !== filterDate) continue;
         if (filterDept && filterDept !== "SEMUA" && dDept.toLowerCase() !== filterDept.toLowerCase()) continue;
 
+        const shortId = dTrxId.replace(/^T\d+-/, "");
+        const submitter = (r[8] || "").toString().trim();
+        const customNote = dNotes && dNotes !== "-" ? dNotes : "";
+        const noteDisplay = shortId
+          ? (customNote ? `[${shortId}] ${customNote}` : (submitter ? `[${shortId}] ${submitter}` : `[${shortId}]`))
+          : (dNotes || "-");
+
         displayRows.push([
           displayRows.length + 1,
           dDate,
@@ -1390,7 +1397,7 @@ export class GoogleSheetsService {
           dQty,
           dPrice,
           dDept,
-          dNotes,
+          noteDisplay,
         ]);
         trackerIds.push([dItemId]);
       }
