@@ -126,6 +126,16 @@ export class MessageHandler {
                 return;
             }
             const displayName = user.name || pushName;
+            // Guard: If an active user types their own phone number, acknowledge friendly
+            const digitsOnly = body.replace(/[^0-9]/g, "");
+            if (digitsOnly.length >= 9 &&
+                digitsOnly.length <= 15 &&
+                (normalizePhoneNumber(digitsOnly) === user.phone_number || digitsOnly === senderPhone)) {
+                await sock.sendMessage(remoteJid, {
+                    text: `✅ Halo *${displayName}*! Akun WhatsApp Anda sudah aktif dan terdaftar dengan nomor \`+${user.phone_number}\`.\n\nAda yang bisa saya bantu? Ketik \`/menu\` untuk panduan pencatatan transaksi kas.`,
+                }, { quoted: msg });
+                return;
+            }
             // 2. Log chat to Supabase and Google Sheets Log_Pesan
             const msgType = isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text";
             await this.chatRepo.logMessage({

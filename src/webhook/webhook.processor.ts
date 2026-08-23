@@ -104,6 +104,20 @@ export class WebhookProcessor {
       };
     }
 
+    // Guard: If an active user types their own phone number, acknowledge friendly
+    const digitsOnly = body.replace(/[^0-9]/g, "");
+    if (
+      user &&
+      digitsOnly.length >= 9 &&
+      digitsOnly.length <= 15 &&
+      (normalizePhoneNumber(digitsOnly) === user.phone_number || digitsOnly === senderPhone)
+    ) {
+      return {
+        reply: `✅ Halo *${displayName}*! Akun WhatsApp Anda sudah aktif dan terdaftar dengan nomor \`+${user.phone_number}\`.\n\nAda yang bisa saya bantu? Ketik \`/menu\` untuk panduan pencatatan transaksi kas.`,
+        success: true,
+      };
+    }
+
     // 3. Command check
     if (body.startsWith("/")) {
       const { handled, responseMessage } = await this.commandHandler.handleCommand(cleanPhone, body);
