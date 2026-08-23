@@ -83,11 +83,13 @@ Format JSON Wajib:
 }
 
 Pedoman Penentuan Department / Divisi Butir Belanja:
-- "Dapur": Ayam, daging, ikan, sayur, buah/pisang, minyak goreng, beras, telur, bumbu dapur, gas LPG, bahan masakan dapur, atau jika pesan menyebutkan "keperluan dapur".
-- "Barista": Biji kopi, sirup, susu cair/kental, bubuk minuman, matcha, cup kopi, sedotan, bahan minuman.
-- "Waiters": Sabun cuci piring, cairan pembersih lantai, kantong sampah, tisu meja, operasional pelayan/kebersihan.
-- "Kasir": Kertas struk kasir, plastik kresek kasir, bolpoin kasir.
-- "Kafe": Token listrik PLN, tagihan WiFi internet, PDAM/air minum galon umum, renovasi, ATK umum, sewa, operasional umum.`;
+- ATURAN PRIORITAS TERTINGGI: Jika judul/pesan pengguna secara eksplisit menyebutkan "keperluan [Divisi]" atau "untuk [Divisi]" atau "buat [Divisi]" (misal: "keperluan Barista", "keperluan Dapur", "keperluan Waiters", "keperluan Kasir"), maka SELURUH butir belanjaan di bawahnya WAJIB menggunakan divisi yang ditentukan pengguna tersebut!
+- Jika tidak ada penegasan di judul, klasifikasikan berdasarkan jenis barang:
+  * "Dapur": Ayam, daging, ikan, sayur, buah, minyak goreng, beras, telur, bumbu dapur, gas LPG, bahan masakan dapur.
+  * "Barista": Biji kopi, sirup, susu cair/kental, bubuk minuman, matcha, cup kopi, sedotan, bahan minuman.
+  * "Waiters": Sabun cuci piring, cairan pembersih lantai, kantong sampah, tisu meja, operasional pelayan/kebersihan.
+  * "Kasir": Kertas struk kasir, plastik kresek kasir, bolpoin kasir.
+  * "Kafe": Token listrik PLN, tagihan WiFi internet, PDAM/air minum galon umum, renovasi, ATK umum, sewa, operasional umum.`;
 
 export async function parseTransactionText(
   userText: string,
@@ -135,6 +137,14 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
         finalDate = todayStr.slice(0, 4) + finalDate.slice(4);
       }
 
+      // Check explicit header override from user text
+      let headerDept: "Dapur" | "Barista" | "Waiters" | "Kasir" | "Kafe" | null = null;
+      if (/\b(?:keperluan|untuk|buat|divisi|pos|bagian)\s+barista\b/i.test(userText)) headerDept = "Barista";
+      else if (/\b(?:keperluan|untuk|buat|divisi|pos|bagian)\s+dapur\b/i.test(userText)) headerDept = "Dapur";
+      else if (/\b(?:keperluan|untuk|buat|divisi|pos|bagian)\s+waiters?\b/i.test(userText)) headerDept = "Waiters";
+      else if (/\b(?:keperluan|untuk|buat|divisi|pos|bagian)\s+kasir\b/i.test(userText)) headerDept = "Kasir";
+      else if (/\b(?:keperluan|untuk|buat|divisi|pos|bagian)\s+kafe\b/i.test(userText)) headerDept = "Kafe";
+
       const normalizedItems = (rawTrx.items || []).map((it: any) => {
         const qty = Number(it.qty || it.quantity || 1) || 1;
         const hasTotalPrice = it.total_price !== undefined && it.total_price !== null && Number(it.total_price) > 0;
@@ -154,20 +164,31 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
           unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
         }
 
-        // Smart department determination
+        // Smart department determination with strict hierarchy
         let dept: "Dapur" | "Barista" | "Waiters" | "Kasir" | "Kafe" = "Kafe";
         const rawDept = (it.department || it.keperluan || it.divisi || "").toString().trim().toLowerCase();
-        const userTextLower = userText.toLowerCase();
 
-        if (rawDept.includes("dapur") || rawDept.includes("kitchen")) dept = "Dapur";
-        else if (rawDept.includes("barista") || rawDept.includes("bar") || rawDept.includes("kopi")) dept = "Barista";
-        else if (rawDept.includes("waiter") || rawDept.includes("pelayan") || rawDept.includes("service")) dept = "Waiters";
-        else if (rawDept.includes("kasir") || rawDept.includes("cashier") || rawDept.includes("pos")) dept = "Kasir";
-        else if (rawDept.includes("kafe") || rawDept.includes("cafe")) dept = "Kafe";
-        else if (userTextLower.includes("dapur") || userTextLower.includes("pasar")) dept = "Dapur";
-        else if (userTextLower.includes("barista")) dept = "Barista";
-        else if (userTextLower.includes("waiter")) dept = "Waiters";
-        else if (userTextLower.includes("kasir")) dept = "Kasir";
+        if (headerDept) {
+          dept = headerDept;
+        } else if (rawDept.includes("barista") || rawDept.includes("bar") || rawDept.includes("kopi")) {
+          dept = "Barista";
+        } else if (rawDept.includes("dapur") || rawDept.includes("kitchen")) {
+          dept = "Dapur";
+        } else if (rawDept.includes("waiter") || rawDept.includes("pelayan") || rawDept.includes("service")) {
+          dept = "Waiters";
+        } else if (rawDept.includes("kasir") || rawDept.includes("cashier") || rawDept.includes("pos")) {
+          dept = "Kasir";
+        } else if (rawDept.includes("kafe") || rawDept.includes("cafe")) {
+          dept = "Kafe";
+        } else {
+          // Fallback by item name keywords
+          const itemNameLower = (it.item_name || it.name || "").toString().toLowerCase();
+          if (/kopi|sirup|syrup|susu|tea|teh|powder|creamer|sedotan|cup/i.test(itemNameLower)) dept = "Barista";
+          else if (/ayam|sayur|daging|ikan|minyak|beras|telur|bumbu|bawang|cabe|tomat/i.test(itemNameLower)) dept = "Dapur";
+          else if (/sabun|sunlight|pel|tisu|tissue|plastik\s*sampah/i.test(itemNameLower)) dept = "Waiters";
+          else if (/thermal|struk|kresek/i.test(itemNameLower)) dept = "Kasir";
+          else if (/token|listrik|pln|wifi|indihome|pdam/i.test(itemNameLower)) dept = "Kafe";
+        }
 
         return {
           item_name: it.item_name || it.name || "Item",
