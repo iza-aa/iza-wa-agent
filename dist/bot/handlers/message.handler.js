@@ -94,14 +94,19 @@ export class MessageHandler {
             logger.debug({ presenceErr }, "Presence / Read receipt update non-critical error");
         }
         try {
-            // 1. Log chat
+            // 1. Log chat to Supabase and Google Sheets Log_Pesan
+            const msgType = isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text";
             await this.chatRepo.logMessage({
                 user_phone: senderPhone,
                 user_name: pushName,
-                message_type: isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text",
+                message_type: msgType,
                 direction: "inbound",
                 content: body,
             });
+            // Also append to Google Sheets Log_Pesan tab (non-blocking)
+            googleSheetsService
+                .appendMessageLog(senderPhone, pushName, body, msgType)
+                .catch((err) => logger.warn({ err }, "Non-critical: Failed to append to Log_Pesan"));
             // 2. User Access & Status Check
             const user = await this.userRepo.getOrCreateUser(senderPhone, pushName);
             if (user.status === "blocked") {

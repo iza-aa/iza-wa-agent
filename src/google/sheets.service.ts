@@ -862,6 +862,43 @@ export class GoogleSheetsService {
     }
   }
 
+  async appendMessageLog(
+    phone: string,
+    name: string,
+    message: string,
+    messageType: string = "text",
+    sheetId: string = config.GOOGLE_SHEET_ID
+  ): Promise<void> {
+    try {
+      const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
+      const now = new Date();
+      const makassarDate = new Intl.DateTimeFormat("en-GB", {
+        timeZone: "Asia/Makassar",
+      }).format(now);
+      const cleanPhone = phone.startsWith("62") ? "+" + phone : phone;
+
+      await this.sheetsClient.spreadsheets.values.append({
+        spreadsheetId: sheetId,
+        range: "'Log_Pesan'!A:F",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [
+            [
+              nowWITA,
+              makassarDate,
+              cleanPhone,
+              name || "User",
+              message || "",
+              messageType,
+            ],
+          ],
+        },
+      });
+    } catch (err) {
+      logger.warn({ err, phone, message }, "Could not append message log to Google Sheets");
+    }
+  }
+
   async appendTransaction(
     trx: TransactionRecord,
     items: TransactionItem[] = [],

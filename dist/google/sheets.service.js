@@ -815,6 +815,36 @@ export class GoogleSheetsService {
             logger.warn({ err }, "Could not setup dashboard tab automatically");
         }
     }
+    async appendMessageLog(phone, name, message, messageType = "text", sheetId = config.GOOGLE_SHEET_ID) {
+        try {
+            const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
+            const now = new Date();
+            const makassarDate = new Intl.DateTimeFormat("en-GB", {
+                timeZone: "Asia/Makassar",
+            }).format(now);
+            const cleanPhone = phone.startsWith("62") ? "+" + phone : phone;
+            await this.sheetsClient.spreadsheets.values.append({
+                spreadsheetId: sheetId,
+                range: "'Log_Pesan'!A:F",
+                valueInputOption: "USER_ENTERED",
+                requestBody: {
+                    values: [
+                        [
+                            nowWITA,
+                            makassarDate,
+                            cleanPhone,
+                            name || "User",
+                            message || "",
+                            messageType,
+                        ],
+                    ],
+                },
+            });
+        }
+        catch (err) {
+            logger.warn({ err, phone, message }, "Could not append message log to Google Sheets");
+        }
+    }
     async appendTransaction(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
         const nowWITA = new Date().toLocaleString("id-ID", { timeZone: "Asia/Makassar" });
         const cleanPhone = trx.user_phone.startsWith("62") ? "+" + trx.user_phone : trx.user_phone;
