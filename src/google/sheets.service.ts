@@ -911,8 +911,9 @@ export class GoogleSheetsService {
         },
         "appendMessageLog API response"
       );
-    } catch (err) {
+    } catch (err: any) {
       logger.error({ err, phone, message }, "Error appending message log to Google Sheets");
+      throw err;
     }
   }
 

@@ -855,6 +855,7 @@ export class GoogleSheetsService {
         }
         catch (err) {
             logger.error({ err, phone, message }, "Error appending message log to Google Sheets");
+            throw err;
         }
     }
     async appendTransaction(trx, items = [], sheetId = config.GOOGLE_SHEET_ID) {
