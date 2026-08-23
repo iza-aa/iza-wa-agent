@@ -8,6 +8,10 @@
     {
       "source": "/api/health",
       "destination": "/api/health"
+    },
+    {
+      "source": "/api/supabase-sync",
+      "destination": "/api/supabase-sync"
     }
   ]
 }
