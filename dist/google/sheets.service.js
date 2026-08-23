@@ -1014,6 +1014,36 @@ export class GoogleSheetsService {
                     ],
                 },
             });
+            // Also cascade delete from Data_Rincian
+            try {
+                const dRes = await this.sheetsClient.spreadsheets.values.get({
+                    spreadsheetId: sheetId,
+                    range: this.dataRincianTitle + "!A2:I",
+                });
+                const dRows = (dRes.data.values || []).filter((r) => r[0] && r[3]);
+                const keptDRows = dRows.filter((r) => (r[1] || "").toString().trim() !== trxId);
+                if (keptDRows.length !== dRows.length) {
+                    await this.sheetsClient.spreadsheets.values.clear({
+                        spreadsheetId: sheetId,
+                        range: this.dataRincianTitle + "!A2:I" + Math.max(dRows.length + 1, 50),
+                    });
+                    if (keptDRows.length > 0) {
+                        await this.sheetsClient.spreadsheets.values.update({
+                            spreadsheetId: sheetId,
+                            range: this.dataRincianTitle + "!A2:I" + (keptDRows.length + 1),
+                            valueInputOption: "USER_ENTERED",
+                            requestBody: {
+                                values: keptDRows,
+                            },
+                        });
+                    }
+                    await this.renderRincianBelanjaSheet(sheetId);
+                    logger.info({ trxId }, "Cascade deleted items from Data_Rincian and refreshed Rincian Belanja");
+                }
+            }
+            catch (dErr) {
+                logger.warn({ dErr, trxId }, "Could not cascade delete from Data_Rincian");
+            }
             logger.info({ trxId, rowIndex: rowIndex + 1 }, "Deleted transaction row from Google Sheet");
             return true;
         }
@@ -1108,13 +1138,36 @@ export class GoogleSheetsService {
             await supabase.from("transactions").delete().in("id", idsToDelete);
         }
         const syncedCount = trxPayloads.length;
-        // 3. Sync items from Data_Rincian tab to Supabase
+        // 3. Sync items from Data_Rincian tab to Supabase & Purge orphaned items
         try {
             const rincianRes = await this.sheetsClient.spreadsheets.values.get({
                 spreadsheetId: sheetId,
                 range: this.dataRincianTitle + "!A2:I",
             });
-            const rincianRows = (rincianRes.data.values || []).filter((r) => r[0] && r[3]);
+            let rincianRows = (rincianRes.data.values || []).filter((r) => r[0] && r[3]);
+            // If transactions were deleted from Transaksi, also purge them from Data_Rincian
+            if (idsToDelete.length > 0) {
+                const keptRincian = rincianRows.filter((r) => !idsToDelete.includes((r[1] || "").toString().trim()));
+                if (keptRincian.length !== rincianRows.length) {
+                    await this.sheetsClient.spreadsheets.values.clear({
+                        spreadsheetId: sheetId,
+                        range: this.dataRincianTitle + "!A2:I" + Math.max(rincianRows.length + 1, 50),
+                    });
+                    if (keptRincian.length > 0) {
+                        await this.sheetsClient.spreadsheets.values.update({
+                            spreadsheetId: sheetId,
+                            range: this.dataRincianTitle + "!A2:I" + (keptRincian.length + 1),
+                            valueInputOption: "USER_ENTERED",
+                            requestBody: {
+                                values: keptRincian,
+                            },
+                        });
+                    }
+                    rincianRows = keptRincian;
+                    await this.renderRincianBelanjaSheet(sheetId);
+                    logger.info({ idsToDelete }, "Purged deleted transactions from Data_Rincian");
+                }
+            }
             await supabase.from("receipt_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
             if (rincianRows.length > 0) {
                 const itemsPayload = rincianRows.map((row) => {
