@@ -1252,7 +1252,7 @@ export class GoogleSheetsService {
             // Row 5: Dynamic Multi-Filter Query
             rincianValues.push([
                 '=IF(B5<>""; 1; "")',
-                '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(H2=TRUE; ""; IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; IF(ISDATE(D2); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "")) & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "")) & " ORDER BY C DESC"; 0); "")',
+                '=IFERROR(FILTER(Data_Rincian!C2:H; (Data_Rincian!A2:A<>"") * (IF(OR(B2=""; B2="SEMUA"); 1; Data_Rincian!B2:B=B2)) * (IF(OR(D2=""; D2="SEMUA"; D2="-"); 1; (Data_Rincian!C2:C=D2) + (TEXT(Data_Rincian!C2:C; "yyyy-mm-dd")=TEXT(D2; "yyyy-mm-dd")) + (Data_Rincian!C2:C=TEXT(D2; "yyyy-mm-dd")))) * (IF(OR(F2=""; F2="SEMUA"); 1; UPPER(Data_Rincian!G2:G)=UPPER(F2)))); "")',
                 "",
                 "",
                 "",
