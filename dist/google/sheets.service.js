@@ -40,6 +40,7 @@ export class GoogleSheetsService {
     dasborTitle = "Dashboard";
     rincianTitle = "Rincian Belanja";
     dataRincianTitle = "Data_Rincian";
+    logPesanTitle = "Log_Pesan";
     constructor() {
         const auth = new google.auth.JWT({
             email: config.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -833,9 +834,9 @@ export class GoogleSheetsService {
             ];
             const response = await this.sheetsClient.spreadsheets.values.append({
                 spreadsheetId: sheetId,
-                range: "Log_Pesan!A:F",
+                range: this.logPesanTitle + "!A:F",
                 valueInputOption: "USER_ENTERED",
-                insertDataOption: "INSERT_ROWS",
+                insertDataOption: "OVERWRITE",
                 requestBody: {
                     values: [rowData],
                 },
