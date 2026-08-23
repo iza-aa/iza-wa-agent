@@ -16,6 +16,8 @@ export function normalizePhoneNumber(raw) {
         return "62811422404";
     if (digits === "113404400390171")
         return "6282147440520";
+    if (digits === "160632196358183")
+        return "6281524121044";
     // 3. Konversi format awal (08xx -> 628xx, 8xx -> 628xx)
     if (digits.startsWith("08")) {
         digits = "62" + digits.slice(1);
