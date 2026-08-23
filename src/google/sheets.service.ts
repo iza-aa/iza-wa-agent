@@ -1395,7 +1395,7 @@ export class GoogleSheetsService {
         dataRincianSheet = addData.data.replies?.[0]?.addSheet;
       }
 
-      // Headers for Data_Rincian
+      // Headers for Data_Rincian (A1:I1 only, never overwrite row 2 data)
       const dataHeaders = [
         "ID Item", // A
         "ID Transaksi", // B
@@ -1406,20 +1406,26 @@ export class GoogleSheetsService {
         "Keperluan", // G (Dapur, Barista, Waiters, Kasir, Kafe)
         "Keterangan", // H
         "Penginput", // I
-        "", // J
-        "ID_Pengeluaran", // K
-        "Tanggal_Pengeluaran", // L
       ];
 
       await this.sheetsClient.spreadsheets.values.update({
         spreadsheetId: sheetId,
-        range: this.dataRincianTitle + "!A1:L2",
+        range: this.dataRincianTitle + "!A1:I1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: {
+          values: [dataHeaders],
+        },
+      });
+
+      // Dropdown validation sources (K1:L2 only)
+      await this.sheetsClient.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: this.dataRincianTitle + "!K1:L2",
         valueInputOption: "USER_ENTERED",
         requestBody: {
           values: [
-            dataHeaders,
+            ["ID_Pengeluaran", "Tanggal_Pengeluaran"],
             [
-              "", "", "", "", "", "", "", "", "", "",
               '={"SEMUA"; IFERROR(FILTER(Transaksi!A2:A; Transaksi!D2:D="Pengeluaran"; Transaksi!A2:A<>""); "")}',
               '={"SEMUA"; IFERROR(UNIQUE(FILTER(TEXT(Transaksi!C2:C; "yyyy-mm-dd"); Transaksi!D2:D="Pengeluaran"; Transaksi!C2:C<>"")); "")}',
             ],
