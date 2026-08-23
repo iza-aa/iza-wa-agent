@@ -130,14 +130,29 @@ export class UserRepository {
         const pushNameLower = pushName.trim().toLowerCase();
         const pushNameWords = pushNameLower.split(/\s+/).filter((w) => w.length >= 2);
 
+        // Helper to normalize nickname phonetics (e.g., jeki <-> zaky, c <-> k)
+        const normalizePhonetic = (str: string) =>
+          str.replace(/j/g, "z").replace(/c/g, "k").replace(/y/g, "i").replace(/[^a-z0-9]/g, "");
+
+        const pushPhonetics = pushNameWords.map(normalizePhonetic);
+
         const match = dbUsers.find((u) => {
           const dbNameLower = u.name.toLowerCase().trim();
           const dbNameWords = dbNameLower.split(/\s+/).filter((w: string) => w.length >= 2);
-          return (
+          const dbPhonetics = dbNameWords.map(normalizePhonetic);
+
+          // Direct match
+          const directMatch =
             pushNameLower.includes(dbNameLower) ||
             dbNameLower.includes(pushNameLower) ||
-            dbNameWords.some((dbWord: string) => pushNameWords.includes(dbWord))
+            dbNameWords.some((dbWord: string) => pushNameWords.includes(dbWord));
+
+          // Phonetic/nickname match (e.g. jeki <-> zaky, malla <-> sipalingmalla)
+          const phoneticMatch = dbPhonetics.some((dp: string) =>
+            pushPhonetics.some((pp: string) => pp.includes(dp) || dp.includes(pp) || (pp.length >= 3 && dp.startsWith(pp.slice(0, 3))))
           );
+
+          return directMatch || phoneticMatch;
         });
 
         if (match) {

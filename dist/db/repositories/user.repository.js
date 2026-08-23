@@ -101,12 +101,20 @@ export class UserRepository {
             if (dbUsers && dbUsers.length > 0) {
                 const pushNameLower = pushName.trim().toLowerCase();
                 const pushNameWords = pushNameLower.split(/\s+/).filter((w) => w.length >= 2);
+                // Helper to normalize nickname phonetics (e.g., jeki <-> zaky, c <-> k)
+                const normalizePhonetic = (str) => str.replace(/j/g, "z").replace(/c/g, "k").replace(/y/g, "i").replace(/[^a-z0-9]/g, "");
+                const pushPhonetics = pushNameWords.map(normalizePhonetic);
                 const match = dbUsers.find((u) => {
                     const dbNameLower = u.name.toLowerCase().trim();
                     const dbNameWords = dbNameLower.split(/\s+/).filter((w) => w.length >= 2);
-                    return (pushNameLower.includes(dbNameLower) ||
+                    const dbPhonetics = dbNameWords.map(normalizePhonetic);
+                    // Direct match
+                    const directMatch = pushNameLower.includes(dbNameLower) ||
                         dbNameLower.includes(pushNameLower) ||
-                        dbNameWords.some((dbWord) => pushNameWords.includes(dbWord)));
+                        dbNameWords.some((dbWord) => pushNameWords.includes(dbWord));
+                    // Phonetic/nickname match (e.g. jeki <-> zaky, malla <-> sipalingmalla)
+                    const phoneticMatch = dbPhonetics.some((dp) => pushPhonetics.some((pp) => pp.includes(dp) || dp.includes(pp) || (pp.length >= 3 && dp.startsWith(pp.slice(0, 3)))));
+                    return directMatch || phoneticMatch;
                 });
                 if (match) {
                     logger.info({ lid: cleaned, pushName, matchedUser: match.name, matchedPhone: match.phone_number }, "Dynamically linking incoming WhatsApp LID to registered user record");
