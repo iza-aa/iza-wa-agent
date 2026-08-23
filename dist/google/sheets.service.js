@@ -1220,7 +1220,7 @@ export class GoogleSheetsService {
             const rincianValues = [];
             // Row 1: Title
             rincianValues.push(["BELANJA HARIAN", "", "", "", "", "", ""]);
-            // Row 2: Control Selector (ID Dropdown + Native Calendar Popup + Divisi Dropdown)
+            // Row 2: Control Selector (ID Dropdown + Native Calendar Popup + Divisi Dropdown + Reset Filter Button)
             rincianValues.push([
                 "🔘 ID PENGELUARAN:",
                 "SEMUA",
@@ -1229,9 +1229,11 @@ export class GoogleSheetsService {
                 "🏷️ KEPERLUAN:",
                 "SEMUA",
                 '=IF(AND(B2<>""; B2<>"SEMUA"); IFERROR("📅 Tgl: " & TEXT(VLOOKUP(B2; Transaksi!A:C; 3; FALSE); "dd/mm/yyyy") & " | 👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE) & " | 💰 " & TEXT(VLOOKUP(B2; Transaksi!A:G; 7; FALSE); "Rp #,##0"); "-"); IF(ISDATE(D2); "📅 Belanja Tgl: " & TEXT(D2; "dd/mm/yyyy"); "💡 Klik 2x sel D2 untuk buka kalender"))',
+                false,
+                "🔄 RESET FILTER",
             ]);
             // Row 3: Spacer
-            rincianValues.push(["", "", "", "", "", "", ""]);
+            rincianValues.push(["", "", "", "", "", "", "", "", ""]);
             // Row 4: Table Headers
             rincianValues.push([
                 "NO.",
@@ -1241,11 +1243,15 @@ export class GoogleSheetsService {
                 "HARGA",
                 "KEPERLUAN",
                 "KETERANGAN",
+                "",
+                "",
             ]);
             // Row 5: Dynamic Multi-Filter Query
             rincianValues.push([
                 '=IF(B5<>""; 1; "")',
-                '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; IF(ISDATE(D2); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "")) & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
+                '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(H2=TRUE; ""; IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; IF(ISDATE(D2); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "")) & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "")) & " ORDER BY C DESC"; 0); "")',
+                "",
+                "",
                 "",
                 "",
                 "",
@@ -1254,22 +1260,22 @@ export class GoogleSheetsService {
             ]);
             // Rows 6..35: Numbering formulas
             for (let r = 6; r <= 35; r++) {
-                rincianValues.push([`=IF(B${r}<>""; ${r - 4}; "")`, "", "", "", "", "", ""]);
+                rincianValues.push([`=IF(B${r}<>""; ${r - 4}; "")`, "", "", "", "", "", "", "", ""]);
             }
             // Row 36: Empty Spacer
-            rincianValues.push(["", "", "", "", "", "", ""]);
+            rincianValues.push(["", "", "", "", "", "", "", "", ""]);
             // Row 37: Subtotal Baris
-            rincianValues.push(["JUMLAH", "", "", "", '=SUM(E5:E35)', "", ""]);
+            rincianValues.push(["JUMLAH", "", "", "", '=SUM(E5:E35)', "", "", "", ""]);
             // Row 38..43: Breakdown per Keperluan (Sesuai Foto)
-            rincianValues.push(["JUMLAH  PENGELUARAN", "", "", "DAPUR", '=SUMIFS(E5:E35; F5:F35; "Dapur")', "", ""]);
-            rincianValues.push(["", "", "", "BARISTA", '=SUMIFS(E5:E35; F5:F35; "Barista")', "", ""]);
-            rincianValues.push(["", "", "", "WAITERS", '=SUMIFS(E5:E35; F5:F35; "Waiters")', "", ""]);
-            rincianValues.push(["", "", "", "KASIR", '=SUMIFS(E5:E35; F5:F35; "Kasir")', "", ""]);
-            rincianValues.push(["", "", "", "KAFE", '=SUMIFS(E5:E35; F5:F35; "Kafe")', "", ""]);
-            rincianValues.push(["", "", "", "JUMLAH", '=SUM(E38:E42)', "", ""]);
+            rincianValues.push(["JUMLAH  PENGELUARAN", "", "", "DAPUR", '=SUMIFS(E5:E35; F5:F35; "Dapur")', "", "", "", ""]);
+            rincianValues.push(["", "", "", "BARISTA", '=SUMIFS(E5:E35; F5:F35; "Barista")', "", "", "", ""]);
+            rincianValues.push(["", "", "", "WAITERS", '=SUMIFS(E5:E35; F5:F35; "Waiters")', "", "", "", ""]);
+            rincianValues.push(["", "", "", "KASIR", '=SUMIFS(E5:E35; F5:F35; "Kasir")', "", "", "", ""]);
+            rincianValues.push(["", "", "", "KAFE", '=SUMIFS(E5:E35; F5:F35; "Kafe")', "", "", "", ""]);
+            rincianValues.push(["", "", "", "JUMLAH", '=SUM(E38:E42)', "", "", "", ""]);
             await this.sheetsClient.spreadsheets.values.update({
                 spreadsheetId: sheetId,
-                range: this.rincianTitle + "!A1:G43",
+                range: this.rincianTitle + "!A1:I43",
                 valueInputOption: "USER_ENTERED",
                 requestBody: {
                     values: rincianValues,
@@ -1391,6 +1397,60 @@ export class GoogleSheetsService {
                                 showCustomUi: true,
                                 strict: false,
                             },
+                        },
+                    },
+                    // 6b. Checkbox validation on H2 (Reset Filter)
+                    {
+                        setDataValidation: {
+                            range: {
+                                sheetId: rincianSheetId,
+                                startRowIndex: 1,
+                                endRowIndex: 2,
+                                startColumnIndex: 7,
+                                endColumnIndex: 8,
+                            },
+                            rule: {
+                                condition: {
+                                    type: "BOOLEAN",
+                                },
+                                showCustomUi: true,
+                            },
+                        },
+                    },
+                    // 6c. Styling Reset Button H2:I2
+                    {
+                        repeatCell: {
+                            range: {
+                                sheetId: rincianSheetId,
+                                startRowIndex: 1,
+                                endRowIndex: 2,
+                                startColumnIndex: 7,
+                                endColumnIndex: 9,
+                            },
+                            cell: {
+                                userEnteredFormat: {
+                                    backgroundColor: { red: 0.90, green: 0.93, blue: 0.97 },
+                                    verticalAlignment: "MIDDLE",
+                                    textFormat: { bold: true, fontSize: 10, foregroundColor: { red: 0.1, green: 0.25, blue: 0.5 } },
+                                },
+                            },
+                            fields: "userEnteredFormat(backgroundColor,verticalAlignment,textFormat)",
+                        },
+                    },
+                    // 6d. Border for Reset Button H2:I2
+                    {
+                        updateBorders: {
+                            range: {
+                                sheetId: rincianSheetId,
+                                startRowIndex: 1,
+                                endRowIndex: 2,
+                                startColumnIndex: 7,
+                                endColumnIndex: 9,
+                            },
+                            top: { style: "SOLID", width: 1, color: { red: 0.6, green: 0.7, blue: 0.85 } },
+                            bottom: { style: "SOLID", width: 1, color: { red: 0.6, green: 0.7, blue: 0.85 } },
+                            left: { style: "SOLID", width: 1, color: { red: 0.6, green: 0.7, blue: 0.85 } },
+                            right: { style: "SOLID", width: 1, color: { red: 0.6, green: 0.7, blue: 0.85 } },
                         },
                     },
                     // 7. Table Header (A4:G4) Styling
