@@ -52,42 +52,7 @@ export class WebhookProcessor {
 
     logger.info({ senderPhone, userName, hasMedia: !!payload.mediaUrl }, "Processing incoming Webhook");
 
-    // 1. Log chat
-    const msgType = payload.mediaType || (payload.mediaUrl ? "image" : "text");
-    await this.chatRepo.logMessage({
-      user_phone: senderPhone,
-      user_name: userName,
-      message_type: msgType,
-      direction: "inbound",
-      content: body || payload.mediaUrl,
-    });
-
-    // Also append to Google Sheets Log_Pesan tab (awaited for serverless safety)
-    try {
-      await googleSheetsService.appendMessageLog(senderPhone, userName, body || payload.mediaUrl || "", msgType);
-    } catch (err: any) {
-      logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan");
-    }
-
-    // 2. Command check
-    if (body.startsWith("/")) {
-      const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
-      if (handled) {
-        return { reply: responseMessage, success: true };
-      }
-    }
-
-    // 3. Whitelist check
-    const isAllowed = await this.userRepo.isWhitelisted(senderPhone);
-    if (!isAllowed) {
-      logger.warn({ senderPhone }, "Unauthorized user attempted webhook access");
-      return {
-        reply: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nPermintaan akses telah dikirimkan ke Super Admin untuk persetujuan.",
-        success: false,
-      };
-    }
-
-    // Ensure user in DB
+    // 1. Resolve registered user for official display name
     let user = await this.userRepo.getUser(senderPhone);
     if (!user && this.userRepo.isSuperAdmin(senderPhone)) {
       user = await this.userRepo.upsertUser({
@@ -97,8 +62,42 @@ export class WebhookProcessor {
         status: "active",
       });
     }
+    const displayName = user?.name || payload.name || userName;
 
-    const displayName = user?.name || userName;
+    // 2. Log chat to Supabase and Google Sheets Log_Pesan
+    const msgType = payload.mediaType || (payload.mediaUrl ? "image" : "text");
+    await this.chatRepo.logMessage({
+      user_phone: senderPhone,
+      user_name: displayName,
+      message_type: msgType,
+      direction: "inbound",
+      content: body || payload.mediaUrl,
+    });
+
+    // Also append to Google Sheets Log_Pesan tab (awaited for serverless safety)
+    try {
+      await googleSheetsService.appendMessageLog(senderPhone, displayName, body || payload.mediaUrl || "", msgType);
+    } catch (err: any) {
+      logger.warn({ err }, "Non-critical: Failed to append webhook message to Log_Pesan");
+    }
+
+    // 3. Command check
+    if (body.startsWith("/")) {
+      const { handled, responseMessage } = await this.commandHandler.handleCommand(senderPhone, body);
+      if (handled) {
+        return { reply: responseMessage, success: true };
+      }
+    }
+
+    // 4. Whitelist check
+    const isAllowed = await this.userRepo.isWhitelisted(senderPhone);
+    if (!isAllowed) {
+      logger.warn({ senderPhone }, "Unauthorized user attempted webhook access");
+      return {
+        reply: "👋 Halo! Nomor Anda belum terdaftar di sistem.\nPermintaan akses telah dikirimkan ke Super Admin untuk persetujuan.",
+        success: false,
+      };
+    }
 
     // 4. Handle Media (Image / Receipt)
     if (payload.mediaUrl) {
