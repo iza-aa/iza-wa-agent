@@ -1267,6 +1267,78 @@ export class GoogleSheetsService {
     });
 
     logger.info({ trxId, itemsCount: items.length }, "Appended items to Data_Rincian sheet");
+
+    // Automatically refresh the visual Rincian Belanja table
+    await this.renderRincianBelanjaSheet(sheetId);
+  }
+
+  async renderRincianBelanjaSheet(sheetId: string = config.GOOGLE_SHEET_ID): Promise<void> {
+    try {
+      // 1. Get current filter values from B2:F2
+      const filterRes = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: "'Rincian Belanja'!B2:F2",
+      });
+      const filterRow = filterRes.data.values?.[0] || [];
+      const filterId = (filterRow[0] || "").toString().trim();
+      const filterDate = (filterRow[2] || "").toString().trim();
+      const filterDept = (filterRow[4] || "").toString().trim();
+
+      // 2. Fetch Data_Rincian
+      const dataRes = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: "'Data_Rincian'!A2:I500",
+      });
+      const dataRows = (dataRes.data.values || []).filter((r: any[]) => r[0] && r[3]);
+
+      // 3. Filter matching rows
+      const displayRows: any[][] = [];
+      for (let i = 0; i < dataRows.length; i++) {
+        const r = dataRows[i];
+        const dItemId = r[0];
+        const dTrxId = (r[1] || "").toString().trim();
+        const dDate = (r[2] || "").toString().trim();
+        const dItemName = r[3];
+        const dQty = r[4];
+        const dPrice = r[5];
+        const dDept = (r[6] || "").toString().trim();
+        const dNotes = r[7] || "-";
+
+        if (filterId && filterId !== "SEMUA" && dTrxId !== filterId) continue;
+        if (filterDate && filterDate !== "SEMUA" && filterDate !== "-" && dDate !== filterDate) continue;
+        if (filterDept && filterDept !== "SEMUA" && dDept.toLowerCase() !== filterDept.toLowerCase()) continue;
+
+        displayRows.push([
+          displayRows.length + 1,
+          dDate,
+          dItemName,
+          dQty,
+          dPrice,
+          dDept,
+          dNotes,
+          dItemId,
+        ]);
+      }
+
+      // 4. Update Rincian Belanja table
+      await this.sheetsClient.spreadsheets.values.clear({
+        spreadsheetId: sheetId,
+        range: "'Rincian Belanja'!A5:H40",
+      });
+
+      if (displayRows.length > 0) {
+        await this.sheetsClient.spreadsheets.values.update({
+          spreadsheetId: sheetId,
+          range: "'Rincian Belanja'!A5:H" + (displayRows.length + 4),
+          valueInputOption: "USER_ENTERED",
+          requestBody: {
+            values: displayRows,
+          },
+        });
+      }
+    } catch (err) {
+      logger.warn({ err }, "Could not auto-render Rincian Belanja sheet");
+    }
   }
 
   async setupRincianBelanjaTab(sheetId: string = config.GOOGLE_SHEET_ID): Promise<void> {
