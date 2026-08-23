@@ -1193,29 +1193,32 @@ export class GoogleSheetsService {
             });
             // 2. Ensure 'Rincian Belanja' sheet exists
             let rincianSheet = existingSheets.find((s) => s.properties?.title === this.rincianTitle);
-            let rincianSheetId = rincianSheet?.properties?.sheetId;
-            if (!rincianSheet) {
-                const addRincian = await this.sheetsClient.spreadsheets.batchUpdate({
-                    spreadsheetId: sheetId,
-                    requestBody: {
-                        requests: [
-                            {
-                                addSheet: {
-                                    properties: {
-                                        title: this.rincianTitle,
-                                        gridProperties: {
-                                            rowCount: 60,
-                                            columnCount: 10,
-                                            frozenRowCount: 4,
-                                        },
+            // If Rincian Belanja already exists, do not overwrite user's custom formatting
+            if (rincianSheet) {
+                logger.info({ sheetId }, "Rincian Belanja tab already exists - preserving user custom layout");
+                return;
+            }
+            let rincianSheetId;
+            const addRincian = await this.sheetsClient.spreadsheets.batchUpdate({
+                spreadsheetId: sheetId,
+                requestBody: {
+                    requests: [
+                        {
+                            addSheet: {
+                                properties: {
+                                    title: this.rincianTitle,
+                                    gridProperties: {
+                                        rowCount: 60,
+                                        columnCount: 10,
+                                        frozenRowCount: 4,
                                     },
                                 },
                             },
-                        ],
-                    },
-                });
-                rincianSheetId = addRincian.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
-            }
+                        },
+                    ],
+                },
+            });
+            rincianSheetId = addRincian.data.replies?.[0]?.addSheet?.properties?.sheetId || 0;
             // Build values for Rincian Belanja tab matching user's photo
             const rincianValues = [];
             // Row 1: Title
