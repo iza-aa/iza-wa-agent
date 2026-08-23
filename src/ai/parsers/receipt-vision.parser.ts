@@ -8,7 +8,11 @@ Tugasmu adalah membaca gambar struk/tabel dan mengekstrak rincian belanja seleng
 Pedoman Ekstraksi Struk & Rincian Belanja:
 1. merchant: Nama toko/restoran/badan usaha di bagian atas struk (misal Indomaret, Alfamart, Pertamina, Starbucks, Tokopedia, dll.). Jika berupa catatan/tabel belanja internal, gunakan judul catatan (misal "Belanja Harian", "Kasir", "Dapur", dll.).
 2. date: Tanggal yang tercetak pada struk/tabel (Format: YYYY-MM-DD). Jika tahun tidak tertulis, gunakan tahun saat ini.
-3. items: Daftar rincian barang yang dibeli (nama barang, qty, harga satuan, dan total harga item).
+3. items: Daftar rincian barang yang dibeli (nama barang, qty, unit/satuan, harga satuan, total harga item, dan divisi/keperluan).
+   - item_name: Nama barang murni (misal: "Sayur", "Sirup", "Cairan pembersih", "Air minum", "Minyak Goreng", "Ayam", "Token Listrik"). Jangan sertakan jumlah/satuan jika sudah dipisah ke qty & unit.
+   - qty: Angka jumlah barang (misal: 6, 1, 2, 3, 5, 1, 1).
+   - unit: Satuan barang jika tertera di struk/tabel (misal: "ikat", "dos", "botol", "karton", "liter", "pax", "kali", "kg", "pack", "pcs", "roll", dll.).
+   - department: Divisi atau Keperluan barang. JIKA PADA GAMBAR TERDAPAT KOLOM "KEPERLUAN" / "DIVISI" / "BAGIAN", BACA DAN AMBIL NILAI KOLOM TERSEBUT lalu petakan ke salah satu: "Dapur", "Barista", "Waiters", "Kasir", "Kafe". (Contoh: 'Dapur'/'dapur' -> 'Dapur', 'Barista' -> 'Barista', 'Waiters' -> 'Waiters', 'Kasir' -> 'Kasir', 'Kafe' -> 'Kafe').
    - ATURAN PENTING HARGA (AS-IS CONSUME):
      * Jika struk/tabel/catatan hanya mencantumkan 1 kolom/nilai harga per baris (misal: 'Sayur 6 ikat ... Rp 6.000', 'Minyak Goreng 5 liter ... Rp 120.000', 'Air minum 3 karton ... Rp 120.000'), ANGGAP angka tersebut adalah TOTAL HARGA untuk baris item tersebut (total_price).
      * JANGAN PERNAH mengalikan harga tersebut dengan qty (misal JANGAN hitung 5 x 120.000 = 600.000 atau 6 x 6.000 = 36.000), KECUALI di gambar tertulis sangat jelas dan terpisah antara kolom "Harga Satuan (@)" dan kolom "Total Harga".
@@ -82,13 +86,22 @@ export async function parseReceiptVision(
           unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
         }
 
+        // Map department case-insensitively and intelligently
+        let dept: "Dapur" | "Barista" | "Waiters" | "Kasir" | "Kafe" = "Kafe";
+        const rawDept = (it.department || it.keperluan || it.divisi || "").toString().trim().toLowerCase();
+        if (rawDept.includes("dapur") || rawDept.includes("kitchen")) dept = "Dapur";
+        else if (rawDept.includes("barista") || rawDept.includes("bar") || rawDept.includes("kopi")) dept = "Barista";
+        else if (rawDept.includes("waiter") || rawDept.includes("pelayan") || rawDept.includes("service")) dept = "Waiters";
+        else if (rawDept.includes("kasir") || rawDept.includes("cashier") || rawDept.includes("pos")) dept = "Kasir";
+        else if (rawDept.includes("kafe") || rawDept.includes("cafe") || rawDept.includes("umum")) dept = "Kafe";
+
         return {
           item_name: it.item_name || it.name || "Item",
           qty: qty,
           unit: it.unit || "unit",
           price: unitPrice,
           total_price: totalPrice,
-          department: ["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(it.department) ? it.department : "Kafe",
+          department: dept,
           category: it.category || undefined,
           notes: it.notes || undefined,
         };
