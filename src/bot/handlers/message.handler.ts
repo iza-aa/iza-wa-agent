@@ -185,7 +185,7 @@ export class MessageHandler {
         return;
       }
 
-      // 2. Log chat to Supabase chat_logs (Google Sheets Log_Pesan is synced via Supabase Database Webhook trigger)
+      // 2. Log chat to Supabase chat_logs and Google Sheets Log_Pesan
       const msgType = isImage ? "image" : isAudio ? "audio" : isDocument ? "document" : "text";
       await this.chatRepo.logMessage({
         user_phone: user.phone_number,
@@ -194,6 +194,12 @@ export class MessageHandler {
         direction: "inbound",
         content: body,
       });
+
+      try {
+        await googleSheetsService.appendMessageLog(user.phone_number, displayName, body, msgType);
+      } catch (sheetErr) {
+        logger.warn({ sheetErr }, "Failed to append to Google Sheets Log_Pesan");
+      }
 
       // 3. Command Check (Super Admin vs Member commands)
       if (body.startsWith("/")) {

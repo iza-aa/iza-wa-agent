@@ -91,7 +91,10 @@ export function createWhatsAppBot() {
                 }
             }
         });
-        sock.ev.on("messages.upsert", async ({ messages }) => {
+        sock.ev.on("messages.upsert", async ({ messages, type }) => {
+            // Only process live incoming notifications, ignore sync appends
+            if (type !== "notify")
+                return;
             for (const msg of messages) {
                 // Skip outgoing messages from bot itself
                 if (msg.key?.fromMe)
