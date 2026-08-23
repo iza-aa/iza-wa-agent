@@ -1330,15 +1330,15 @@ export class GoogleSheetsService {
       const rincianValues: any[][] = [];
       // Row 1: Title
       rincianValues.push(["BELANJA HARIAN", "", "", "", "", "", ""]);
-      // Row 2: Control Selector (ID Dropdown + Date Dropdown + Divisi Dropdown)
+      // Row 2: Control Selector (ID Dropdown + Native Calendar Popup + Divisi Dropdown)
       rincianValues.push([
         "🔘 ID PENGELUARAN:",
         "SEMUA",
         "📅 FILTER TANGGAL:",
-        "SEMUA",
+        "",
         "🏷️ KEPERLUAN:",
         "SEMUA",
-        '=IF(AND(B2<>""; B2<>"SEMUA"); IFERROR("👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE); ""); "")',
+        '=IF(AND(B2<>""; B2<>"SEMUA"); IFERROR("📅 Tgl: " & TEXT(VLOOKUP(B2; Transaksi!A:C; 3; FALSE); "dd/mm/yyyy") & " | 👤 " & VLOOKUP(B2; Transaksi!A:J; 10; FALSE) & " | 💰 " & TEXT(VLOOKUP(B2; Transaksi!A:G; 7; FALSE); "Rp #,##0"); "-"); IF(ISDATE(D2); "📅 Belanja Tgl: " & TEXT(D2; "dd/mm/yyyy"); "💡 Klik 2x sel D2 untuk buka kalender"))',
       ]);
       // Row 3: Spacer
       rincianValues.push(["", "", "", "", "", "", ""]);
@@ -1356,7 +1356,7 @@ export class GoogleSheetsService {
       // Row 5: Dynamic Multi-Filter Query
       rincianValues.push([
         '=IF(B5<>""; 1; "")',
-        '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; "") & IF(AND(D2<>""; D2<>"SEMUA"); " AND C = \'" & IF(ISDATE(D2); TEXT(D2; "yyyy-mm-dd"); D2) & "\'"; "") & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
+        '=IFERROR(QUERY(Data_Rincian!A2:I; "SELECT C, D, E, F, G, H WHERE A IS NOT NULL " & IF(AND(B2<>""; B2<>"SEMUA"); " AND B = \'" & B2 & "\'"; IF(ISDATE(D2); " AND C = \'" & TEXT(D2; "yyyy-mm-dd") & "\'"; "")) & IF(AND(F2<>""; F2<>"SEMUA"); " AND UPPER(G) = \'" & UPPER(F2) & "\'"; "") & " ORDER BY C DESC"; 0); "")',
         "",
         "",
         "",
@@ -1450,7 +1450,7 @@ export class GoogleSheetsService {
               },
             },
           },
-          // 5. Data Validation: Tanggal Pengeluaran Dropdown on D2 (Only Pengeluaran Dates)
+          // 5. Data Validation: Native Calendar Popup on D2 (Cell D2)
           {
             setDataValidation: {
               range: {
@@ -1462,12 +1462,25 @@ export class GoogleSheetsService {
               },
               rule: {
                 condition: {
-                  type: "ONE_OF_RANGE",
-                  values: [{ userEnteredValue: "=Data_Rincian!L2:L" }],
+                  type: "DATE_IS_VALID",
                 },
+                inputMessage: "Klik ganda (double click) untuk memilih tanggal dari kalender pop-up",
                 showCustomUi: true,
                 strict: false,
               },
+            },
+          },
+          // 5b. Date format for Cell D2
+          {
+            repeatCell: {
+              range: { sheetId: rincianSheetId, startRowIndex: 1, endRowIndex: 2, startColumnIndex: 3, endColumnIndex: 4 },
+              cell: {
+                userEnteredFormat: {
+                  horizontalAlignment: "CENTER",
+                  numberFormat: { type: "DATE", pattern: "yyyy-mm-dd" },
+                },
+              },
+              fields: "userEnteredFormat(horizontalAlignment,numberFormat)",
             },
           },
           // 6. Data Validation: Department / Keperluan Dropdown on F2 (Cell F2)
