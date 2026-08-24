@@ -2,10 +2,10 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 export const AVAILABLE_MODELS = [
-    "gemini-3.5-flash-lite",
     "gemini-flash-lite-latest",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash-lite",
 ];
 export class GeminiKeyManager {
     keys;

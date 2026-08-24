@@ -968,7 +968,7 @@ export class GoogleSheetsService {
       await this.formatTransactionRow(rowIndex, sheetId);
     }
 
-    if (items && items.length > 0) {
+    if (!isInc && items && items.length > 0) {
       try {
         await this.appendTransactionItems(trx.id, trx.date, items, trx.user_name, sheetId);
       } catch (itemErr) {

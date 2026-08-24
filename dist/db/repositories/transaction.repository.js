@@ -119,7 +119,7 @@ export class TransactionRepository {
             logger.error({ error, payload }, "Failed to insert transaction into Supabase");
             throw error;
         }
-        if (items.length > 0) {
+        if (!isInc && items.length > 0) {
             const itemsPayload = items.map((it) => ({
                 transaction_id: trxId,
                 item_name: it.item_name,
