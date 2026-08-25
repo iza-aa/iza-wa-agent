@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
 import { logger } from "../../utils/logger.js";
+import { googleSheetsService } from "../../google/sheets.service.js";
 
 export interface TransactionItem {
   id?: string;
@@ -67,26 +68,41 @@ export class TransactionRepository {
     const yearPrefix = "T" + yearStr.slice(-3);
     const prefix = `${yearPrefix}-${monthLetter}`;
 
+    // 1. Get highest sequence number from Supabase Database
+    let lastNumDB = 0;
     try {
       const { data, error } = await this.supabase
         .from("transactions")
         .select("id")
-        .like("id", `${prefix}%`)
-        .order("id", { ascending: false })
-        .limit(1);
+        .like("id", `${prefix}%`);
 
       if (!error && data && data.length > 0) {
-        const lastId = data[0].id;
-        const lastNumMatch = lastId.match(/(\d{3})$/);
-        const lastNum = lastNumMatch ? parseInt(lastNumMatch[1], 10) : 0;
-        const nextNum = String(lastNum + 1).padStart(3, "0");
-        return `${prefix}${nextNum}`;
+        for (const row of data) {
+          const match = (row.id || "").match(/(\d+)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            if (!isNaN(num) && num > lastNumDB) {
+              lastNumDB = num;
+            }
+          }
+        }
       }
     } catch (err) {
-      logger.warn({ err }, "Could not determine last transaction sequence, starting from 001");
+      logger.warn({ err }, "Could not determine last sequence from Supabase");
     }
 
-    return `${prefix}001`;
+    // 2. Get highest sequence number from Google Sheets (Transaksi Column A)
+    let lastNumSheet = 0;
+    try {
+      lastNumSheet = await googleSheetsService.getHighestTransactionSequence(prefix);
+    } catch (sheetErr) {
+      logger.warn({ sheetErr }, "Could not determine last sequence from Sheets");
+    }
+
+    // 3. Collision-free: Take the mathematical maximum of both sources + 1
+    const maxExisting = Math.max(lastNumDB, lastNumSheet);
+    const nextNum = String(maxExisting + 1).padStart(3, "0");
+    return `${prefix}${nextNum}`;
   }
 
   async findTransactionByIdOrShortCode(query: string): Promise<TransactionRecord | null> {

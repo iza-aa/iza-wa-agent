@@ -1056,6 +1056,71 @@ export class GoogleSheetsService {
             return false;
         }
     }
+    async getHighestTransactionSequence(prefix, sheetId = config.GOOGLE_SHEET_ID) {
+        try {
+            const res = await this.sheetsClient.spreadsheets.values.get({
+                spreadsheetId: sheetId,
+                range: this.sheetTitle + "!A2:A",
+            });
+            const rows = res.data.values || [];
+            let maxNum = 0;
+            for (const row of rows) {
+                const id = (row[0] || "").toString().trim();
+                if (id.startsWith(prefix)) {
+                    const match = id.match(/(\d+)$/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (!isNaN(num) && num > maxNum) {
+                            maxNum = num;
+                        }
+                    }
+                }
+            }
+            return maxNum;
+        }
+        catch (err) {
+            logger.warn({ err, prefix }, "Could not fetch highest sequence from Google Sheets");
+            return 0;
+        }
+    }
+    async deleteTransactionItems(trxId, sheetId = config.GOOGLE_SHEET_ID) {
+        try {
+            const dRes = await this.sheetsClient.spreadsheets.values.get({
+                spreadsheetId: sheetId,
+                range: this.dataRincianTitle + "!A2:I",
+            });
+            const dRows = (dRes.data.values || []).filter((r) => r[0] && r[3]);
+            const shortId = trxId.replace(/^T\d+-/, "").toUpperCase();
+            const keptDRows = dRows.filter((r) => {
+                const rowTrxId = (r[1] || "").toString().trim().toUpperCase();
+                return rowTrxId !== trxId.toUpperCase() && rowTrxId !== shortId && !rowTrxId.endsWith("-" + shortId);
+            });
+            if (keptDRows.length !== dRows.length) {
+                await this.sheetsClient.spreadsheets.values.clear({
+                    spreadsheetId: sheetId,
+                    range: this.dataRincianTitle + "!A2:I" + Math.max(dRows.length + 10, 50),
+                });
+                if (keptDRows.length > 0) {
+                    await this.sheetsClient.spreadsheets.values.update({
+                        spreadsheetId: sheetId,
+                        range: this.dataRincianTitle + "!A2:I" + (keptDRows.length + 1),
+                        valueInputOption: "USER_ENTERED",
+                        requestBody: {
+                            values: keptDRows,
+                        },
+                    });
+                }
+                await this.renderRincianBelanjaSheet(sheetId);
+                logger.info({ trxId, removedCount: dRows.length - keptDRows.length }, "Deleted items from Data_Rincian");
+                return true;
+            }
+            return false;
+        }
+        catch (err) {
+            logger.warn({ err, trxId }, "Could not delete transaction items from Data_Rincian");
+            return false;
+        }
+    }
     async deleteTransactionRow(trxId, sheetId = config.GOOGLE_SHEET_ID) {
         try {
             const res = await this.sheetsClient.spreadsheets.values.get({
@@ -1089,35 +1154,7 @@ export class GoogleSheetsService {
                 },
             });
             // Also cascade delete from Data_Rincian
-            try {
-                const dRes = await this.sheetsClient.spreadsheets.values.get({
-                    spreadsheetId: sheetId,
-                    range: this.dataRincianTitle + "!A2:I",
-                });
-                const dRows = (dRes.data.values || []).filter((r) => r[0] && r[3]);
-                const keptDRows = dRows.filter((r) => (r[1] || "").toString().trim() !== trxId);
-                if (keptDRows.length !== dRows.length) {
-                    await this.sheetsClient.spreadsheets.values.clear({
-                        spreadsheetId: sheetId,
-                        range: this.dataRincianTitle + "!A2:I" + Math.max(dRows.length + 1, 50),
-                    });
-                    if (keptDRows.length > 0) {
-                        await this.sheetsClient.spreadsheets.values.update({
-                            spreadsheetId: sheetId,
-                            range: this.dataRincianTitle + "!A2:I" + (keptDRows.length + 1),
-                            valueInputOption: "USER_ENTERED",
-                            requestBody: {
-                                values: keptDRows,
-                            },
-                        });
-                    }
-                    await this.renderRincianBelanjaSheet(sheetId);
-                    logger.info({ trxId }, "Cascade deleted items from Data_Rincian and refreshed Rincian Belanja");
-                }
-            }
-            catch (dErr) {
-                logger.warn({ dErr, trxId }, "Could not cascade delete from Data_Rincian");
-            }
+            await this.deleteTransactionItems(trxId, sheetId);
             logger.info({ trxId, rowIndex: rowIndex + 1 }, "Deleted transaction row from Google Sheet");
             return true;
         }
@@ -1326,7 +1363,7 @@ export class GoogleSheetsService {
             // 2. Fetch Data_Rincian
             const dataRes = await this.sheetsClient.spreadsheets.values.get({
                 spreadsheetId: sheetId,
-                range: "'Data_Rincian'!A2:I500",
+                range: "'Data_Rincian'!A2:I1000",
             });
             const dataRows = (dataRes.data.values || []).filter((r) => r[0] && r[3]);
             // 3. Filter matching rows
@@ -1338,22 +1375,29 @@ export class GoogleSheetsService {
                 const dTrxId = (r[1] || "").toString().trim();
                 const dDate = (r[2] || "").toString().trim();
                 const dItemName = r[3];
-                const dQty = r[4];
+                let dQty = (r[4] || "1 unit").toString().trim();
                 const dPrice = r[5];
                 const dDept = (r[6] || "").toString().trim();
-                const dNotes = r[7] || "-";
+                const dNotes = (r[7] || "").toString().trim();
                 if (filterId && filterId !== "SEMUA" && dTrxId !== filterId)
                     continue;
                 if (filterDate && filterDate !== "SEMUA" && filterDate !== "-" && dDate !== filterDate)
                     continue;
                 if (filterDept && filterDept !== "SEMUA" && dDept.toLowerCase() !== filterDept.toLowerCase())
                     continue;
+                // Natural packaging unit: if dNotes has a specific packaging/unit term, use it as dQty
+                const isPackagingNote = dNotes &&
+                    dNotes !== "-" &&
+                    /\b(\d+(\.\d+)?\s*(gantung|biji|bks|bungkus|rak|kotak|bal|ikat|btl|botol|kaleng|ekor|dos|karton|roll|lembar|pax|pack|pcs|grm|gram|ons|kg|liter|unit|buah))\b/i.test(dNotes);
+                if (isPackagingNote) {
+                    dQty = dNotes;
+                }
                 const shortId = dTrxId.replace(/^T\d+-/, "");
                 const submitter = (r[8] || "").toString().trim();
-                const customNote = dNotes && dNotes !== "-" ? dNotes : "";
+                // Clean uniform submitter format: strictly "[ID] Nama_User"
                 const noteDisplay = shortId
-                    ? (customNote ? `[${shortId}] ${customNote}` : (submitter ? `[${shortId}] ${submitter}` : `[${shortId}]`))
-                    : (dNotes || "-");
+                    ? (submitter ? `[${shortId}] ${submitter}` : `[${shortId}]`)
+                    : (submitter || "-");
                 displayRows.push([
                     displayRows.length + 1,
                     dDate,
@@ -1368,11 +1412,11 @@ export class GoogleSheetsService {
             // 4. Update Rincian Belanja table (A5:G for visible data, L5:L for hidden tracker)
             await this.sheetsClient.spreadsheets.values.clear({
                 spreadsheetId: sheetId,
-                range: "'Rincian Belanja'!A5:G36",
+                range: "'Rincian Belanja'!A5:G1000",
             });
             await this.sheetsClient.spreadsheets.values.clear({
                 spreadsheetId: sheetId,
-                range: "'Rincian Belanja'!L5:L36",
+                range: "'Rincian Belanja'!L5:L1000",
             });
             if (displayRows.length > 0) {
                 await this.sheetsClient.spreadsheets.values.update({

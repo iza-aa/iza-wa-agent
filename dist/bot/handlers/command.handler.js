@@ -647,7 +647,39 @@ export class CommandHandler {
             if (!targetArg) {
                 return {
                     handled: true,
-                    responseMessage: "❌ Format salah. Gunakan: `/rinci <ID_TRANSAKSI> <daftar rincian barang>`\n\n*Contoh:*\n`/rinci H095\n- Kertas Thermal 10 roll 80rb Kasir\n- Plastik 2 pack 50rb Kasir\n- Sirup 2 botol 150rb Barista`",
+                    responseMessage: "❌ Format salah. Gunakan: `/rinci <ID_TRANSAKSI> <daftar rincian barang>`\n\n*Contoh Tambah Rincian:*\n`/rinci H095\n- Kertas Thermal 10 roll 80rb Kasir\n- Plastik 2 pack 50rb Kasir\n- Sirup 2 botol 150rb Barista`\n\n*Contoh Hapus Rincian:*\n`/rinci hapus H095`",
+                };
+            }
+            // Sub-command: /rinci hapus <ID> or /rinci reset <ID>
+            const lowerArg = targetArg.toLowerCase();
+            if (lowerArg === "hapus" || lowerArg === "reset" || lowerArg === "clear" || lowerArg === "batal") {
+                const actualTargetId = firstLineTokens[2]?.trim();
+                if (!actualTargetId) {
+                    return {
+                        handled: true,
+                        responseMessage: "❌ Format salah. Gunakan: `/rinci hapus <ID_TRANSAKSI>`\nContoh: `/rinci hapus H061`",
+                    };
+                }
+                const targetTrx = await this.trxRepo.findTransactionByIdOrShortCode(actualTargetId);
+                if (!targetTrx) {
+                    return {
+                        handled: true,
+                        responseMessage: `⚠️ Transaksi dengan ID \`${actualTargetId}\` tidak ditemukan di database.`,
+                    };
+                }
+                if (!isSuperAdmin && targetTrx.user_phone !== senderPhone) {
+                    return {
+                        handled: true,
+                        responseMessage: "⚠️ Anda hanya dapat menghapus rincian nota transaksi yang Anda input sendiri.",
+                    };
+                }
+                // Delete items from Supabase & Google Sheets Data_Rincian
+                await this.trxRepo.deleteTransactionItems(targetTrx.id);
+                await googleSheetsService.deleteTransactionItems(targetTrx.id);
+                const shortId = targetTrx.id.replace(/^T\d+-/, "");
+                return {
+                    handled: true,
+                    responseMessage: `✅ *Butir Rincian Berhasil Dihapus!*\n\n🧾 ID Transaksi: *${targetTrx.id}* (\`${shortId}\`)\n📌 Transaksi utama & saldo kas tetap tersimpan aman.\n\n💡 _Untuk mengisi rincian baru, ketik:_\n\`/rinci ${shortId}\n- Barang 1 Qty Harga Divisi\n- Barang 2 Qty Harga Divisi\``,
                 };
             }
             // Check if targetArg is an ID (e.g. H095 or T026-H095)
