@@ -197,14 +197,24 @@ Analisis pesan di atas dan kembalikan JSON sesuai instruksi.`;
                     notes: it.notes || undefined,
                 };
             });
+            const calculatedItemsTotal = normalizedItems.reduce((acc, it) => acc + (Number(it.total_price) || 0), 0);
+            const tax = Number(rawTrx.tax || 0);
+            const discount = Number(rawTrx.discount || 0);
+            let finalTotal = Number(rawTrx.total_amount || rawTrx.subtotal || 0);
+            let finalSubtotal = Number(rawTrx.subtotal || rawTrx.total_amount || 0);
+            // Deterministic math check: if items with valid total_price exist, enforce exact CPU sum!
+            if (calculatedItemsTotal > 0) {
+                finalSubtotal = calculatedItemsTotal;
+                finalTotal = calculatedItemsTotal + tax - discount;
+            }
             const normalizedTrx = {
                 merchant: rawTrx.merchant || "Penjual",
                 date: finalDate,
                 category: rawTrx.category || "Lain-lain",
-                subtotal: Number(rawTrx.subtotal || rawTrx.total_amount || 0),
-                tax: Number(rawTrx.tax || 0),
-                discount: Number(rawTrx.discount || 0),
-                total_amount: Number(rawTrx.total_amount || rawTrx.subtotal || 0),
+                subtotal: finalSubtotal,
+                tax: tax,
+                discount: discount,
+                total_amount: finalTotal,
                 payment_method: rawTrx.payment_method || "Cash",
                 confidence_score: Number(rawTrx.confidence_score || 1.0),
                 items: normalizedItems,

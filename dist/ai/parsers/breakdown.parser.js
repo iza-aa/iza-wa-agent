@@ -62,6 +62,9 @@ Ekstraksi seluruh daftar rincian butir belanjaan di atas ke dalam format JSON ya
         logger.debug({ modelName, textResponse }, "Gemini Breakdown Parser Raw Response");
         try {
             const parsedJson = JSON.parse(textResponse);
+            if (parsedJson.items && Array.isArray(parsedJson.items)) {
+                parsedJson.total_calculated = parsedJson.items.reduce((sum, it) => sum + (Number(it.total_price) || 0), 0);
+            }
             const validated = BreakdownResponseSchema.parse(parsedJson);
             return validated;
         }
