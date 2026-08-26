@@ -1442,7 +1442,10 @@ export class GoogleSheetsService {
 
     const rows = items.map((it, idx) => {
       const uniqueId = `${trxId}-I${String(idx + 1).padStart(2, "0")}`;
-      const qtyUnit = it.unit && it.unit !== "unit" ? `${it.qty} ${it.unit}` : `${it.qty || 1} unit`;
+      let qtyUnit = it.unit && it.unit !== "unit" ? `${it.qty} ${it.unit}` : `${it.qty || 1} unit`;
+      if (it.notes && it.notes !== "-" && /\b(\d+(\.\d+)?\s*(gantung|biji|bks|bungkus|rak|kotak|bal|ikat|btl|botol|kaleng|ekor|dos|karton|roll|lembar|pax|pack|pcs|grm|gram|ons|kg|liter|unit|buah))\b/i.test(it.notes)) {
+        qtyUnit = it.notes;
+      }
       const dept = it.department || it.category || "Kafe";
       const itemPrice = it.total_price || ((it.qty || 1) * it.price);
       return [
@@ -1453,7 +1456,7 @@ export class GoogleSheetsService {
         qtyUnit, // E: Jumlah Satuan
         itemPrice, // F: Harga
         dept, // G: Keperluan
-        it.notes || "-", // H: Keterangan
+        "-", // H: Keterangan (Always clean, submitter is shown in visual table from Column I)
         userName, // I: Penginput
       ];
     });

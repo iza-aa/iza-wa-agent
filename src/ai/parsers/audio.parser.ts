@@ -134,15 +134,27 @@ Format JSON output wajib:
           unitPrice = qty > 0 ? totalPrice / qty : totalPrice;
         }
 
+        let finalUnit = it.unit || "unit";
+        let finalQty = qty;
+        if (it.notes && /\b(\d+(\.\d+)?\s*(gantung|biji|bks|bungkus|rak|kotak|bal|ikat|btl|botol|kaleng|ekor|dos|karton|roll|lembar|pax|pack|pcs|grm|gram|ons|kg|liter|unit|buah))\b/i.test(it.notes)) {
+          const match = it.notes.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+          if (match) {
+            finalQty = Number(match[1]) || qty;
+            finalUnit = match[2] || finalUnit;
+          } else {
+            finalUnit = it.notes;
+          }
+        }
+
         return {
           item_name: it.item_name || it.name || "Item",
-          qty: qty,
-          unit: it.unit || "unit",
+          qty: finalQty,
+          unit: finalUnit,
           price: unitPrice,
           total_price: totalPrice,
           department: ["Dapur", "Barista", "Waiters", "Kasir", "Kafe"].includes(it.department) ? it.department : "Kafe",
           category: it.category || undefined,
-          notes: it.notes || undefined,
+          notes: undefined,
         };
       });
 
