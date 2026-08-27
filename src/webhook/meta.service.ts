@@ -77,6 +77,36 @@ export class MetaWhatsAppService {
   }
 
   /**
+   * Marks incoming user message as read (turns checkmarks blue)
+   */
+  async markAsRead(messageId: string): Promise<boolean> {
+    const token = config.META_ACCESS_TOKEN;
+    const phoneId = config.META_PHONE_NUMBER_ID || "1293341430536275";
+
+    if (!token || !phoneId || !messageId) return false;
+
+    const url = `https://graph.facebook.com/v21.0/${phoneId}/messages`;
+
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          status: "read",
+          message_id: messageId,
+        }),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Handles incoming Meta Webhook notification (POST)
    */
   async handleIncomingWebhook(body: any): Promise<void> {
@@ -104,8 +134,14 @@ export class MetaWhatsAppService {
     for (const msg of messages) {
       const senderPhone = msg.from;
       const msgType = msg.type;
+      const msgId = msg.id;
 
-      logger.info({ senderPhone, senderName, msgType }, "Received incoming message from Meta Webhook");
+      // Mark as read immediately (turns checkmark blue on user's WhatsApp)
+      if (msgId) {
+        this.markAsRead(msgId).catch(() => {});
+      }
+
+      logger.info({ senderPhone, senderName, msgType, msgId }, "Received incoming message from Meta Webhook");
 
       const payload: WebhookIncomingPayload = {
         sender: senderPhone,
