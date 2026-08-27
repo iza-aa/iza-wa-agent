@@ -21,6 +21,9 @@ const envSchema = z.object({
   GOOGLE_APPS_SCRIPT_URL: z.string().url().optional().or(z.literal("")),
   PORT: z.string().optional().default("3000"),
   NODE_ENV: z.enum(["development", "production", "test"]).optional().default("development"),
+  META_ACCESS_TOKEN: z.string().optional().default(""),
+  META_PHONE_NUMBER_ID: z.string().optional().default(""),
+  META_VERIFY_TOKEN: z.string().optional().default("iza_wa_bot_secret_2026"),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

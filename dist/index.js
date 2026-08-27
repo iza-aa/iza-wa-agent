@@ -11,6 +11,7 @@ import { config } from "./config/env.js";
 import { logger } from "./utils/logger.js";
 import { googleSheetsService } from "./google/sheets.service.js";
 import { googleDriveService } from "./google/drive.service.js";
+import { metaWhatsAppService } from "./webhook/meta.service.js";
 async function bootstrap() {
     console.log("=================================================");
     console.log("🚀 STARTING IZA-WA-AGENT (SUPERCHARGED AI ASSISTANT)");
@@ -21,15 +22,49 @@ async function bootstrap() {
         supabaseUrl: config.SUPABASE_URL,
         googleSheetId: config.GOOGLE_SHEET_ID,
         googleDriveFolderId: config.GOOGLE_DRIVE_FOLDER_ID,
+        metaPhoneId: config.META_PHONE_NUMBER_ID || undefined,
     }, "App configuration validated");
-    // 1. Start Mini HTTP Server for Cloud Health Checks & Google Sheets Webhooks
+    // 1. Start Mini HTTP Server for Cloud Health Checks, Sheets Webhooks & Meta Webhook
     const port = process.env.PORT || config.PORT || 3000;
     const server = http.createServer(async (req, res) => {
-        if (req.url === "/health" || req.url === "/") {
+        const parsedUrl = new URL(req.url || "/", `http://localhost:${port}`);
+        if (parsedUrl.pathname === "/health" || parsedUrl.pathname === "/") {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ status: "online", service: "iza-wa-agent", timestamp: new Date().toISOString() }));
         }
-        else if (req.url === "/api/sheets-webhook" && (req.method === "POST" || req.method === "GET")) {
+        else if (parsedUrl.pathname === "/api/meta-webhook" && req.method === "GET") {
+            const challenge = metaWhatsAppService.verifyWebhook(parsedUrl.searchParams);
+            if (challenge) {
+                res.writeHead(200, { "Content-Type": "text/plain" });
+                res.end(challenge);
+            }
+            else {
+                res.writeHead(403, { "Content-Type": "text/plain" });
+                res.end("Forbidden");
+            }
+        }
+        else if (parsedUrl.pathname === "/api/meta-webhook" && req.method === "POST") {
+            let bodyStr = "";
+            req.on("data", (chunk) => {
+                bodyStr += chunk;
+            });
+            req.on("end", async () => {
+                try {
+                    const jsonBody = JSON.parse(bodyStr || "{}");
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ status: "ok" }));
+                    await metaWhatsAppService.handleIncomingWebhook(jsonBody);
+                }
+                catch (err) {
+                    logger.error({ err }, "Error processing incoming Meta webhook body");
+                    if (!res.headersSent) {
+                        res.writeHead(400);
+                        res.end();
+                    }
+                }
+            });
+        }
+        else if (parsedUrl.pathname === "/api/sheets-webhook" && (req.method === "POST" || req.method === "GET")) {
             logger.info("Received realtime webhook trigger from Google Sheets");
             try {
                 const { getSupabaseClient } = await import("./db/supabase.js");
@@ -52,7 +87,7 @@ async function bootstrap() {
         }
     });
     server.listen(port, () => {
-        logger.info({ port }, "HTTP Server is listening for health checks and sheets webhooks");
+        logger.info({ port }, "HTTP Server is listening for health checks, sheets webhooks, and Meta webhooks");
     });
     // 2. Ensure Supabase Storage Bucket for Receipts
     try {
