@@ -94,7 +94,7 @@ export class ContextBuilder {
   }
 
   /**
-   * Fetches live database records & history to construct the context for AI reasoning
+   * Fetches live database records from all 7 Supabase tables to construct context
    */
   async buildContext(userPhone: string, userName: string, currentMessage: string): Promise<string> {
     try {
@@ -117,13 +117,75 @@ export class ContextBuilder {
       // 2. Fetch real-time Audit Data (Transactions vs Receipt Items)
       const audit = await this.getAuditData();
 
-      // 3. Fetch recent chat history (last 5 messages)
+      // 3. Fetch ALL Registered Users from 'users' table
+      let allUsersSummary = "";
+      try {
+        const { data: usersList } = await this.supabase
+          .from("users")
+          .select("phone_number, name, role, status")
+          .order("name", { ascending: true });
+
+        if (usersList && usersList.length > 0) {
+          allUsersSummary = usersList
+            .map((u) => `• ${u.name} (WA: +${u.phone_number}) — Role: ${u.role === "super_admin" ? "Super Admin" : "Member"} [Status: ${u.status}]`)
+            .join("\n");
+        } else {
+          allUsersSummary = "(Belum ada data user)";
+        }
+      } catch (uErr) {
+        allUsersSummary = `• ${userName} (+${userPhone})`;
+      }
+
+      // 4. Fetch Budgets & Bills
+      let budgetsSummary = "Belum ada batas anggaran aktif.";
+      try {
+        const { data: budgets } = await this.supabase.from("budgets").select("*");
+        if (budgets && budgets.length > 0) {
+          budgetsSummary = budgets
+            .map((b) => `• Kategori ${b.category}: Limit ${formatRupiah(b.monthly_limit)}`)
+            .join("\n");
+        }
+      } catch {}
+
+      let billsSummary = "Belum ada tagihan rutin terdaftar.";
+      try {
+        const { data: bills } = await this.supabase.from("bills").select("*");
+        if (bills && bills.length > 0) {
+          billsSummary = bills
+            .map((b) => `• ${b.name}: ${formatRupiah(b.amount)} (Jatuh tempo tgl ${b.due_day}, Status: ${b.is_paid ? "LUNAS" : "BELUM BAYAR"})`)
+            .join("\n");
+        }
+      } catch {}
+
+      // 5. Fetch Pending Actions Status
+      let pendingActionsSummary = "Tidak ada draf transaksi yang sedang tertunda.";
+      try {
+        const { data: pendingActions } = await this.supabase
+          .from("pending_agent_actions")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(3);
+
+        if (pendingActions && pendingActions.length > 0) {
+          const activePending = pendingActions.filter((p) => p.status === "PENDING");
+          if (activePending.length > 0) {
+            pendingActionsSummary = activePending
+              .map((p) => `• Draf Aktif: ${p.action_type} oleh ${p.user_name} (${p.user_phone}) — Payload: ${JSON.stringify(p.payload)}`)
+              .join("\n");
+          } else {
+            const lastResolved = pendingActions[0];
+            pendingActionsSummary = `Saat ini TIDAK ADA draf PENDING aktif. Transaksi terakhir (${lastResolved.action_type} - ID: ${lastResolved.id}) sudah berstatus ${lastResolved.status}.`;
+          }
+        }
+      } catch {}
+
+      // 6. Fetch recent chat history (last 5 messages)
       const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 5);
       const recentChatStrings = chatLogs.map(
         (log) => `${log.direction === "inbound" ? "User" : "Asisten AI"}: ${log.content || ""}`
       );
 
-      // 4. Inspect if a specific transaction ID was mentioned (e.g. H120, H123, T026-H120)
+      // 7. Inspect if a specific transaction ID was mentioned (e.g. H120, H123, T026-H120)
       const idMatch = currentMessage.match(/T0\d{2}-[A-L]\d{3}|[A-L]\d{3}|\b\d{3}\b/i);
       let targetedTrxDetail = "";
       if (idMatch) {
@@ -145,14 +207,14 @@ export class ContextBuilder {
         }
       }
 
-      // 5. Fetch sample recent transactions
+      // 8. Fetch sample recent transactions
       let sampleTrxList: any[] = [];
       try {
         const cleanWords = currentMessage
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, "")
           .split(/\s+/)
-          .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih"].includes(w));
+          .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih", "user", "siapa"].includes(w));
 
         const searchKeyword = cleanWords.length > 0 ? cleanWords[0] : "";
         if (searchKeyword) {
@@ -180,7 +242,7 @@ export class ContextBuilder {
         return `• [ID: ${t.id}] Toko/Sumber: "${t.merchant}" | Nominal: ${typeSign}${formatRupiah(t.total_amount)} | Kategori: "${t.category}" | Metode: "${t.payment_method || "Cash"}" | Teks Asli: "${t.raw_text || "-"}"`;
       });
 
-      // 6. Format everything into a clean prompt context block
+      // 9. Format everything into a clean prompt context block
       let balanceSummary = `Total Saldo Kas: ${formatRupiah(totalBalance)}\n`;
       if (Object.keys(pocketBalances).length > 0) {
         balanceSummary += "Rincian per Rekening/Kantong:\n";
@@ -189,7 +251,6 @@ export class ContextBuilder {
         }
       }
 
-      // Format audit summary
       let auditSummary = `Total Pengeluaran di Tabset Transaksi: ${formatRupiah(audit.totalTrxExpense)}\n` +
         `Total Pengeluaran di Tabset Rincian Belanja: ${formatRupiah(audit.totalItemsExpense)}\n` +
         `Selisih: ${formatRupiah(audit.difference)}\n\n`;
@@ -211,22 +272,32 @@ export class ContextBuilder {
       }
 
       const contextText = `
---- DATA USER & HAK AKSES ---
-- Nama Pengguna: ${userName}
+--- DATA USER PENGIRIM CHAT ---
+- Nama: ${userName}
 - Nomor WhatsApp: ${userPhone}
 - Hak Akses: ${isSuperAdmin ? "SUPER ADMIN / OWNER" : "ANGGOTA OPERASIONAL"}
+
+--- DAFTAR SELURUH ANGGOTA TIM (TABEL USERS) ---
+${allUsersSummary}
+
+--- STATUS DRAF TRANSAKSI (TABEL PENDING_AGENT_ACTIONS) ---
+${pendingActionsSummary}
 
 --- SALDO KAS REAL-TIME (SUMBER DATA SUPABASE) ---
 ${balanceSummary.trim()}
 
---- DATA AUDIT & REKONSILIASI REAL-TIME (SUPABASE & SPREADSHEET) ---
+--- DATA AUDIT & REKONSILIASI REAL-TIME (TABEL TRANSACTIONS VS RECEIPT_ITEMS) ---
 ${auditSummary.trim()}
 ${targetedTrxDetail}
+
+--- ANGGARAN & TAGIHAN RUTIN (TABEL BUDGETS & BILLS) ---
+• Anggaran: ${budgetsSummary}
+• Tagihan: ${billsSummary}
 
 --- CONTOH TRANSAKSI NYATA TERBARU (SOURCE OF TRUTH) ---
 ${trxExamples.length > 0 ? trxExamples.join("\n") : "(Belum ada transaksi historis)"}
 
---- RIWAYAT PERCAKAPAN TERAKHIR DENGAN USER INI ---
+--- RIWAYAT PERCAKAPAN TERAKHIR DENGAN USER INI (TABEL CHAT_LOGS) ---
 ${recentChatStrings.length > 0 ? recentChatStrings.join("\n") : "(Belum ada riwayat percakapan baru)"}
 `.trim();
 
