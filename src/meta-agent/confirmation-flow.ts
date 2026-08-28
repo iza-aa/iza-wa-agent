@@ -4,7 +4,7 @@ import { UserRepository } from "../db/repositories/user.repository.js";
 import { googleSheetsService } from "../google/sheets.service.js";
 import { googleDriveService } from "../google/drive.service.js";
 import { formatRupiah } from "../bot/formatters/reply.formatter.js";
-import { TransactionDraft } from "./agent-persona.js";
+import { TransactionDraft, DeleteDraft, EditDraft } from "./agent-persona.js";
 import { logger } from "../utils/logger.js";
 
 export type ConfirmationDecision =
@@ -29,7 +29,7 @@ export class ConfirmationFlow {
     // Confirm keywords
     const confirmKeywords = [
       "ya", "iya", "oke", "ok", "yes", "gas", "simpan", "benar", "betul", "lanjut", "setuju", "acc",
-      "catat", "yup", "yoi", "sip", "mantap", "confirm", "sesuai", "bungkus", "sudah benar", "save"
+      "catat", "yup", "yoi", "sip", "mantap", "confirm", "sesuai", "bungkus", "sudah benar", "save", "hapus"
     ];
 
     if (confirmKeywords.includes(clean) || clean === "confirm_action" || clean.startsWith("✅")) {
@@ -68,14 +68,15 @@ export class ConfirmationFlow {
   async createDraft(
     userPhone: string,
     userName: string,
-    draft: TransactionDraft,
+    actionType: "CREATE_TRANSACTION" | "DELETE_TRANSACTION" | "EDIT_TRANSACTION",
+    payload: Record<string, any>,
     mediaUrl?: string
   ): Promise<PendingActionRecord> {
     return await this.pendingRepo.createPendingAction(
       userPhone,
       userName,
-      "CREATE_TRANSACTION",
-      draft,
+      actionType,
+      payload,
       mediaUrl
     );
   }
@@ -88,22 +89,76 @@ export class ConfirmationFlow {
   }
 
   /**
-   * Executes confirmed draft: writes to Supabase, Google Drive (if media exists), and Google Sheets
+   * Executes confirmed draft: writes/updates/deletes in Supabase, Google Drive (if media exists), and Google Sheets
    */
   async executeConfirmedDraft(
     draftRecord: PendingActionRecord,
     mediaBuffer?: Buffer,
     mediaMimeType?: string
   ): Promise<{ success: boolean; replyText: string }> {
-    const draft = draftRecord.payload as TransactionDraft;
+    const actionType = draftRecord.action_type;
     const userPhone = draftRecord.user_phone;
     const userName = draftRecord.user_name || "User";
 
     try {
-      // 1. Generate unique Transaction ID (e.g. T026-H001)
+      // 1. DELETE ACTION
+      if (actionType === "DELETE_TRANSACTION") {
+        const delDraft = draftRecord.payload as DeleteDraft;
+        const targetId = delDraft.transaction_id;
+
+        // Delete from Supabase
+        const deleted = await this.trxRepo.deleteTransaction(targetId);
+        // Delete from Google Sheet
+        try {
+          await googleSheetsService.deleteTransactionRow(targetId);
+        } catch (sheetErr) {
+          logger.warn({ sheetErr, targetId }, "Failed to delete row from Google Sheet");
+        }
+
+        await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+
+        const wallet = await this.trxRepo.getWalletBalance();
+        return {
+          success: true,
+          replyText: `🗑️ *Transaksi Berhasil Dihapus!*\n\n• ID: \`${targetId}\`\n• Keterangan: ${delDraft.merchant || deleted?.merchant || "-"}\n• Nominal: ${formatRupiah(delDraft.total_amount || deleted?.total_amount || 0)}\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
+        };
+      }
+
+      // 2. EDIT ACTION
+      if (actionType === "EDIT_TRANSACTION") {
+        const editDraft = draftRecord.payload as EditDraft;
+        const targetId = editDraft.transaction_id;
+        const changes = editDraft.changes;
+
+        // Update in Supabase
+        const updated = await this.trxRepo.updateTransaction(targetId, changes);
+        // Update in Google Sheets
+        if (updated) {
+          try {
+            const withItems = await this.trxRepo.getTransactionWithItems(targetId);
+            const items = withItems?.items || [];
+            await googleSheetsService.updateTransactionRow(updated, items);
+          } catch (sheetErr) {
+            logger.warn({ sheetErr, targetId }, "Failed to update row in Google Sheet");
+          }
+        }
+
+        await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+
+        const wallet = await this.trxRepo.getWalletBalance();
+        return {
+          success: true,
+          replyText: `✏️ *Transaksi Berhasil Diperbarui!*\n\n• ID: \`${targetId}\`\n• Perubahan: ${editDraft.summary || JSON.stringify(changes)}\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
+        };
+      }
+
+      // 3. CREATE TRANSACTION (Default)
+      const draft = draftRecord.payload as TransactionDraft;
+
+      // Generate unique Transaction ID (e.g. T026-H001)
       const trxId = await this.trxRepo.generateTransactionId(draft.date);
 
-      // 2. Upload media to Google Drive / Supabase Storage if present
+      // Upload media to Google Drive if present
       let driveLink = "";
       let driveFileId = "";
       if (mediaBuffer) {
@@ -122,7 +177,7 @@ export class ConfirmationFlow {
         }
       }
 
-      // 3. Normalize items
+      // Normalize items
       const items = (draft.items || []).map((it) => ({
         item_name: it.item_name,
         qty: it.qty || 1,
@@ -133,7 +188,7 @@ export class ConfirmationFlow {
         notes: it.notes || "",
       }));
 
-      // 4. Save to Supabase
+      // Save to Supabase
       const isInc = draft.type === "income" || draft.category?.toLowerCase().startsWith("pemasukan");
       const transactionRecord = await this.trxRepo.createTransaction(
         {
@@ -156,7 +211,7 @@ export class ConfirmationFlow {
         items
       );
 
-      // 5. Append to Google Sheets
+      // Append to Google Sheets
       try {
         const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, items);
         await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
@@ -164,14 +219,14 @@ export class ConfirmationFlow {
         logger.error({ sheetErr }, "Failed to append confirmed transaction to Google Sheet");
       }
 
-      // 6. Mark pending action as CONFIRMED
+      // Mark pending action as CONFIRMED
       await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
 
-      // 7. Get live updated balance
+      // Get live updated balance
       const isSuperAdmin = await this.userRepo.isSuperAdminAsync(userPhone);
       const wallet = await this.trxRepo.getWalletBalance();
 
-      // 8. Construct warm natural confirmation message
+      // Construct warm natural confirmation message
       let reply = `🎉 *Catatan Berhasil Disimpan!*\n\n`;
       reply += `🧾 *ID:* \`${trxId}\`\n`;
       reply += (isInc ? `💵 *Sumber:* ` : `🏪 *Tempat / Toko:* `) + `*${draft.merchant}*\n`;
@@ -202,7 +257,7 @@ export class ConfirmationFlow {
       logger.error({ err, draftRecord }, "Failed to execute confirmed draft");
       return {
         success: false,
-        replyText: `⚠️ Terjadi kendala saat menyimpan transaksi: ${err?.message || "Kesalahan database"}. Silakan coba lagi.`,
+        replyText: `⚠️ Terjadi kendala saat memproses aksi: ${err?.message || "Kesalahan database"}. Silakan coba lagi.`,
       };
     }
   }
@@ -212,7 +267,7 @@ export class ConfirmationFlow {
    */
   async cancelActiveDraft(draftRecord: PendingActionRecord): Promise<string> {
     await this.pendingRepo.cancelAction(draftRecord.id, draftRecord.user_phone);
-    return `👌 *Draf dibatalkan.* Catatan tadi tidak disimpan ke buku kas. Ada hal lain yang ingin saya bantu?`;
+    return `👌 *Draf dibatalkan.* Aksi tadi tidak dijalankan. Ada hal lain yang ingin saya bantu?`;
   }
 
   /**
