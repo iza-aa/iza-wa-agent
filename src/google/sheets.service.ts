@@ -950,19 +950,29 @@ export class GoogleSheetsService {
       cleanRawText, // L: Pesan Asli (Single-line flat)
     ];
 
-    const response = await this.sheetsClient.spreadsheets.values.append({
+    // Get all values in Column A to find true last row index
+    let targetRowIndex = 2;
+    try {
+      const getRes = await this.sheetsClient.spreadsheets.values.get({
+        spreadsheetId: sheetId,
+        range: this.sheetTitle + "!A:A",
+      });
+      const existingRows = getRes.data.values?.length || 1;
+      targetRowIndex = existingRows + 1;
+    } catch (rowErr) {
+      logger.warn({ rowErr }, "Could not determine exact last row in Transaksi, using append fallback");
+    }
+
+    const response = await this.sheetsClient.spreadsheets.values.update({
       spreadsheetId: sheetId,
-      range: this.sheetTitle + "!A:L",
+      range: `${this.sheetTitle}!A${targetRowIndex}:L${targetRowIndex}`,
       valueInputOption: "USER_ENTERED",
-      insertDataOption: "OVERWRITE",
       requestBody: {
         values: [rowData],
       },
     });
 
-    const updatedRange = response.data.updates?.updatedRange || "";
-    const rowMatch = updatedRange.match(/\d+$/);
-    const rowIndex = rowMatch ? parseInt(rowMatch[0], 10) : 0;
+    const rowIndex = targetRowIndex;
 
     if (rowIndex > 1) {
       await this.formatTransactionRow(rowIndex, sheetId);
@@ -976,6 +986,7 @@ export class GoogleSheetsService {
       }
     }
 
+    const updatedRange = `${this.sheetTitle}!A${targetRowIndex}:L${targetRowIndex}`;
     logger.info({ trxId: trx.id, updatedRange, rowIndex }, "Transaction appended to Google Sheet");
     return { updatedRange, rowIndex };
   }
