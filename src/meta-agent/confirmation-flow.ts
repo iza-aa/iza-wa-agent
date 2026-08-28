@@ -1,10 +1,20 @@
 import { PendingActionRepository, PendingActionRecord } from "../db/repositories/pending-action.repository.js";
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
+import { BudgetRepository } from "../db/repositories/budget.repository.js";
+import { BillRepository } from "../db/repositories/bill.repository.js";
 import { googleSheetsService } from "../google/sheets.service.js";
 import { googleDriveService } from "../google/drive.service.js";
 import { formatRupiah } from "../bot/formatters/reply.formatter.js";
-import { TransactionDraft, DeleteDraft, EditDraft } from "./agent-persona.js";
+import {
+  TransactionDraft,
+  DeleteDraft,
+  EditDraft,
+  TransferDraft,
+  UserActionDraft,
+  BudgetActionDraft,
+  BillActionDraft,
+} from "./agent-persona.js";
 import { logger } from "../utils/logger.js";
 
 export type ConfirmationDecision =
@@ -17,7 +27,9 @@ export class ConfirmationFlow {
   constructor(
     private pendingRepo: PendingActionRepository,
     private trxRepo: TransactionRepository,
-    private userRepo: UserRepository
+    private userRepo: UserRepository,
+    private budgetRepo?: BudgetRepository,
+    private billRepo?: BillRepository
   ) {}
 
   /**
@@ -46,7 +58,7 @@ export class ConfirmationFlow {
       return { type: "CANCEL" };
     }
 
-    // Check if user is asking to modify specific attributes (e.g. "ganti jadi BCA", "harganya 40rb bukan 50rb")
+    // Check if user is asking to modify specific attributes
     if (
       clean.includes("ganti") ||
       clean.includes("ubah") ||
@@ -68,7 +80,7 @@ export class ConfirmationFlow {
   async createDraft(
     userPhone: string,
     userName: string,
-    actionType: "CREATE_TRANSACTION" | "DELETE_TRANSACTION" | "EDIT_TRANSACTION",
+    actionType: string,
     payload: Record<string, any>,
     mediaUrl?: string
   ): Promise<PendingActionRecord> {
@@ -89,7 +101,7 @@ export class ConfirmationFlow {
   }
 
   /**
-   * Executes confirmed draft: writes/updates/deletes in Supabase, Google Drive (if media exists), and Google Sheets
+   * Executes confirmed draft across all action types
    */
   async executeConfirmedDraft(
     draftRecord: PendingActionRecord,
@@ -106,9 +118,7 @@ export class ConfirmationFlow {
         const delDraft = draftRecord.payload as DeleteDraft;
         const targetId = delDraft.transaction_id;
 
-        // Delete from Supabase
         const deleted = await this.trxRepo.deleteTransaction(targetId);
-        // Delete from Google Sheet
         try {
           await googleSheetsService.deleteTransactionRow(targetId);
         } catch (sheetErr) {
@@ -116,8 +126,8 @@ export class ConfirmationFlow {
         }
 
         await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
-
         const wallet = await this.trxRepo.getWalletBalance();
+
         return {
           success: true,
           replyText: `🗑️ *Transaksi Berhasil Dihapus!*\n\n• ID: \`${targetId}\`\n• Keterangan: ${delDraft.merchant || deleted?.merchant || "-"}\n• Nominal: ${formatRupiah(delDraft.total_amount || deleted?.total_amount || 0)}\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
@@ -130,9 +140,7 @@ export class ConfirmationFlow {
         const targetId = editDraft.transaction_id;
         const changes = editDraft.changes;
 
-        // Update in Supabase
         const updated = await this.trxRepo.updateTransaction(targetId, changes);
-        // Update in Google Sheets
         if (updated) {
           try {
             const withItems = await this.trxRepo.getTransactionWithItems(targetId);
@@ -144,21 +152,190 @@ export class ConfirmationFlow {
         }
 
         await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
-
         const wallet = await this.trxRepo.getWalletBalance();
+
         return {
           success: true,
           replyText: `✏️ *Transaksi Berhasil Diperbarui!*\n\n• ID: \`${targetId}\`\n• Perubahan: ${editDraft.summary || JSON.stringify(changes)}\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
         };
       }
 
-      // 3. CREATE TRANSACTION (Default)
-      const draft = draftRecord.payload as TransactionDraft;
+      // 3. TRANSFER / MUTASI ANTAR REKENING ACTION
+      if (actionType === "TRANSFER_BALANCE") {
+        const tDraft = draftRecord.payload as TransferDraft;
+        const fromPocket = tDraft.source_pocket;
+        const toPocket = tDraft.target_pocket;
+        const nominal = Number(tDraft.amount) || 0;
+        const notes = tDraft.notes || "Mutasi Kas Antar Rekening";
+        const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
 
-      // Generate unique Transaction ID (e.g. T026-H001)
+        const outTrxId = await this.trxRepo.generateTransactionId(today);
+        await this.trxRepo.createTransaction({
+          id: outTrxId,
+          user_phone: userPhone,
+          user_name: userName,
+          date: today,
+          merchant: `Mutasi Keluar -> ${toPocket}`,
+          category: "Mutasi Kas: Keluar",
+          subtotal: nominal,
+          tax: 0,
+          discount: 0,
+          total_amount: nominal,
+          payment_method: fromPocket,
+          raw_text: notes,
+          status: "expense",
+        });
+
+        const inTrxId = await this.trxRepo.generateTransactionId(today);
+        await this.trxRepo.createTransaction({
+          id: inTrxId,
+          user_phone: userPhone,
+          user_name: userName,
+          date: today,
+          merchant: `Mutasi Masuk <- ${fromPocket}`,
+          category: "Pemasukan: Mutasi Kas",
+          subtotal: nominal,
+          tax: 0,
+          discount: 0,
+          total_amount: nominal,
+          payment_method: toPocket,
+          raw_text: notes,
+          status: "income",
+        });
+
+        try {
+          await googleSheetsService.appendTransaction({
+            id: outTrxId,
+            user_phone: userPhone,
+            user_name: userName,
+            date: today,
+            merchant: `Mutasi Keluar -> ${toPocket} (${notes})`,
+            category: "Mutasi Kas: Keluar",
+            subtotal: nominal,
+            tax: 0,
+            discount: 0,
+            total_amount: nominal,
+            payment_method: fromPocket,
+            status: "expense",
+            raw_text: notes,
+          });
+
+          await googleSheetsService.appendTransaction({
+            id: inTrxId,
+            user_phone: userPhone,
+            user_name: userName,
+            date: today,
+            merchant: `Mutasi Masuk <- ${fromPocket} (${notes})`,
+            category: "Pemasukan: Mutasi Kas",
+            subtotal: nominal,
+            tax: 0,
+            discount: 0,
+            total_amount: nominal,
+            payment_method: toPocket,
+            status: "income",
+            raw_text: notes,
+          });
+        } catch (sheetErr) {
+          logger.error({ sheetErr }, "Failed to append transfer to Google Sheets");
+        }
+
+        await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+
+        return {
+          success: true,
+          replyText: `🔄 *Mutasi Saldo Berhasil Dicatat!*\n\n• Dari Kantong: *${fromPocket}* (Keluar: -${formatRupiah(nominal)})\n• Ke Kantong: *${toPocket}* (Masuk: +${formatRupiah(nominal)})\n• Keterangan: ${notes}\n• ID Transaksi: \`${outTrxId}\` & \`${inTrxId}\``,
+        };
+      }
+
+      // 4. USER MANAGEMENT ACTION
+      if (actionType === "MANAGE_USER") {
+        const uDraft = draftRecord.payload as UserActionDraft;
+        const targetPhone = uDraft.target_phone.replace(/[^0-9]/g, "");
+
+        if (uDraft.action === "ADD") {
+          await this.userRepo.upsertUser({
+            phone_number: targetPhone,
+            name: uDraft.target_name || "Anggota Baru",
+            role: uDraft.role || "member",
+            status: "active",
+          });
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `✅ *Anggota Berhasil Didaftarkan!*\n\n• Nama: *${uDraft.target_name}*\n• Nomor WhatsApp: +${targetPhone}\n• Hak Akses: *${uDraft.role === "super_admin" ? "Super Admin" : "Member"}*`,
+          };
+        } else if (uDraft.action === "BLOCK") {
+          await this.userRepo.setUserStatus(targetPhone, "blocked");
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `🚫 *Pengguna Berhasil Dinonaktifkan/Diblokir!*\n\nNomor +${targetPhone} telah diblokir dari akses bot.`,
+          };
+        } else if (uDraft.action === "UNBLOCK") {
+          await this.userRepo.setUserStatus(targetPhone, "active");
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `✅ *Pengguna Berhasil Diaktifkan Kembali!*\n\nNomor +${targetPhone} kini dapat menggunakan bot kembali.`,
+          };
+        } else if (uDraft.action === "CHANGE_ROLE") {
+          await this.userRepo.setUserRole(targetPhone, uDraft.role || "member");
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `👑 *Peran Pengguna Berhasil Diperbarui!*\n\nNomor +${targetPhone} sekarang memiliki hak akses: *${uDraft.role === "super_admin" ? "Super Admin" : "Member"}*.`,
+          };
+        }
+      }
+
+      // 5. BUDGET MANAGEMENT ACTION
+      if (actionType === "MANAGE_BUDGET" && this.budgetRepo) {
+        const bDraft = draftRecord.payload as BudgetActionDraft;
+        if (bDraft.action === "SET") {
+          await this.budgetRepo.upsertBudget(bDraft.category, bDraft.month, bDraft.limit_amount);
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `🎯 *Batas Anggaran Berhasil Disimpan!*\n\n• Kategori: *${bDraft.category}*\n• Periode: *${bDraft.month}*\n• Batas Maksimal: *${formatRupiah(bDraft.limit_amount)}*\n\nSistem akan mengirim peringatan jika pengeluaran kategori ini mendekati 80% dan 100%.`,
+          };
+        } else if (bDraft.action === "DELETE") {
+          await this.budgetRepo.deleteBudget(bDraft.category, bDraft.month);
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `🗑️ *Anggaran Dihapus!*\n\nBatas anggaran untuk kategori *${bDraft.category}* (${bDraft.month}) telah dinonaktifkan.`,
+          };
+        }
+      }
+
+      // 6. BILL MANAGEMENT ACTION
+      if (actionType === "MANAGE_BILL" && this.billRepo) {
+        const biDraft = draftRecord.payload as BillActionDraft;
+        if (biDraft.action === "ADD") {
+          await this.billRepo.createBill({
+            bill_name: biDraft.bill_name,
+            amount: biDraft.amount,
+            due_day: biDraft.due_day,
+          });
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `📅 *Tagihan Rutin Berhasil Didaftarkan!*\n\n• Nama Tagihan: *${biDraft.bill_name}*\n• Nominal: *${formatRupiah(biDraft.amount)}*\n• Tanggal Jatuh Tempo: *Tiap tanggal ${biDraft.due_day}*\n\nSistem otomatis mengirim pengingat sebelum jatuh tempo.`,
+          };
+        } else if (biDraft.action === "DELETE") {
+          await this.billRepo.deleteBill(biDraft.bill_name);
+          await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
+          return {
+            success: true,
+            replyText: `🗑️ *Tagihan Rutin Dihapus!*\n\nTagihan *${biDraft.bill_name}* telah dihapus dari daftar pengingat.`,
+          };
+        }
+      }
+
+      // 7. CREATE TRANSACTION (Default)
+      const draft = draftRecord.payload as TransactionDraft;
       const trxId = await this.trxRepo.generateTransactionId(draft.date);
 
-      // Upload media to Google Drive if present
       let driveLink = "";
       let driveFileId = "";
       if (mediaBuffer) {
@@ -177,7 +354,6 @@ export class ConfirmationFlow {
         }
       }
 
-      // Normalize items
       const items = (draft.items || []).map((it) => ({
         item_name: it.item_name,
         qty: it.qty || 1,
@@ -188,7 +364,6 @@ export class ConfirmationFlow {
         notes: it.notes || "",
       }));
 
-      // Save to Supabase
       const isInc = draft.type === "income" || draft.category?.toLowerCase().startsWith("pemasukan");
       const transactionRecord = await this.trxRepo.createTransaction(
         {
@@ -211,7 +386,6 @@ export class ConfirmationFlow {
         items
       );
 
-      // Append to Google Sheets
       try {
         const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, items);
         await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
@@ -219,14 +393,11 @@ export class ConfirmationFlow {
         logger.error({ sheetErr }, "Failed to append confirmed transaction to Google Sheet");
       }
 
-      // Mark pending action as CONFIRMED
       await this.pendingRepo.confirmAction(draftRecord.id, userPhone);
 
-      // Get live updated balance
       const isSuperAdmin = await this.userRepo.isSuperAdminAsync(userPhone);
       const wallet = await this.trxRepo.getWalletBalance();
 
-      // Construct warm natural confirmation message
       let reply = `🎉 *Catatan Berhasil Disimpan!*\n\n`;
       reply += `🧾 *ID:* \`${trxId}\`\n`;
       reply += (isInc ? `💵 *Sumber:* ` : `🏪 *Tempat / Toko:* `) + `*${draft.merchant}*\n`;
@@ -249,8 +420,6 @@ export class ConfirmationFlow {
           reply += `\n🔗 *Bukti Nota:* ${driveLink}\n`;
         }
       }
-
-      reply += `\n💡 _Ketik \`/batal\` jika sewaktu-waktu ingin membatalkan transaksi ini._`;
 
       return { success: true, replyText: reply };
     } catch (err: any) {

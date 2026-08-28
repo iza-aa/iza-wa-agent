@@ -1,4 +1,5 @@
 import { formatRupiah } from "../bot/formatters/reply.formatter.js";
+import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 export class ContextBuilder {
     supabase;
@@ -285,6 +286,11 @@ ${balanceSummary.trim()}
 --- DATA AUDIT & REKONSILIASI REAL-TIME (TABEL TRANSACTIONS VS RECEIPT_ITEMS) ---
 ${auditSummary.trim()}
 ${targetedTrxDetail}
+
+--- TAUTAN SISTEM RESMI ---
+• Google Spreadsheet Utama: https://docs.google.com/spreadsheets/d/${config.GOOGLE_SHEET_ID}/edit
+• Google Drive Folder Nota: https://drive.google.com/drive/folders/${config.GOOGLE_DRIVE_FOLDER_ID}
+• Media Sosial (Instagram / TikTok): Belum dikonfigurasi di sistem (sampaikan dengan ramah bahwa belum ditautkan jika ditanya).
 
 --- ANGGARAN & TAGIHAN RUTIN (TABEL BUDGETS & BILLS) ---
 • Anggaran: ${budgetsSummary}

@@ -247,6 +247,20 @@ export class UserRepository {
         }
         return data;
     }
+    async updateUserName(phone, newName) {
+        const cleaned = this.cleanIdentifier(phone);
+        const { data, error } = await this.supabase
+            .from("users")
+            .update({ name: newName.trim(), updated_at: new Date().toISOString() })
+            .eq("phone_number", cleaned)
+            .select()
+            .maybeSingle();
+        if (error) {
+            logger.error({ error, phone: cleaned, newName }, "Failed to update user name");
+            return null;
+        }
+        return data;
+    }
     async setUserStatus(target, status, name) {
         const rawTarget = target.trim();
         let cleanedPhone = this.cleanIdentifier(rawTarget);

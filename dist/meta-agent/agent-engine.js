@@ -1,4 +1,8 @@
+import { BudgetRepository } from "../db/repositories/budget.repository.js";
+import { BillRepository } from "../db/repositories/bill.repository.js";
 import { googleSheetsService } from "../google/sheets.service.js";
+import { googleDriveService } from "../google/drive.service.js";
+import { pdfReportService } from "../services/pdf-report.service.js";
 import { knowledgeLoader } from "./knowledge-loader.js";
 import { ContextBuilder } from "./context-builder.js";
 import { agyConnector } from "./agy-connector.js";
@@ -16,14 +20,18 @@ export class AgentEngine {
     pendingRepo;
     contextBuilder;
     confirmationFlow;
+    budgetRepo;
+    billRepo;
     constructor(supabase, trxRepo, userRepo, chatRepo, pendingRepo) {
         this.supabase = supabase;
         this.trxRepo = trxRepo;
         this.userRepo = userRepo;
         this.chatRepo = chatRepo;
         this.pendingRepo = pendingRepo;
+        this.budgetRepo = new BudgetRepository(supabase);
+        this.billRepo = new BillRepository(supabase);
         this.contextBuilder = new ContextBuilder(supabase, trxRepo, chatRepo, userRepo);
-        this.confirmationFlow = new ConfirmationFlow(pendingRepo, trxRepo, userRepo);
+        this.confirmationFlow = new ConfirmationFlow(pendingRepo, trxRepo, userRepo, this.budgetRepo, this.billRepo);
     }
     /**
      * Main entry point for processing incoming messages from Meta WhatsApp
@@ -42,6 +50,7 @@ export class AgentEngine {
                 const wallet = await this.trxRepo.getWalletBalance();
                 return {
                     reply: `🔄 *Sinkronisasi Berhasil!*\n\nData dari Google Spreadsheet telah berhasil ditarik dan diselaraskan dengan database Supabase.\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
+                    buttons: [{ id: "CHECK_BALANCE", title: "📊 Cek Saldo Kas" }],
                     success: true,
                 };
             }
@@ -62,6 +71,7 @@ export class AgentEngine {
                 const execResult = await this.confirmationFlow.executeConfirmedDraft(activeDraft, mediaBuffer, mediaMimeType);
                 return {
                     reply: execResult.replyText,
+                    buttons: [{ id: "CHECK_REKAP", title: "📊 Lihat Rekap" }],
                     success: execResult.success,
                 };
             }
@@ -195,7 +205,7 @@ export class AgentEngine {
         const dataContext = await this.contextBuilder.buildContext(userPhone, userName, effectiveText);
         const systemPrompt = buildSystemPrompt(knowledgeText, dataContext);
         const aiResponse = await agyConnector.chat(systemPrompt, effectiveText, userPhone);
-        // Case 3A: AI wants to propose creating a new transaction
+        // Case 3A: Propose creating a new transaction
         if (aiResponse.response_type === "DRAFT_TRANSACTION" &&
             aiResponse.transaction_draft &&
             aiResponse.transaction_draft.total_amount > 0) {
@@ -212,7 +222,7 @@ export class AgentEngine {
                 success: true,
             };
         }
-        // Case 3B: AI wants to propose deleting a transaction
+        // Case 3B: Propose deleting a transaction
         if (aiResponse.response_type === "DRAFT_DELETE" && aiResponse.delete_draft?.transaction_id) {
             const del = aiResponse.delete_draft;
             await this.confirmationFlow.createDraft(userPhone, userName, "DELETE_TRANSACTION", del);
@@ -226,7 +236,7 @@ export class AgentEngine {
                 success: true,
             };
         }
-        // Case 3C: AI wants to propose editing a transaction
+        // Case 3C: Propose editing a transaction
         if (aiResponse.response_type === "DRAFT_EDIT" && aiResponse.edit_draft?.transaction_id) {
             const ed = aiResponse.edit_draft;
             await this.confirmationFlow.createDraft(userPhone, userName, "EDIT_TRANSACTION", ed);
@@ -240,7 +250,115 @@ export class AgentEngine {
                 success: true,
             };
         }
-        // Otherwise, return AI's natural conversational response (answer query / audit findings / chat)
+        // Case 3D: Propose Mutasi Antar Rekening (Transfer)
+        if (aiResponse.response_type === "DRAFT_TRANSFER" && aiResponse.transfer_draft?.amount) {
+            const tr = aiResponse.transfer_draft;
+            await this.confirmationFlow.createDraft(userPhone, userName, "TRANSFER_BALANCE", tr);
+            const confirmText = `${aiResponse.reply_text}\n\n🔄 *KONFIRMASI MUTASI SALDO:*\n• Dari: *${tr.source_pocket}*\n• Ke: *${tr.target_pocket}*\n• Nominal: *${formatRupiah(tr.amount)}*\n• Keterangan: ${tr.notes || "-"}\n\n👉 *Apakah Anda ingin mencatat mutasi saldo ini?*`;
+            return {
+                reply: confirmText,
+                buttons: [
+                    { id: "CONFIRM_ACTION", title: "✅ Ya, Mutasikan" },
+                    { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                ],
+                success: true,
+            };
+        }
+        // Case 3E: Propose User Management Action (Add, Block, Unblock, Change Role)
+        if (aiResponse.response_type === "DRAFT_USER_ACTION" && aiResponse.user_draft?.target_phone) {
+            const ud = aiResponse.user_draft;
+            await this.confirmationFlow.createDraft(userPhone, userName, "MANAGE_USER", ud);
+            const confirmText = `${aiResponse.reply_text}\n\n👥 *KONFIRMASI AKSI PENGGUNA:*\n• Aksi: *${ud.action}*\n• Target: +${ud.target_phone}${ud.target_name ? ` (${ud.target_name})` : ""}\n• Peran: ${ud.role || "-"}\n\n👉 *Apakah Anda yakin ingin mengeksekusi aksi ini?*`;
+            return {
+                reply: confirmText,
+                buttons: [
+                    { id: "CONFIRM_ACTION", title: "✅ Ya, Lanjutkan" },
+                    { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                ],
+                success: true,
+            };
+        }
+        // Case 3F: Propose Budget Management Action
+        if (aiResponse.response_type === "DRAFT_BUDGET_ACTION" && aiResponse.budget_draft?.category) {
+            const bg = aiResponse.budget_draft;
+            await this.confirmationFlow.createDraft(userPhone, userName, "MANAGE_BUDGET", bg);
+            const confirmText = `${aiResponse.reply_text}\n\n🎯 *KONFIRMASI PENGATURAN ANGGARAN:*\n• Kategori: *${bg.category}*\n• Limit: *${formatRupiah(bg.limit_amount)}*\n• Periode: ${bg.month}\n\n👉 *Apakah Anda ingin menyimpan anggaran ini?*`;
+            return {
+                reply: confirmText,
+                buttons: [
+                    { id: "CONFIRM_ACTION", title: "✅ Ya, Set Budget" },
+                    { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                ],
+                success: true,
+            };
+        }
+        // Case 3G: Propose Bill Management Action
+        if (aiResponse.response_type === "DRAFT_BILL_ACTION" && aiResponse.bill_draft?.bill_name) {
+            const bl = aiResponse.bill_draft;
+            await this.confirmationFlow.createDraft(userPhone, userName, "MANAGE_BILL", bl);
+            const confirmText = `${aiResponse.reply_text}\n\n📅 *KONFIRMASI JADWAL TAGIHAN:*\n• Tagihan: *${bl.bill_name}*\n• Nominal: *${formatRupiah(bl.amount)}*\n• Jatuh Tempo: Tgl ${bl.due_day}\n\n👉 *Apakah Anda ingin mendaftarkan tagihan ini?*`;
+            return {
+                reply: confirmText,
+                buttons: [
+                    { id: "CONFIRM_ACTION", title: "✅ Ya, Daftarkan" },
+                    { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                ],
+                success: true,
+            };
+        }
+        // Case 3H: Direct User Name Update
+        if (aiResponse.response_type === "UPDATE_NAME" && aiResponse.new_name) {
+            try {
+                await this.userRepo.updateUserName(userPhone, aiResponse.new_name);
+                return {
+                    reply: `✏️ *Nama Berhasil Diperbarui!*\n\nNama tampilan Anda telah diubah menjadi: *${aiResponse.new_name}*.`,
+                    success: true,
+                };
+            }
+            catch (nameErr) {
+                return {
+                    reply: `⚠️ Gagal mengubah nama: ${nameErr?.message || "Kesalahan database"}`,
+                    success: false,
+                };
+            }
+        }
+        // Case 3I: Export PDF Report
+        if (aiResponse.response_type === "EXPORT_PDF") {
+            const targetMonth = aiResponse.export_year_month ||
+                new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date()).slice(0, 7);
+            try {
+                const summary = await this.trxRepo.getMonthlySummary(targetMonth);
+                const [year, month] = targetMonth.split("-");
+                const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate();
+                const transactions = await this.trxRepo.getTransactionsByDateRange(`${targetMonth}-01`, `${targetMonth}-${lastDay.toString().padStart(2, "0")}`);
+                const pdfBuffer = await pdfReportService.generateMonthlyReportPdf({
+                    targetMonth,
+                    totalIncome: summary.totalIncome || 0,
+                    totalExpense: summary.totalExpense !== undefined ? summary.totalExpense : summary.total,
+                    netCashflow: summary.netCashflow !== undefined
+                        ? summary.netCashflow
+                        : (summary.totalIncome || 0) - (summary.totalExpense || summary.total),
+                    count: summary.count,
+                    byCategory: summary.byCategory || {},
+                    transactions,
+                });
+                // Upload PDF to Google Drive so user can click and view immediately
+                const uploadRes = await googleDriveService.uploadReceipt(pdfBuffer, `Laporan_Keuangan_${targetMonth}`, userName, true);
+                return {
+                    reply: `📄 *Dokumen PDF Laporan Keuangan (${targetMonth}) Selesai Dibuat!*\n\n• Total Pemasukan: ${formatRupiah(summary.totalIncome || 0)}\n• Total Pengeluaran: ${formatRupiah(summary.totalExpense || summary.total)}\n• Arus Kas Bersih: ${formatRupiah(summary.netCashflow || 0)}\n• Jumlah Transaksi: ${summary.count} transaksi\n\n🔗 *Unduh & Buka Dokumen PDF:* \n${uploadRes.webViewLink}`,
+                    buttons: [{ id: "CHECK_BALANCE", title: "📊 Cek Saldo Kas" }],
+                    success: true,
+                };
+            }
+            catch (pdfErr) {
+                logger.error({ pdfErr }, "Failed to generate PDF report in Meta WA");
+                return {
+                    reply: `⚠️ Terjadi kendala saat menyusun dokumen PDF laporan keuangan: ${pdfErr?.message}`,
+                    success: false,
+                };
+            }
+        }
+        // Otherwise, return AI's natural conversational response
         return {
             reply: aiResponse.reply_text || "Halo! Ada yang bisa saya bantu terkait pencatatan kas?",
             buttons: aiResponse.suggested_buttons,

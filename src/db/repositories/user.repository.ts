@@ -310,6 +310,23 @@ export class UserRepository {
     return data as UserRecord | null;
   }
 
+  async updateUserName(phone: string, newName: string): Promise<UserRecord | null> {
+    const cleaned = this.cleanIdentifier(phone);
+    const { data, error } = await this.supabase
+      .from("users")
+      .update({ name: newName.trim(), updated_at: new Date().toISOString() })
+      .eq("phone_number", cleaned)
+      .select()
+      .maybeSingle();
+
+    if (error) {
+      logger.error({ error, phone: cleaned, newName }, "Failed to update user name");
+      return null;
+    }
+
+    return data as UserRecord | null;
+  }
+
   async setUserStatus(
     target: string,
     status: "active" | "blocked" | "pending",
