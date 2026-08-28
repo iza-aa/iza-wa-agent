@@ -12,7 +12,7 @@ export class ContextBuilder {
         this.userRepo = userRepo;
     }
     /**
-     * Performs an instant real-time audit between transactions and receipt items
+     * Performs an instant real-time audit between transactions and receipt items, including division totals
      */
     async getAuditData() {
         try {
@@ -22,11 +22,21 @@ export class ContextBuilder {
                 .order("date", { ascending: false });
             const { data: items } = await this.supabase
                 .from("receipt_items")
-                .select("transaction_id, total_price");
+                .select("transaction_id, total_price, category");
+            const departmentTotals = {
+                Dapur: 0,
+                Barista: 0,
+                Kasir: 0,
+                Waiters: 0,
+                Kafe: 0,
+            };
             const itemSums = {};
             for (const it of items || []) {
+                const cat = (it.category || "Kafe").trim();
+                const price = Number(it.total_price) || 0;
+                departmentTotals[cat] = (departmentTotals[cat] || 0) + price;
                 if (it.transaction_id) {
-                    itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + Number(it.total_price);
+                    itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + price;
                 }
             }
             let totalTrxExpense = 0;
@@ -65,6 +75,7 @@ export class ContextBuilder {
                 totalTrxExpense,
                 totalItemsExpense,
                 difference: totalTrxExpense - totalItemsExpense,
+                departmentTotals,
                 unitemized,
                 mismatched,
             };
@@ -75,6 +86,7 @@ export class ContextBuilder {
                 totalTrxExpense: 0,
                 totalItemsExpense: 0,
                 difference: 0,
+                departmentTotals: {},
                 unitemized: [],
                 mismatched: [],
             };
@@ -100,7 +112,7 @@ export class ContextBuilder {
             catch (balErr) {
                 logger.warn({ balErr }, "Failed to fetch live balance for context");
             }
-            // 2. Fetch real-time Audit Data (Transactions vs Receipt Items)
+            // 2. Fetch real-time Audit Data & Division Totals
             const audit = await this.getAuditData();
             // 3. Fetch ALL Registered Users from 'users' table
             let allUsersSummary = "";
@@ -196,7 +208,7 @@ export class ContextBuilder {
                     .toLowerCase()
                     .replace(/[^a-z0-9\s]/g, "")
                     .split(/\s+/)
-                    .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih", "user", "siapa"].includes(w));
+                    .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih", "user", "siapa", "dapur", "barista"].includes(w));
                 const searchKeyword = cleanWords.length > 0 ? cleanWords[0] : "";
                 if (searchKeyword) {
                     sampleTrxList = await this.trxRepo.searchTransactions({
@@ -247,6 +259,11 @@ export class ContextBuilder {
                     auditSummary += `  • [${m.id}] ${m.date} - ${m.merchant}: Total Trx ${formatRupiah(m.trxAmount)} vs Total Rincian ${formatRupiah(m.itemsTotal)} (Selisih: ${formatRupiah(m.diff)})\n`;
                 });
             }
+            // Department breakdown summary
+            let deptSummary = "Total Pengeluaran per Divisi (dari Tabset Rincian Belanja & Dashboard):\n";
+            for (const [dept, total] of Object.entries(audit.departmentTotals)) {
+                deptSummary += `• ${dept}: ${formatRupiah(total)}\n`;
+            }
             const contextText = `
 --- DATA USER PENGIRIM CHAT ---
 - Nama: ${userName}
@@ -255,6 +272,9 @@ export class ContextBuilder {
 
 --- DAFTAR SELURUH ANGGOTA TIM (TABEL USERS) ---
 ${allUsersSummary}
+
+--- REKAP PENGELUARAN PER DIVISI / DASHBOARD OPERASIONAL ---
+${deptSummary.trim()}
 
 --- STATUS DRAF TRANSAKSI (TABEL PENDING_AGENT_ACTIONS) ---
 ${pendingActionsSummary}

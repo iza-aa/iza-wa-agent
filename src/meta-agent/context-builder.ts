@@ -14,12 +14,13 @@ export class ContextBuilder {
   ) {}
 
   /**
-   * Performs an instant real-time audit between transactions and receipt items
+   * Performs an instant real-time audit between transactions and receipt items, including division totals
    */
   private async getAuditData(): Promise<{
     totalTrxExpense: number;
     totalItemsExpense: number;
     difference: number;
+    departmentTotals: Record<string, number>;
     unitemized: Array<{ id: string; merchant: string; date: string; amount: number; category: string }>;
     mismatched: Array<{ id: string; merchant: string; date: string; trxAmount: number; itemsTotal: number; diff: number }>;
   }> {
@@ -31,12 +32,24 @@ export class ContextBuilder {
 
       const { data: items } = await this.supabase
         .from("receipt_items")
-        .select("transaction_id, total_price");
+        .select("transaction_id, total_price, category");
+
+      const departmentTotals: Record<string, number> = {
+        Dapur: 0,
+        Barista: 0,
+        Kasir: 0,
+        Waiters: 0,
+        Kafe: 0,
+      };
 
       const itemSums: Record<string, number> = {};
       for (const it of items || []) {
+        const cat = (it.category || "Kafe").trim();
+        const price = Number(it.total_price) || 0;
+        departmentTotals[cat] = (departmentTotals[cat] || 0) + price;
+
         if (it.transaction_id) {
-          itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + Number(it.total_price);
+          itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + price;
         }
       }
 
@@ -78,6 +91,7 @@ export class ContextBuilder {
         totalTrxExpense,
         totalItemsExpense,
         difference: totalTrxExpense - totalItemsExpense,
+        departmentTotals,
         unitemized,
         mismatched,
       };
@@ -87,6 +101,7 @@ export class ContextBuilder {
         totalTrxExpense: 0,
         totalItemsExpense: 0,
         difference: 0,
+        departmentTotals: {},
         unitemized: [],
         mismatched: [],
       };
@@ -114,7 +129,7 @@ export class ContextBuilder {
         logger.warn({ balErr }, "Failed to fetch live balance for context");
       }
 
-      // 2. Fetch real-time Audit Data (Transactions vs Receipt Items)
+      // 2. Fetch real-time Audit Data & Division Totals
       const audit = await this.getAuditData();
 
       // 3. Fetch ALL Registered Users from 'users' table
@@ -214,7 +229,7 @@ export class ContextBuilder {
           .toLowerCase()
           .replace(/[^a-z0-9\s]/g, "")
           .split(/\s+/)
-          .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih", "user", "siapa"].includes(w));
+          .filter((w) => w.length >= 3 && !["beli", "buat", "tadi", "tolong", "mau", "saya", "uang", "audit", "cek", "selisih", "user", "siapa", "dapur", "barista"].includes(w));
 
         const searchKeyword = cleanWords.length > 0 ? cleanWords[0] : "";
         if (searchKeyword) {
@@ -271,6 +286,12 @@ export class ContextBuilder {
         });
       }
 
+      // Department breakdown summary
+      let deptSummary = "Total Pengeluaran per Divisi (dari Tabset Rincian Belanja & Dashboard):\n";
+      for (const [dept, total] of Object.entries(audit.departmentTotals)) {
+        deptSummary += `• ${dept}: ${formatRupiah(total)}\n`;
+      }
+
       const contextText = `
 --- DATA USER PENGIRIM CHAT ---
 - Nama: ${userName}
@@ -279,6 +300,9 @@ export class ContextBuilder {
 
 --- DAFTAR SELURUH ANGGOTA TIM (TABEL USERS) ---
 ${allUsersSummary}
+
+--- REKAP PENGELUARAN PER DIVISI / DASHBOARD OPERASIONAL ---
+${deptSummary.trim()}
 
 --- STATUS DRAF TRANSAKSI (TABEL PENDING_AGENT_ACTIONS) ---
 ${pendingActionsSummary}
