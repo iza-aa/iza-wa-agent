@@ -78,8 +78,8 @@ export class TransactionRepository {
         const currentYearPrefix = "T" + currentYear.slice(-3);
         const currentMonthIdx = parseInt(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(today).slice(5, 7), 10) - 1;
         const currentMonthLetter = MONTH_LETTERS[currentMonthIdx] || "H";
-        // 2. Format MonthLetter + Number (e.g. "H001" or "H1" or "A005")
-        const letterMatch = cleaned.match(/^([A-L])(\d{1,3})$/);
+        // 2. Format MonthLetter + Number (e.g. "H001", "H-118", "H 118", "A005")
+        const letterMatch = cleaned.match(/^([A-L])[-_\s]?(\d{1,3})$/);
         if (letterMatch) {
             const letter = letterMatch[1];
             const num = letterMatch[2].padStart(3, "0");

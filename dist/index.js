@@ -11,7 +11,8 @@ import { config } from "./config/env.js";
 import { logger } from "./utils/logger.js";
 import { googleSheetsService } from "./google/sheets.service.js";
 import { googleDriveService } from "./google/drive.service.js";
-import { metaWhatsAppService } from "./webhook/meta.service.js";
+import { metaApiClient } from "./meta-agent/meta-api.client.js";
+import { metaWebhookHandler } from "./meta-agent/meta-webhook.handler.js";
 async function bootstrap() {
     console.log("=================================================");
     console.log("🚀 STARTING IZA-WA-AGENT (SUPERCHARGED AI ASSISTANT)");
@@ -33,7 +34,7 @@ async function bootstrap() {
             res.end(JSON.stringify({ status: "online", service: "iza-wa-agent", timestamp: new Date().toISOString() }));
         }
         else if (parsedUrl.pathname === "/api/meta-webhook" && req.method === "GET") {
-            const challenge = metaWhatsAppService.verifyWebhook(parsedUrl.searchParams);
+            const challenge = metaApiClient.verifyWebhook(parsedUrl.searchParams);
             if (challenge) {
                 res.writeHead(200, { "Content-Type": "text/plain" });
                 res.end(challenge);
@@ -53,7 +54,7 @@ async function bootstrap() {
                     const jsonBody = JSON.parse(bodyStr || "{}");
                     res.writeHead(200, { "Content-Type": "application/json" });
                     res.end(JSON.stringify({ status: "ok" }));
-                    await metaWhatsAppService.handleIncomingWebhook(jsonBody);
+                    await metaWebhookHandler.handleIncomingWebhook(jsonBody);
                 }
                 catch (err) {
                     logger.error({ err }, "Error processing incoming Meta webhook body");

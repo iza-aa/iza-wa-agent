@@ -96,6 +96,10 @@ export class MessageHandler {
         try {
             // 1. User Access & Status Check
             let user = await this.userRepo.getUser(senderPhone, pushName);
+            if (user && user.status === "blocked") {
+                await sock.sendMessage(remoteJid, { text: "⛔ Akses nomor Anda telah dinonaktifkan. Silakan hubungi Super Admin untuk mengaktifkan kembali." }, { quoted: msg });
+                return;
+            }
             if (!user || user.status !== "active") {
                 // One-Time Phone Verification Handshake: Check if user sent a phone number
                 const digitsOnly = body.replace(/[^0-9]/g, "");

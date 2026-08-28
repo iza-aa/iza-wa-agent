@@ -1,6 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { UserRepository } from "../../../src/db/repositories/user.repository.js";
 import { TransactionRepository } from "../../../src/db/repositories/transaction.repository.js";
+import { googleSheetsService } from "../../../src/google/sheets.service.js";
+
+vi.mock("../../../src/google/sheets.service.js", () => ({
+  googleSheetsService: {
+    getHighestTransactionSequence: vi.fn().mockResolvedValue(5),
+  },
+}));
 
 describe("Database Repositories", () => {
   let mockSupabase: any;
@@ -56,14 +63,29 @@ describe("Database Repositories", () => {
       expect(trxId).toBe("T026-H006");
     });
 
-    it("should find transaction by short code H001 or 1", async () => {
+    it("should find transaction by short code H001, 1, or H-118", async () => {
       mockSupabase.from.mockReturnValue({
         select: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            maybeSingle: vi.fn().mockResolvedValue({
-              data: { id: "T026-H001", merchant: "Kopi", total_amount: 25000 },
-              error: null,
-            }),
+          eq: vi.fn().mockImplementation((col, val) => {
+            if (val === "T026-H001") {
+              return {
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: "T026-H001", merchant: "Kopi", total_amount: 25000 },
+                  error: null,
+                }),
+              };
+            }
+            if (val === "T026-H118") {
+              return {
+                maybeSingle: vi.fn().mockResolvedValue({
+                  data: { id: "T026-H118", merchant: "Pemasukan Kas", total_amount: 2253000 },
+                  error: null,
+                }),
+              };
+            }
+            return {
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            };
           }),
         }),
       });
@@ -74,6 +96,12 @@ describe("Database Repositories", () => {
 
       const res2 = await trxRepo.findTransactionByIdOrShortCode("1");
       expect(res2?.id).toBe("T026-H001");
+
+      const res3 = await trxRepo.findTransactionByIdOrShortCode("H-118");
+      expect(res3?.id).toBe("T026-H118");
+
+      const res4 = await trxRepo.findTransactionByIdOrShortCode("h-118");
+      expect(res4?.id).toBe("T026-H118");
     });
   });
 });

@@ -24,6 +24,7 @@ const envSchema = z.object({
   META_ACCESS_TOKEN: z.string().optional().default(""),
   META_PHONE_NUMBER_ID: z.string().optional().default(""),
   META_VERIFY_TOKEN: z.string().optional().default("iza_wa_bot_secret_2026"),
+  AGY_CLI_PATH: z.string().optional().default("agy"),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

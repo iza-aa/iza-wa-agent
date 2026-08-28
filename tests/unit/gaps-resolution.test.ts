@@ -601,6 +601,12 @@ describe("Comprehensive 43-Gap Resolution Test Suite", () => {
   describe("POV: Blocked User Perspective", () => {
     it("should reject any message or command from blocked users", async () => {
       const blockedUserRepo: any = {
+        getUser: vi.fn().mockResolvedValue({
+          phone_number: "628999999999",
+          name: "Blocked User",
+          role: "member",
+          status: "blocked",
+        }),
         getOrCreateUser: vi.fn().mockResolvedValue({
           phone_number: "628999999999",
           name: "Blocked User",
