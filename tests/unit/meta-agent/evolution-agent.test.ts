@@ -39,7 +39,7 @@ describe("Evolution API v2 Client Test Suite", () => {
     );
   });
 
-  it("should send interactive buttons with correct Evolution v2 payload", async () => {
+  it("should send interactive list menu with correct Evolution v2 payload", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -62,18 +62,24 @@ describe("Evolution API v2 Client Test Suite", () => {
 
     expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/message/sendButtons/iza-executive"),
+      expect.stringContaining("/message/sendList/iza-executive"),
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
           number: "6287864550486",
           title: "Menu Utama",
           description: "Silakan pilih aksi:",
-          footer: "IZA Executive Assistant",
-          buttons: [
-            { type: "reply", displayText: "📊 Cek Saldo", id: "CHECK_BALANCE" },
-            { type: "reply", displayText: "📁 Google Drive", id: "GOOGLE_DRIVE" },
-            { type: "reply", displayText: "📑 Spreadsheet", id: "SPREADSHEET" },
+          buttonText: "📋 Buka Menu",
+          footerText: "IZA Executive Assistant",
+          sections: [
+            {
+              title: "Aksi Tersedia",
+              rows: [
+                { title: "📊 Cek Saldo", description: "Pilih aksi 📊 Cek Saldo", rowId: "CHECK_BALANCE" },
+                { title: "📁 Google Drive", description: "Pilih aksi 📁 Google Drive", rowId: "GOOGLE_DRIVE" },
+                { title: "📑 Spreadsheet", description: "Pilih aksi 📑 Spreadsheet", rowId: "SPREADSHEET" },
+              ],
+            },
           ],
         }),
       })
