@@ -15,6 +15,7 @@ import { googleSheetsService } from "./google/sheets.service.js";
 import { googleDriveService } from "./google/drive.service.js";
 import { metaApiClient } from "./meta-agent/meta-api.client.js";
 import { metaWebhookHandler } from "./meta-agent/meta-webhook.handler.js";
+import { evolutionApiClient } from "./meta-agent/evolution-api.client.js";
 import { evolutionWebhookHandler } from "./meta-agent/evolution-webhook.handler.js";
 
 async function bootstrap() {
@@ -102,6 +103,68 @@ async function bootstrap() {
         logger.error({ err }, "Error processing sheets webhook");
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ success: false, error: err?.message || "Sync failed" }));
+      }
+    } else if ((parsedUrl.pathname === "/qr" || parsedUrl.pathname === "/qr-executive") && req.method === "GET") {
+      try {
+        const qrData = await evolutionApiClient.getConnectQrCode();
+        if (!qrData) {
+          res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:50px;">
+            <h2>❌ Gagal memuat status Evolution API</h2>
+            <p>Pastikan container Evolution API berjalan di port 8080.</p>
+          </body></html>`);
+          return;
+        }
+
+        if (qrData.status === "open") {
+          res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+          res.end(`<!DOCTYPE html>
+          <html>
+            <head>
+              <title>WhatsApp Business - Terhubung</title>
+              <meta http-equiv="refresh" content="10">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            </head>
+            <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;padding:40px 16px;background:#f0f2f5;">
+              <div style="background:#fff;max-width:440px;margin:auto;padding:32px 24px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+                <div style="font-size:48px;margin-bottom:12px;">✅</div>
+                <h2 style="color:#0f5132;margin:0 0 10px;">WhatsApp Terhubung!</h2>
+                <p style="color:#4b5563;font-size:14px;line-height:1.5;">Nomor <b>${config.EVOLUTION_AGENT_PHONE || "087864550486"}</b> (Instance: <code>${config.EVOLUTION_INSTANCE_NAME}</code>) aktif dan siap melayani percakapan.</p>
+                <div style="margin-top:20px;padding:12px;background:#d1e7dd;border-radius:8px;color:#0f5132;font-size:14px;font-weight:600;">Status: ONLINE</div>
+              </div>
+            </body>
+          </html>`);
+          return;
+        }
+
+        const base64Img = qrData.base64 || "";
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(`<!DOCTYPE html>
+        <html>
+          <head>
+            <title>Scan QR WhatsApp Business - IZA Agent</title>
+            <meta http-equiv="refresh" content="5">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;padding:30px 16px;background:#f0f2f5;color:#1c1e21;">
+            <div style="background:#fff;max-width:440px;margin:auto;padding:28px 20px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+              <h2 style="margin:0 0 6px;color:#111827;font-size:20px;">Scan QR WhatsApp Business</h2>
+              <p style="color:#6b7280;font-size:13px;margin:0 0 18px;">Instance: <b>${config.EVOLUTION_INSTANCE_NAME}</b> | Auto-refresh setiap 5 detik</p>
+              
+              ${base64Img ? `<img src="${base64Img}" alt="QR Code" style="width:280px;height:280px;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 12px rgba(0,0,0,0.06);display:block;margin:auto;" />` : `<div style="padding:60px 20px;background:#f9fafb;border-radius:12px;color:#6b7280;">⏳ Menghasilkan QR Code baru...</div>`}
+              
+              <div style="text-align:left;background:#f9fafb;padding:16px;border-radius:10px;margin-top:20px;font-size:13px;color:#374151;line-height:1.6;border:1px solid #e5e7eb;">
+                <b style="color:#111827;">Petunjuk Tautkan:</b><br/>
+                1. Buka <b>WhatsApp Business</b> di HP (${config.EVOLUTION_AGENT_PHONE || "087864550486"})<br/>
+                2. Buka <b>Pengaturan / Settings</b> &rarr; <b>Perangkat Tertaut (Linked Devices)</b><br/>
+                3. Ketuk <b>Tautkan Perangkat</b> lalu arahkan kamera ke QR Code di atas.
+              </div>
+            </div>
+          </body>
+        </html>`);
+      } catch (err: any) {
+        res.writeHead(500, { "Content-Type": "text/plain" });
+        res.end("Internal error: " + err?.message);
       }
     } else {
       res.writeHead(404);

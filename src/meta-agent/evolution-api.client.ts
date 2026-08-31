@@ -250,6 +250,30 @@ export class EvolutionApiClient {
       return null;
     }
   }
+
+  /**
+   * Retrieves current connection status and QR code base64
+   */
+  async getConnectQrCode(): Promise<{ status: string; base64?: string; pairingCode?: string } | null> {
+    const url = `${this.apiUrl}/instance/connect/${this.instance}`;
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.headers,
+      });
+      const data = (await response.json().catch(() => ({}))) as any;
+      const base64 = data?.base64 || data?.qrcode?.base64;
+      const status = data?.instance?.status || data?.status || (base64 ? "connecting" : "unknown");
+      return {
+        status,
+        base64,
+        pairingCode: data?.pairingCode,
+      };
+    } catch (err) {
+      logger.error({ err }, "Failed to get QR code from Evolution API");
+      return null;
+    }
+  }
 }
 
 export const evolutionApiClient = new EvolutionApiClient();
