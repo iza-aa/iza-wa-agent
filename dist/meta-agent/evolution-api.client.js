@@ -46,17 +46,49 @@ export class EvolutionApiClient {
     }
     /**
      * Sends interactive button message to WhatsApp user via Evolution API v2
-     * Formats clean options for 100% WhatsApp Baileys delivery compatibility
+     * Renders native clickable box buttons on the user screen
      */
     async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText = "IZA Executive Assistant") {
-        let formattedText = bodyText;
-        if (buttons && buttons.length > 0) {
-            formattedText += "\n\n" + buttons.map((b) => `👉 *${b.title}*`).join("\n");
+        const cleanTo = to.replace(/[^0-9]/g, "");
+        const url = `${this.apiUrl}/message/sendButtons/${this.instance}`;
+        // Format buttons for Evolution API v2 spec
+        const formattedButtons = buttons.slice(0, 3).map((btn) => ({
+            type: "reply",
+            displayText: btn.title,
+            id: btn.id,
+        }));
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: this.headers,
+                body: JSON.stringify({
+                    number: cleanTo,
+                    title: headerText || "Menu Pilihan",
+                    description: bodyText,
+                    footer: footerText,
+                    buttons: formattedButtons,
+                }),
+            });
+            const resData = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                logger.warn({ resData, status: response.status }, "sendButtons failed, falling back to clean text buttons");
+                let fallbackText = bodyText;
+                if (buttons.length > 0) {
+                    fallbackText += "\n\n" + buttons.map((b) => `👉 *${b.title}* (Ketik: \`${b.title}\`)`).join("\n");
+                }
+                return this.sendTextMessage(to, fallbackText);
+            }
+            logger.info({ to: cleanTo, count: buttons.length }, "Sent interactive buttons via Evolution API");
+            return true;
         }
-        if (footerText) {
-            formattedText += `\n\n_${footerText}_`;
+        catch (err) {
+            logger.error({ err, to: cleanTo }, "Network error sending buttons via Evolution API, using fallback");
+            let fallbackText = bodyText;
+            if (buttons.length > 0) {
+                fallbackText += "\n\n" + buttons.map((b) => `👉 *${b.title}* (Ketik: \`${b.title}\`)`).join("\n");
+            }
+            return this.sendTextMessage(to, fallbackText);
         }
-        return this.sendTextMessage(to, formattedText);
     }
     /**
      * Sends media / document / PDF to WhatsApp user via Evolution API v2
