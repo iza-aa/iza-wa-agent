@@ -45,23 +45,63 @@ export class EvolutionApiClient {
         }
     }
     /**
-     * Sends formatted interactive choices to WhatsApp user via Evolution API
-     * Formats options as clear, actionable numbered list to ensure delivery on all devices (mobile & web)
-     * without triggering WhatsApp's "view once" bug on unofficial Web sockets
+     * Sends native 1-tap WhatsApp Poll via Evolution API v2
+     * 100% natively supported across iOS, Android, Web & Desktop without view-once restrictions
+     */
+    async sendPoll(to, pollName, values, selectableCount = 1) {
+        const cleanTo = to.replace(/[^0-9]/g, "");
+        const url = `${this.apiUrl}/message/sendPoll/${this.instance}`;
+        if (values.length < 2) {
+            return false;
+        }
+        try {
+            const response = await fetch(url, {
+                method: "POST",
+                headers: this.headers,
+                body: JSON.stringify({
+                    number: cleanTo,
+                    pollMessage: {
+                        name: pollName.slice(0, 255),
+                        selectableCount: selectableCount,
+                        values: values.slice(0, 12),
+                    },
+                }),
+            });
+            const resData = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                logger.warn({ resData, status: response.status, to: cleanTo }, "Failed to send poll via Evolution API");
+                return false;
+            }
+            logger.info({ to: cleanTo, pollName, count: values.length }, "Sent native 1-tap poll via Evolution API");
+            return true;
+        }
+        catch (err) {
+            logger.error({ err, to: cleanTo }, "Network error sending poll via Evolution API");
+            return false;
+        }
+    }
+    /**
+     * Sends interactive message to WhatsApp user via Evolution API:
+     * 1. Sends the response body text
+     * 2. Sends native 1-tap WhatsApp Poll for instant clicking/voting
      */
     async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText = "IZA Executive Assistant") {
+        // 1. Send the primary conversational text first
         let message = bodyText;
         if (headerText && !bodyText.startsWith(headerText)) {
             message = `*${headerText}*\n\n${bodyText}`;
         }
-        if (buttons.length > 0) {
-            message += "\n\n" + buttons.map((b, i) => `${i + 1}️⃣ *${b.title}*`).join("\n");
-            message += "\n\n_Ketik angka atau nama menu di atas untuk memilih._";
-        }
         if (footerText) {
             message += `\n\n_${footerText}_`;
         }
-        return this.sendTextMessage(to, message);
+        const textSent = await this.sendTextMessage(to, message);
+        // 2. If 2 or more buttons/choices exist, send Native 1-Tap WhatsApp Poll
+        if (buttons.length >= 2) {
+            const pollTitle = headerText || "📋 Pilih Menu Cepat:";
+            const pollValues = buttons.map((b) => b.title);
+            await this.sendPoll(to, pollTitle, pollValues, 1);
+        }
+        return textSent;
     }
     /**
      * Sends media / document / PDF to WhatsApp user via Evolution API v2

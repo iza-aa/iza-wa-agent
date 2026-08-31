@@ -117,6 +117,14 @@ export class EvolutionWebhookHandler {
       } catch {
         messageText = msgContent.interactiveResponseMessage.body?.text || "";
       }
+    } else if (msgContent.pollUpdateMessage || rawData.pollUpdateMessage) {
+      const poll = msgContent.pollUpdateMessage || rawData.pollUpdateMessage;
+      const selected = poll.vote?.selectedOptions || poll.selectedOptions || poll.pollUpdates?.[0]?.vote?.selectedOptions;
+      if (Array.isArray(selected) && selected.length > 0) {
+        messageText = typeof selected[0] === "string" ? selected[0] : (selected[0].name || selected[0].optionName || "");
+      } else if (typeof selected === "string") {
+        messageText = selected;
+      }
     } else if (msgContent.imageMessage) {
       messageText = msgContent.imageMessage.caption || "";
     } else if (msgContent.documentMessage) {
