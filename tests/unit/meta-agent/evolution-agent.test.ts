@@ -79,6 +79,9 @@ describe("Evolution API v2 Client Test Suite", () => {
         method: "POST",
         body: JSON.stringify({
           number: "6287864550486",
+          name: "Menu Utama",
+          selectableCount: 1,
+          values: ["📊 Cek Saldo", "📁 Google Drive", "📑 Spreadsheet"],
           pollMessage: {
             name: "Menu Utama",
             selectableCount: 1,

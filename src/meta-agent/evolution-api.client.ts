@@ -80,6 +80,9 @@ export class EvolutionApiClient {
         headers: this.headers,
         body: JSON.stringify({
           number: cleanTo,
+          name: pollName.slice(0, 255),
+          selectableCount: selectableCount,
+          values: values.slice(0, 12),
           pollMessage: {
             name: pollName.slice(0, 255),
             selectableCount: selectableCount,

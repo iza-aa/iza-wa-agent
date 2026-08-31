@@ -436,10 +436,21 @@ export class AgentEngine {
       }
     }
 
-    // Otherwise, return AI's natural conversational response
+    // Otherwise, return AI's natural conversational response with interactive quick actions
+    const defaultMenuButtons: InteractiveButton[] = [
+      { id: "CHECK_BALANCE", title: "💰 Cek Saldo" },
+      { id: "REKAP_KAS", title: "📊 Rekap Kas" },
+      { id: "AUDIT_KAS", title: "🔍 Audit Kas" },
+    ];
+
+    const finalButtons =
+      aiResponse.suggested_buttons && aiResponse.suggested_buttons.length >= 2
+        ? aiResponse.suggested_buttons
+        : defaultMenuButtons;
+
     return {
       reply: aiResponse.reply_text || "Halo! Ada yang bisa saya bantu terkait pencatatan kas?",
-      buttons: aiResponse.suggested_buttons,
+      buttons: finalButtons,
       success: true,
     };
   }
