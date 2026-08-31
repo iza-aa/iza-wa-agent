@@ -39,7 +39,7 @@ describe("Evolution API v2 Client Test Suite", () => {
     );
   });
 
-  it("should send interactive buttons with correct Evolution v2 payload", async () => {
+  it("should format and send interactive buttons cleanly over sendText", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -62,59 +62,13 @@ describe("Evolution API v2 Client Test Suite", () => {
 
     expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/message/sendButtons/iza-executive"),
+      expect.stringContaining("/message/sendText/iza-executive"),
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
           number: "6287864550486",
-          title: "Menu Utama",
-          description: "Silakan pilih aksi:",
-          footer: "IZA Executive Assistant",
-          buttons: [
-            { type: "reply", displayText: "📊 Cek Saldo", id: "CHECK_BALANCE" },
-            { type: "reply", displayText: "📁 Google Drive", id: "GOOGLE_DRIVE" },
-            { type: "reply", displayText: "📑 Spreadsheet", id: "SPREADSHEET" },
-          ],
+          text: "Silakan pilih aksi:\n\n👉 *📊 Cek Saldo*\n👉 *📁 Google Drive*\n👉 *📑 Spreadsheet*\n\n_IZA Executive Assistant_",
         }),
-      })
-    );
-  });
-
-  it("should fallback to formatted text if sendButtons fails", async () => {
-    let callCount = 0;
-    const mockFetch = vi.fn().mockImplementation((url) => {
-      callCount++;
-      if (url.includes("/message/sendButtons/")) {
-        return Promise.resolve({
-          ok: false,
-          status: 400,
-          json: async () => ({ error: "Bad Request" }),
-        });
-      }
-      // Fallback call to sendText
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        json: async () => ({ status: "SUCCESS" }),
-      });
-    });
-    globalThis.fetch = mockFetch;
-
-    const buttons = [{ id: "CONFIRM_ACTION", title: "✅ Simpan" }];
-    const result = await client.sendInteractiveButtons(
-      "6287864550486",
-      "Konfirmasi draf ini?",
-      buttons
-    );
-
-    expect(result).toBe(true);
-    expect(callCount).toBe(2);
-    // Verify fallback to sendText
-    expect(mockFetch).toHaveBeenLastCalledWith(
-      expect.stringContaining("/message/sendText/iza-executive"),
-      expect.objectContaining({
-        method: "POST",
-        body: expect.stringContaining("👉 *✅ Simpan* (Ketik: `✅ Simpan`)"),
       })
     );
   });
