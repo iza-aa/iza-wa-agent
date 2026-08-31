@@ -39,7 +39,7 @@ describe("Evolution API v2 Client Test Suite", () => {
     );
   });
 
-  it("should send interactive buttons with Evolution API v2 payload via sendButtons", async () => {
+  it("should send interactive choices formatted cleanly via sendText", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -62,19 +62,12 @@ describe("Evolution API v2 Client Test Suite", () => {
 
     expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/message/sendButtons/iza-executive"),
+      expect.stringContaining("/message/sendText/iza-executive"),
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
           number: "6287864550486",
-          title: "Menu Utama",
-          description: "Silakan pilih aksi:",
-          footer: "IZA Executive Assistant",
-          buttons: [
-            { type: "reply", displayText: "📊 Cek Saldo", id: "CHECK_BALANCE" },
-            { type: "reply", displayText: "📁 Google Drive", id: "GOOGLE_DRIVE" },
-            { type: "reply", displayText: "📑 Spreadsheet", id: "SPREADSHEET" },
-          ],
+          text: "*Menu Utama*\n\nSilakan pilih aksi:\n\n1️⃣ *📊 Cek Saldo*\n2️⃣ *📁 Google Drive*\n3️⃣ *📑 Spreadsheet*\n\n_Ketik angka atau nama menu di atas untuk memilih._\n\n_IZA Executive Assistant_",
         }),
       })
     );
