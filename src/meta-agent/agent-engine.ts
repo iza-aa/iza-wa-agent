@@ -16,7 +16,7 @@ import { buildSystemPrompt, TransactionDraft } from "./agent-persona.js";
 import { parseReceiptVision } from "../ai/parsers/receipt-vision.parser.js";
 import { parseAudioVoiceNote } from "../ai/parsers/audio.parser.js";
 import { formatRupiah } from "../bot/formatters/reply.formatter.js";
-import { InteractiveButton } from "./meta-api.client.js";
+import { InteractiveButton } from "./evolution-api.client.js";
 import { logger } from "../utils/logger.js";
 
 export interface AgentProcessResult {

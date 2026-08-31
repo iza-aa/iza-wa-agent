@@ -22,6 +22,10 @@ const envSchema = z.object({
     META_ACCESS_TOKEN: z.string().optional().default(""),
     META_PHONE_NUMBER_ID: z.string().optional().default(""),
     META_VERIFY_TOKEN: z.string().optional().default("iza_wa_bot_secret_2026"),
+    EVOLUTION_API_URL: z.string().optional().default("http://localhost:8080"),
+    EVOLUTION_API_KEY: z.string().optional().default("iza_evolution_secret_key_2026"),
+    EVOLUTION_INSTANCE_NAME: z.string().optional().default("iza-executive"),
+    EVOLUTION_AGENT_PHONE: z.string().optional().default("6287864550486"),
     AGY_CLI_PATH: z.string().optional().default("agy"),
 });
 export function parseEnv(rawEnv = process.env) {

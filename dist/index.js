@@ -13,6 +13,7 @@ import { googleSheetsService } from "./google/sheets.service.js";
 import { googleDriveService } from "./google/drive.service.js";
 import { metaApiClient } from "./meta-agent/meta-api.client.js";
 import { metaWebhookHandler } from "./meta-agent/meta-webhook.handler.js";
+import { evolutionWebhookHandler } from "./meta-agent/evolution-webhook.handler.js";
 async function bootstrap() {
     console.log("=================================================");
     console.log("🚀 STARTING IZA-WA-AGENT (SUPERCHARGED AI ASSISTANT)");
@@ -58,6 +59,27 @@ async function bootstrap() {
                 }
                 catch (err) {
                     logger.error({ err }, "Error processing incoming Meta webhook body");
+                    if (!res.headersSent) {
+                        res.writeHead(400);
+                        res.end();
+                    }
+                }
+            });
+        }
+        else if (parsedUrl.pathname === "/api/evolution-webhook" && req.method === "POST") {
+            let bodyStr = "";
+            req.on("data", (chunk) => {
+                bodyStr += chunk;
+            });
+            req.on("end", async () => {
+                try {
+                    const jsonBody = JSON.parse(bodyStr || "{}");
+                    res.writeHead(200, { "Content-Type": "application/json" });
+                    res.end(JSON.stringify({ status: "ok" }));
+                    await evolutionWebhookHandler.handleIncomingWebhook(jsonBody);
+                }
+                catch (err) {
+                    logger.error({ err }, "Error processing incoming Evolution webhook body");
                     if (!res.headersSent) {
                         res.writeHead(400);
                         res.end();
