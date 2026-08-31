@@ -39,7 +39,7 @@ describe("Evolution API v2 Client Test Suite", () => {
     );
   });
 
-  it("should send interactive list menu with correct Evolution v2 payload", async () => {
+  it("should send interactive buttons with Meta-parity payload via sendInteractive", async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
@@ -62,25 +62,24 @@ describe("Evolution API v2 Client Test Suite", () => {
 
     expect(result).toBe(true);
     expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining("/message/sendList/iza-executive"),
+      expect.stringContaining("/message/sendInteractive/iza-executive"),
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({
           number: "6287864550486",
-          title: "Menu Utama",
-          description: "Silakan pilih aksi:",
-          buttonText: "📋 Buka Menu",
-          footerText: "IZA Executive Assistant",
-          sections: [
-            {
-              title: "Aksi Tersedia",
-              rows: [
-                { title: "📊 Cek Saldo", description: "Pilih aksi 📊 Cek Saldo", rowId: "CHECK_BALANCE" },
-                { title: "📁 Google Drive", description: "Pilih aksi 📁 Google Drive", rowId: "GOOGLE_DRIVE" },
-                { title: "📑 Spreadsheet", description: "Pilih aksi 📑 Spreadsheet", rowId: "SPREADSHEET" },
+          interactive: {
+            type: "button",
+            header: { type: "text", text: "Menu Utama" },
+            body: { text: "Silakan pilih aksi:" },
+            footer: { text: "IZA Executive Assistant" },
+            action: {
+              buttons: [
+                { type: "reply", reply: { id: "CHECK_BALANCE", title: "📊 Cek Saldo" } },
+                { type: "reply", reply: { id: "GOOGLE_DRIVE", title: "📁 Google Drive" } },
+                { type: "reply", reply: { id: "SPREADSHEET", title: "📑 Spreadsheet" } },
               ],
             },
-          ],
+          },
         }),
       })
     );

@@ -58,8 +58,8 @@ export class EvolutionApiClient {
   }
 
   /**
-   * Sends interactive menu message to WhatsApp user via Evolution API v2
-   * Uses sendList (Interactive List Menu) for 100% WhatsApp Web & Mobile clickable compatibility
+   * Sends interactive button message to WhatsApp user via Evolution API v2
+   * Uses Meta-compatible sendInteractive payload to produce native clickable buttons
    */
   async sendInteractiveButtons(
     to: string,
@@ -69,54 +69,78 @@ export class EvolutionApiClient {
     footerText: string = "IZA Executive Assistant"
   ): Promise<boolean> {
     const cleanTo = to.replace(/[^0-9]/g, "");
-    const url = `${this.apiUrl}/message/sendList/${this.instance}`;
 
-    // Format list rows for Evolution API v2
-    const rows = buttons.map((btn) => ({
-      title: btn.title,
-      description: `Pilih aksi ${btn.title}`,
-      rowId: btn.id,
+    // 1. Primary: POST /message/sendInteractive (Meta-parity nativeFlowMessage)
+    const interactiveUrl = `${this.apiUrl}/message/sendInteractive/${this.instance}`;
+    const formattedButtons = buttons.slice(0, 3).map((btn) => ({
+      type: "reply",
+      reply: {
+        id: btn.id,
+        title: btn.title.slice(0, 20),
+      },
     }));
 
     try {
-      const response = await fetch(url, {
+      const response = await fetch(interactiveUrl, {
         method: "POST",
         headers: this.headers,
         body: JSON.stringify({
           number: cleanTo,
-          title: headerText || "📋 Menu Pilihan",
-          description: bodyText,
-          buttonText: "📋 Buka Menu",
-          footerText: footerText,
-          sections: [
-            {
-              title: "Aksi Tersedia",
-              rows: rows,
+          interactive: {
+            type: "button",
+            header: headerText ? { type: "text", text: headerText } : undefined,
+            body: { text: bodyText },
+            footer: { text: footerText },
+            action: {
+              buttons: formattedButtons,
             },
-          ],
+          },
         }),
       });
 
-      const resData = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        logger.warn({ resData, status: response.status }, "sendList failed, falling back to formatted text");
-        let fallbackText = bodyText;
-        if (buttons.length > 0) {
-          fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}️⃣ *${b.title}*`).join("\n");
-        }
-        return this.sendTextMessage(to, fallbackText);
+      if (response.ok) {
+        logger.info({ to: cleanTo, count: buttons.length }, "Sent native interactive buttons via Evolution API sendInteractive");
+        return true;
       }
-
-      logger.info({ to: cleanTo, count: buttons.length }, "Sent interactive list menu via Evolution API");
-      return true;
     } catch (err) {
-      logger.error({ err, to: cleanTo }, "Network error sending list via Evolution API, using fallback");
-      let fallbackText = bodyText;
-      if (buttons.length > 0) {
-        fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}️⃣ *${b.title}*`).join("\n");
-      }
-      return this.sendTextMessage(to, fallbackText);
+      logger.warn({ err, to: cleanTo }, "sendInteractive network attempt failed, trying sendButtons fallback");
     }
+
+    // 2. Secondary: POST /message/sendButtons fallback
+    const buttonsUrl = `${this.apiUrl}/message/sendButtons/${this.instance}`;
+    const simpleButtons = buttons.slice(0, 3).map((btn) => ({
+      type: "reply",
+      displayText: btn.title,
+      id: btn.id,
+    }));
+
+    try {
+      const response = await fetch(buttonsUrl, {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify({
+          number: cleanTo,
+          title: headerText || "Pilihan Menu",
+          description: bodyText,
+          footer: footerText,
+          buttons: simpleButtons,
+        }),
+      });
+
+      if (response.ok) {
+        logger.info({ to: cleanTo, count: buttons.length }, "Sent native buttons via Evolution API sendButtons");
+        return true;
+      }
+    } catch (err) {
+      logger.warn({ err, to: cleanTo }, "sendButtons network attempt failed, falling back to text");
+    }
+
+    // 3. Fallback to clean formatted text if WhatsApp rejects both button nodes
+    let fallbackText = bodyText;
+    if (buttons.length > 0) {
+      fallbackText += "\n\n" + buttons.map((b) => `👉 *${b.title}*`).join("\n");
+    }
+    return this.sendTextMessage(to, fallbackText);
   }
 
   /**
