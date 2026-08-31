@@ -1,17 +1,49 @@
-import { execFile } from "child_process";
+import { execFile, exec } from "child_process";
 import { promisify } from "util";
+import fs from "fs";
+import path from "path";
 import { geminiKeyManager } from "../ai/gemini-client.js";
 import { AgentDecisionResponse } from "./agent-persona.js";
 import { logger } from "../utils/logger.js";
 
 const execFileAsync = promisify(execFile);
+const execAsync = promisify(exec);
 
 export class AgyConnector {
   private agyCliPath: string;
   private userConversations: Map<string, string> = new Map(); // phone -> conversationId
 
   constructor(cliPath: string = process.env.AGY_CLI_PATH || "agy") {
-    this.agyCliPath = cliPath;
+    this.agyCliPath = this.resolveAgyBinary(cliPath);
+  }
+
+  /**
+   * Resolves actual full path of agy binary
+   */
+  private resolveAgyBinary(defaultPath: string): string {
+    if (defaultPath !== "agy" && fs.existsSync(defaultPath)) {
+      return defaultPath;
+    }
+
+    const homeDir = process.env.HOME || "/home/heizaaa";
+    const candidatePaths = [
+      defaultPath,
+      "/usr/local/bin/agy",
+      "/usr/bin/agy",
+      path.join(homeDir, ".local", "bin", "agy"),
+      path.join(homeDir, ".gemini", "antigravity", "bin", "agy"),
+      path.join(homeDir, ".cargo", "bin", "agy"),
+      path.join(homeDir, ".npm-global", "bin", "agy"),
+    ];
+
+    for (const p of candidatePaths) {
+      if (p !== "agy" && fs.existsSync(p)) {
+        logger.info({ foundPath: p }, "Resolved agy CLI binary path");
+        return p;
+      }
+    }
+
+    return defaultPath;
   }
 
   /**
@@ -39,11 +71,19 @@ export class AgyConnector {
     try {
       logger.info({ cli: this.agyCliPath, userPhone }, "Invoking agy CLI for AI reasoning...");
 
-      // Execute agy new-conversation
+      // Execute agy new-conversation with full environment PATH
+      const homeDir = process.env.HOME || "/home/heizaaa";
+      const extendedPath = `${process.env.PATH || ""}:/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin:${homeDir}/.gemini/antigravity/bin:${homeDir}/.cargo/bin:${homeDir}/.npm-global/bin`;
       const { stdout, stderr } = await execFileAsync(
         this.agyCliPath,
         ["new-conversation", "--model=flash", fullPrompt],
-        { timeout: 35000 }
+        {
+          timeout: 35000,
+          env: {
+            ...process.env,
+            PATH: extendedPath,
+          },
+        }
       );
 
       if (stderr) {
