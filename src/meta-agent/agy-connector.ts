@@ -47,10 +47,15 @@ export class AgyConnector {
   }
 
   /**
-   * Cleans JSON output from LLM (removes markdown backticks if any)
+   * Cleans JSON output from LLM (extracts JSON object { ... })
    */
   private cleanJsonResponse(rawText: string): string {
     let clean = rawText.trim();
+    const firstBrace = clean.indexOf("{");
+    const lastBrace = clean.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return clean.slice(firstBrace, lastBrace + 1);
+    }
     if (clean.startsWith("```json")) {
       clean = clean.slice(7);
     } else if (clean.startsWith("```")) {
@@ -71,14 +76,14 @@ export class AgyConnector {
     try {
       logger.info({ cli: this.agyCliPath, userPhone }, "Invoking agy CLI for AI reasoning...");
 
-      // Execute agy new-conversation with full environment PATH
+      // Execute agy CLI with -p flag (Prompts are read from -p/--print or stdin)
       const homeDir = process.env.HOME || "/home/heizaaa";
       const extendedPath = `${process.env.PATH || ""}:/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin:${homeDir}/.gemini/antigravity/bin:${homeDir}/.cargo/bin:${homeDir}/.npm-global/bin`;
       const { stdout, stderr } = await execFileAsync(
         this.agyCliPath,
-        ["new-conversation", "--model=flash", fullPrompt],
+        ["-p", fullPrompt],
         {
-          timeout: 35000,
+          timeout: 45000,
           env: {
             ...process.env,
             PATH: extendedPath,

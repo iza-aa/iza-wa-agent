@@ -38,10 +38,15 @@ export class AgyConnector {
         return defaultPath;
     }
     /**
-     * Cleans JSON output from LLM (removes markdown backticks if any)
+     * Cleans JSON output from LLM (extracts JSON object { ... })
      */
     cleanJsonResponse(rawText) {
         let clean = rawText.trim();
+        const firstBrace = clean.indexOf("{");
+        const lastBrace = clean.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            return clean.slice(firstBrace, lastBrace + 1);
+        }
         if (clean.startsWith("```json")) {
             clean = clean.slice(7);
         }
@@ -60,11 +65,11 @@ export class AgyConnector {
         const fullPrompt = `${systemPrompt}\n\n=======================================================\nPESAN PENGGUNA TERBARU:\n"${userMessage}"\n=======================================================\n\nIngat: Kembalikan HANYA format JSON valid sesuai skema yang diminta.`;
         try {
             logger.info({ cli: this.agyCliPath, userPhone }, "Invoking agy CLI for AI reasoning...");
-            // Execute agy new-conversation with full environment PATH
+            // Execute agy CLI with -p flag (Prompts are read from -p/--print or stdin)
             const homeDir = process.env.HOME || "/home/heizaaa";
             const extendedPath = `${process.env.PATH || ""}:/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin:${homeDir}/.gemini/antigravity/bin:${homeDir}/.cargo/bin:${homeDir}/.npm-global/bin`;
-            const { stdout, stderr } = await execFileAsync(this.agyCliPath, ["new-conversation", "--model=flash", fullPrompt], {
-                timeout: 35000,
+            const { stdout, stderr } = await execFileAsync(this.agyCliPath, ["-p", fullPrompt], {
+                timeout: 45000,
                 env: {
                     ...process.env,
                     PATH: extendedPath,
