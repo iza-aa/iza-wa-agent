@@ -292,6 +292,7 @@ export class MessageHandler {
             user_phone: senderPhone,
             user_name: userName,
             date: parsed.date,
+            type: parsed.type,
             merchant: parsed.merchant,
             category: parsed.category,
             subtotal: parsed.subtotal,

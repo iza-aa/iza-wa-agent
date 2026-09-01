@@ -75,5 +75,28 @@ describe("Gemini AI Pipeline", () => {
       expect(parsed.items.find(i => i.item_name === "Sayur 6 ikat")?.total_price).toBe(6000);
       expect(parsed.items.find(i => i.item_name === "Sayur 6 ikat")?.price).toBe(1000);
     });
+
+    it("should validate QRIS income transaction to Mammi Cafe properly as income", () => {
+      const qrisIncomeExtraction = {
+        type: "income",
+        merchant: "Mammi Cafe",
+        date: "2026-09-01",
+        category: "Pemasukan: Penjualan",
+        subtotal: 234300,
+        tax: 0,
+        discount: 0,
+        total_amount: 234300,
+        payment_method: "QRIS BRI",
+        items: [],
+        confidence_score: 1.0,
+      };
+
+      const parsed = ExtractedTransactionSchema.parse(qrisIncomeExtraction);
+      expect(parsed.type).toBe("income");
+      expect(parsed.category).toBe("Pemasukan: Penjualan");
+      expect(parsed.merchant).toBe("Mammi Cafe");
+      expect(parsed.total_amount).toBe(234300);
+      expect(parsed.payment_method).toBe("QRIS BRI");
+    });
   });
 });

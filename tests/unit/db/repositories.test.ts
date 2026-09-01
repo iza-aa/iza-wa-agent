@@ -64,13 +64,21 @@ describe("Database Repositories", () => {
     });
 
     it("should find transaction by short code H001, 1, or H-118", async () => {
+      const today = new Date();
+      const currentYear = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(today).slice(0, 4);
+      const currentYearPrefix = "T" + currentYear.slice(-3);
+      const currentMonthIdx = parseInt(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(today).slice(5, 7), 10) - 1;
+      const monthLetters = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+      const currentMonthLetter = monthLetters[currentMonthIdx] || "H";
+      const currentMonthTrxId = `${currentYearPrefix}-${currentMonthLetter}001`;
+
       mockSupabase.from.mockReturnValue({
         select: vi.fn().mockReturnValue({
           eq: vi.fn().mockImplementation((col, val) => {
-            if (val === "T026-H001") {
+            if (val === "T026-H001" || val === currentMonthTrxId) {
               return {
                 maybeSingle: vi.fn().mockResolvedValue({
-                  data: { id: "T026-H001", merchant: "Kopi", total_amount: 25000 },
+                  data: { id: val, merchant: "Kopi", total_amount: 25000 },
                   error: null,
                 }),
               };
@@ -95,7 +103,7 @@ describe("Database Repositories", () => {
       expect(res1?.id).toBe("T026-H001");
 
       const res2 = await trxRepo.findTransactionByIdOrShortCode("1");
-      expect(res2?.id).toBe("T026-H001");
+      expect(res2?.id).toBe(currentMonthTrxId);
 
       const res3 = await trxRepo.findTransactionByIdOrShortCode("H-118");
       expect(res3?.id).toBe("T026-H118");

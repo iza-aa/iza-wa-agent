@@ -10,6 +10,7 @@ export const ExtractedItemSchema = z.object({
     notes: z.string().nullable().optional().transform((val) => val || "").describe("Keterangan tambahan atau nomor meteran"),
 });
 export const ExtractedTransactionSchema = z.object({
+    type: z.enum(["income", "expense"]).default("expense").describe("Jenis transaksi: income (pemasukan) atau expense (pengeluaran)"),
     merchant: z.string().describe("Nama toko, merchant, penyedia jasa, atau penerima pembayaran"),
     date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).describe("Tanggal transaksi format YYYY-MM-DD"),
     category: z.string().default("Lain-lain").describe("Kategori utama pengeluaran / pemasukan"),

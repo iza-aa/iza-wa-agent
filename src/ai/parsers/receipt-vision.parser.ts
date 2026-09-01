@@ -2,29 +2,57 @@ import { geminiKeyManager } from "../gemini-client.js";
 import { ExtractedTransaction, ExtractedTransactionSchema } from "../schemas/transaction.schema.js";
 import { logger } from "../../utils/logger.js";
 
-const RECEIPT_SYSTEM_INSTRUCTION = `Kamu adalah OCR AI ekstraktor struk belanja, nota, kwitansi, tabel belanja, dan bukti transfer pembayaran tingkat tinggi.
-Tugasmu adalah membaca gambar struk/tabel dan mengekstrak rincian belanja selengkap dan seakurat mungkin ke format JSON.
+const RECEIPT_SYSTEM_INSTRUCTION = `Kamu adalah OCR AI ekstraktor cerdas tingkat tinggi untuk dokumen keuangan, bukti transfer perbankan, notifikasi pembayaran QRIS, struk belanja, nota kasir, kwitansi, dan tabel belanja.
+Tugasmu adalah menganalisis gambar secara mendalam dan mengekstrak data transaksi ke format JSON yang terstruktur dan akurat.
 
-Pedoman Ekstraksi Struk & Rincian Belanja:
-1. merchant: Nama toko/restoran/badan usaha di bagian atas struk (misal Indomaret, Alfamart, Pertamina, Starbucks, Tokopedia, dll.). Jika berupa catatan/tabel belanja internal, gunakan judul catatan (misal "Belanja Harian", "Kasir", "Dapur", dll.).
-2. date: Tanggal yang tercetak pada struk/tabel (Format: YYYY-MM-DD). Jika tahun tidak tertulis, gunakan tahun saat ini.
-3. items: Daftar rincian barang yang dibeli (nama barang, qty, unit/satuan, harga satuan, total harga item, dan divisi/keperluan).
-   - item_name: Nama barang murni (misal: "Sayur", "Sirup", "Cairan pembersih", "Air minum", "Minyak Goreng", "Ayam", "Token Listrik"). Jangan sertakan jumlah/satuan jika sudah dipisah ke qty & unit.
-   - qty: Angka jumlah barang (misal: 6, 1, 2, 3, 5, 1, 1).
-   - unit: Satuan barang jika tertera di struk/tabel (misal: "ikat", "dos", "botol", "karton", "liter", "pax", "kali", "kg", "pack", "pcs", "roll", dll.).
-   - department: Divisi atau Keperluan barang. JIKA PADA GAMBAR TERDAPAT KOLOM "KEPERLUAN" / "DIVISI" / "BAGIAN", BACA DAN AMBIL NILAI KOLOM TERSEBUT lalu petakan ke salah satu: "Dapur", "Barista", "Waiters", "Kasir", "Kafe". (Contoh: 'Dapur'/'dapur' -> 'Dapur', 'Barista' -> 'Barista', 'Waiters' -> 'Waiters', 'Kasir' -> 'Kasir', 'Kafe' -> 'Kafe').
-   - ATURAN PENTING HARGA (AS-IS CONSUME):
-     * Jika struk/tabel/catatan hanya mencantumkan 1 kolom/nilai harga per baris (misal: 'Sayur 6 ikat ... Rp 6.000', 'Minyak Goreng 5 liter ... Rp 120.000', 'Air minum 3 karton ... Rp 120.000'), ANGGAP angka tersebut adalah TOTAL HARGA untuk baris item tersebut (total_price).
-     * JANGAN PERNAH mengalikan harga tersebut dengan qty (misal JANGAN hitung 5 x 120.000 = 600.000 atau 6 x 6.000 = 36.000), KECUALI di gambar tertulis sangat jelas dan terpisah antara kolom "Harga Satuan (@)" dan kolom "Total Harga".
-     * Isi "total_price" dengan nominal yang tertulis di baris tersebut.
-     * Isi "price" (harga satuan) dengan "total_price / qty" jika tidak ada harga satuan terpisah.
-4. subtotal: Total harga barang sebelum diskon/pajak. Jika tidak ada baris Subtotal terpisah, hitung dari penjumlahan seluruh total_price item.
-5. tax: PPN / Pajak Restoran (PB1) jika ada.
-6. discount: Potongan harga / diskon / voucher jika ada.
-7. total_amount: Total akhir (Grand Total / Net Total) yang wajib dibayarkan. Jika pada gambar tidak tertulis Grand Total eksplisit, gunakan penjumlahan seluruh total_price item ditambah pajak dikurangi diskon.
-8. payment_method: Deteksi dari baris pembayaran / bukti transfer / header tabel (Mandiri, BCA, BRI, BNI, BSI, QRIS, Cash, Debit, ShopeePay, dll.). Jika tidak tertera jelas, gunakan "Cash" (untuk struk belanja) atau "Transfer Bank" (untuk mutasi).
-9. category: Pilih kategori yang paling tepat dari: "Pemasukan: Transfer Masuk", "Pemasukan: Gaji", "Pemasukan: Setoran Tunai", "Pemasukan: Penjualan", "Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Pendidikan", "Hiburan & Rekreasi", "Operasional Kantor", "Lain-lain". Jika gambar berupa bukti transfer masuk / setoran tunai / penerimaan dana, gunakan awalan "Pemasukan: ".
-10. confidence_score: Berikan skor 0.0 - 1.0 seberapa jelas gambar struk tersebut terbaca.`;
+ATURAN UTAMA & LARANGAN MENULIS NGASAL:
+Bot DILARANG KERAS berasumsi atau menebak bahwa semua gambar adalah "Pengeluaran" atau "Makanan & Minuman".
+Kamu WAJIB mengidentifikasi arah aliran dana dengan teliti: apakah uang MASUK (Pemasukan / Income) atau uang KELUAR (Pengeluaran / Expense).
+
+PEDOMAN DETEKSI ARAH DANA (type & category):
+1. PEMASUKAN (type: "income"):
+   - Bukti / Tangkapan Layar Pembayaran QRIS (misal: "QRIS Bayar", "Transaksi Pembelian QRIS", "QRIS BRI", "QRIS BCA", "QRIS Mandiri", "ShopeePay QRIS", dll.) di mana dana DITUJUKAN kepada usaha pengguna (seperti "Mammi Cafe", toko, atau kasir).
+     * Contoh Kasus: Pada layar tertera "Sumber Dana: KISWAN" (Pelanggan) dan "Tujuan: Mammi Cafe" (Kafe Pengguna) -> Ini adalah PEMBAYARAN DARI PELANGGAN KE MAMMI CAFE (Pemasukan Penjualan Kafe).
+     * type: "income"
+     * category: "Pemasukan: Penjualan"
+     * merchant: "Mammi Cafe"
+     * payment_method: "QRIS" (atau "QRIS BRI", "QRIS BCA", dll.)
+     * items: [] (kosongkan jika tidak ada rincian item barang di gambar)
+   - Bukti Transfer Bank Masuk / Mutasi Kredit (Dana ditransfer oleh orang lain/pelanggan ke rekening pengguna/kafe):
+     * type: "income"
+     * category: "Pemasukan: Transfer Masuk" (atau "Pemasukan: Penjualan")
+     * merchant: Nama pengirim atau nama rekening pengguna
+     * payment_method: Nama bank terkait (contoh: "Transfer BRI", "Transfer BCA", "Mandiri", dll.)
+   - Bukti Setoran Tunai / Top Up Kas:
+     * type: "income"
+     * category: "Pemasukan: Setoran Tunai" atau "Pemasukan: Top Up Kas"
+   - CATATAN KATEGORI PEMASUKAN: Kategori untuk type "income" WAJIB diawali "Pemasukan: " ("Pemasukan: Penjualan", "Pemasukan: Transfer Masuk", "Pemasukan: Setoran Tunai", "Pemasukan: Top Up Kas", "Pemasukan: Gaji", "Pemasukan: Lain-lain").
+
+2. PENGELUARAN (type: "expense"):
+   - Struk belanja fisik / kertas thermal kasir (Indomaret, Alfamart, Toko Grosir, Pertamina, Pasar, dll.) di mana pengguna membeli barang/jasa untuk keperluan operasional.
+     * type: "expense"
+     * category: Sesuaikan dengan jenis barang ("Makanan & Minuman", "Belanja Bulanan", "Transportasi & Bensin", "Tagihan & Utilitas", "Kesehatan & Obat", "Operasional Kantor", "Lain-lain").
+     * merchant: Nama toko / tempat berbelanja di bagian atas struk.
+   - Bukti transfer keluar dari rekening pengguna/kafe ke pihak ketiga / supplier / pemilik sewa / tagihan listrik PLN, WiFi, PDAM:
+     * type: "expense"
+     * category: Sesuaikan kategori pengeluaran ("Tagihan & Utilitas", "Operasional Kantor", dll.).
+   - Catatan / tabel belanja internal (daftar belanja bahan Dapur, Barista, Waiters, Kasir, Kafe).
+
+3. Pedoman Bidang Data Lainnya:
+   - merchant: Nama toko/penerima/entitas usaha.
+   - date: Tanggal yang tercetak pada struk/layar (Format: YYYY-MM-DD). Jika tahun tidak tertulis, gunakan tahun saat ini.
+   - items: Daftar rincian barang yang dibeli (hanya jika ada rincian item):
+     * item_name: Nama barang murni tanpa jumlah/satuan.
+     * qty: Angka jumlah barang (default 1).
+     * unit: Satuan barang (ikat, dos, botol, karton, liter, pax, kg, dll.).
+     * department: Divisi/keperluan ("Dapur", "Barista", "Waiters", "Kasir", "Kafe").
+     * ATURAN PENTING HARGA (AS-IS CONSUME): Jika hanya ada 1 kolom harga per baris, anggap sebagai total_price baris tersebut (jangan kalikan dengan qty kecuali ada kolom harga satuan terpisah).
+   - subtotal: Total sebelum diskon/pajak.
+   - tax: PPN / Pajak jika ada.
+   - discount: Diskon / Potongan jika ada.
+   - total_amount: Total akhir yang dibayarkan.
+   - payment_method: QRIS / Cash / BCA / BRI / Mandiri / BNI / BSI / Debit / ShopeePay / Transfer Bank / dll.
+   - confidence_score: Skor keyakinan 0.0 - 1.0.`;
 
 export async function parseReceiptVision(
   imageBuffer: Buffer,
@@ -49,7 +77,7 @@ export async function parseReceiptVision(
     };
 
     const captionContext = userCaption.trim() ? "\nCatatan/keterangan tambahan dari user: \"" + userCaption.trim() + "\"." : "";
-    const prompt = "Ekstrak seluruh informasi transaksi dan rincian belanja dari gambar/dokumen struk ini ke format JSON. Pastikan nominal harga dikonsumsi apa adanya (as-is) tanpa mengalikan harga dengan Qty kecuali rincian harga satuan dan total tertulis eksplisit terpisah." + captionContext;
+    const prompt = "Ekstrak seluruh informasi transaksi dari gambar/dokumen ini ke format JSON. Pastikan tentukan tipe transaksi secara akurat: 'income' jika dana masuk/pembayaran QRIS ke Mammi Cafe/transfer masuk, atau 'expense' jika struk belanja/transfer keluar. Jangan berasumsi semua adalah pengeluaran atau makanan & minuman jika tidak tertera jelas." + captionContext;
 
     const result = await model.generateContent([prompt, imagePart]);
     const textResponse = result.response.text();
@@ -64,6 +92,34 @@ export async function parseReceiptVision(
         parsedDate = `${dmyMatch[3]}-${dmyMatch[2].padStart(2, "0")}-${dmyMatch[1].padStart(2, "0")}`;
       } else if (!/^\d{4}-\d{2}-\d{2}$/.test(parsedDate)) {
         parsedDate = todayStr;
+      }
+
+      // Determine transaction type & category safely without guessing
+      let trxType: "income" | "expense" = parsedJson.type === "income" ? "income" : "expense";
+      let parsedCategory = (parsedJson.category || "").trim();
+
+      const combinedText = (textResponse + " " + userCaption).toLowerCase();
+      const isQrisPayment = combinedText.includes("qris bayar") || combinedText.includes("transaksi pembelian qris") || (combinedText.includes("qris") && combinedText.includes("transaksi berhasil"));
+      const isMammiCafeRecipient = combinedText.includes("mammi cafe") && (combinedText.includes("tujuan") || combinedText.includes("merchant") || combinedText.includes("penerima") || isQrisPayment);
+
+      if (isMammiCafeRecipient || (isQrisPayment && combinedText.includes("sumber dana") && combinedText.includes("tujuan"))) {
+        trxType = "income";
+        if (!parsedCategory || !parsedCategory.toLowerCase().startsWith("pemasukan")) {
+          parsedCategory = "Pemasukan: Penjualan";
+        }
+      }
+
+      if (parsedCategory.toLowerCase().startsWith("pemasukan")) {
+        trxType = "income";
+      } else if (trxType === "income") {
+        parsedCategory = parsedCategory ? `Pemasukan: ${parsedCategory}` : "Pemasukan: Penjualan";
+      } else if (!parsedCategory) {
+        parsedCategory = "Lain-lain";
+      }
+
+      let paymentMethod = parsedJson.payment_method || (isQrisPayment ? "QRIS" : "Cash");
+      if (isQrisPayment && !paymentMethod.toUpperCase().includes("QRIS")) {
+        paymentMethod = `QRIS ${paymentMethod}`.trim();
       }
 
       const normalizedItems = (parsedJson.items || []).map((it: any) => {
@@ -132,16 +188,17 @@ export async function parseReceiptVision(
       const finalSubtotal = Number(parsedJson.subtotal || calculatedItemsTotal || finalTotal);
 
       const normalizedTrx = {
-        merchant: parsedJson.merchant || "Toko / Merchant",
+        type: trxType,
+        merchant: parsedJson.merchant || (trxType === "income" ? "Mammi Cafe" : "Toko / Merchant"),
         date: parsedDate,
-        category: parsedJson.category || "Makanan & Minuman",
+        category: parsedCategory,
         subtotal: finalSubtotal,
         tax: tax,
         discount: discount,
         total_amount: finalTotal,
-        payment_method: parsedJson.payment_method || "Cash",
+        payment_method: paymentMethod,
         confidence_score: Number(parsedJson.confidence_score || 1.0),
-        items: normalizedItems,
+        items: trxType === "income" ? [] : normalizedItems,
       };
 
       return ExtractedTransactionSchema.parse(normalizedTrx);
