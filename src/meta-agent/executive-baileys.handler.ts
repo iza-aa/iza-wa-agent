@@ -60,17 +60,12 @@ export class ExecutiveBaileysHandler {
     const senderPhone = normalizePhoneNumber(remoteJid);
     const rawSenderName = rawMsg.pushName || "User";
 
-    // Target JID to send reply: resolve LID or regular phone JID to canonical destination
-    const destinationJid = remoteJid.endsWith("@lid")
-      ? `${senderPhone}@s.whatsapp.net`
-      : remoteJid;
-
     // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
     try {
       if (rawMsg.key) {
         await sock.readMessages([rawMsg.key]);
       }
-      await sock.sendPresenceUpdate("composing", destinationJid);
+      await sock.sendPresenceUpdate("composing", remoteJid);
     } catch (presenceErr) {
       logger.debug({ presenceErr }, "Presence update non-critical error");
     }
@@ -317,12 +312,14 @@ export class ExecutiveBaileysHandler {
     }
 
     // 5. Send "typing..." presence indicator while AI processes
-    baileysInteractiveClient.sendPresence(senderPhone, "composing").catch(() => {});
+    baileysInteractiveClient.sendPresence(remoteJid, "composing").catch(() => {});
 
     // 6. Delegate to AgentEngine for Full AI Processing
+    const effectivePhone = user ? user.phone_number : senderPhone;
+
     try {
       const result = await this.agentEngine.processIncomingMessage({
-        userPhone: senderPhone,
+        userPhone: effectivePhone,
         userName: displayName,
         messageText: effectiveText,
         mediaBuffer,
@@ -331,7 +328,7 @@ export class ExecutiveBaileysHandler {
 
       // Stop composing presence
       try {
-        await sock.sendPresenceUpdate("paused", destinationJid);
+        await sock.sendPresenceUpdate("paused", remoteJid);
       } catch {}
 
       if (!result.reply) {
@@ -348,13 +345,13 @@ export class ExecutiveBaileysHandler {
       }
 
       // 7. Send Response directly via active socket with quoted message reference (Same as Bot Kasir)
-      const res = await sock.sendMessage(destinationJid, { text: finalReplyText }, { quoted: rawMsg });
-      logger.info({ destinationJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
+      const res = await sock.sendMessage(remoteJid, { text: finalReplyText }, { quoted: rawMsg });
+      logger.info({ destinationJid: remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
     } catch (err) {
       logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");
       try {
         await sock.sendMessage(
-          destinationJid,
+          remoteJid,
           { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." },
           { quoted: rawMsg }
         );

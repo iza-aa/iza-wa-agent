@@ -35,7 +35,7 @@ export class BaileysInteractiveClient {
    * Normalize any phone/JID into a valid WhatsApp user JID (e.g. 6281346367235@s.whatsapp.net)
    */
   private formatJid(target: string, fallbackPhone?: string): string {
-    if (target && target.endsWith("@s.whatsapp.net")) {
+    if (target && (target.endsWith("@s.whatsapp.net") || target.endsWith("@lid"))) {
       return target;
     }
     // If LID or pure digits, map directly to standard @s.whatsapp.net phone JID
