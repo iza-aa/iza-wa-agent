@@ -72,8 +72,23 @@ export class ExecutiveBaileysHandler {
         }
         const displayName = user ? user.name : rawSenderName;
         const isAllowed = user && user.status === "active";
-        // 2. Extract Message Content & Interactive Buttons
-        const msgContent = rawMsg.message || {};
+        // 2. Extract Message Content & Interactive Buttons (Unwrap all nested wrappers)
+        let msgContent = rawMsg.message || {};
+        while (msgContent?.ephemeralMessage?.message ||
+            msgContent?.viewOnceMessage?.message ||
+            msgContent?.viewOnceMessageV2?.message ||
+            msgContent?.documentWithCaptionMessage?.message) {
+            if (msgContent.ephemeralMessage?.message)
+                msgContent = msgContent.ephemeralMessage.message;
+            else if (msgContent.viewOnceMessage?.message)
+                msgContent = msgContent.viewOnceMessage.message;
+            else if (msgContent.viewOnceMessageV2?.message)
+                msgContent = msgContent.viewOnceMessageV2.message;
+            else if (msgContent.documentWithCaptionMessage?.message)
+                msgContent = msgContent.documentWithCaptionMessage.message;
+            else
+                break;
+        }
         let messageText = "";
         let interactiveButtonId;
         if (typeof msgContent === "string") {
@@ -85,30 +100,34 @@ export class ExecutiveBaileysHandler {
         else if (msgContent.extendedTextMessage?.text) {
             messageText = msgContent.extendedTextMessage.text;
         }
+        else if (msgContent.interactiveResponseMessage) {
+            const ir = msgContent.interactiveResponseMessage;
+            const nativeParams = ir.nativeFlowResponseMessage?.paramsJson;
+            if (nativeParams) {
+                try {
+                    const parsed = typeof nativeParams === "string" ? JSON.parse(nativeParams) : nativeParams;
+                    interactiveButtonId = parsed.id || parsed.selectedId || parsed.rowId;
+                    messageText = parsed.display_text || parsed.title || parsed.text || parsed.name || interactiveButtonId || "";
+                }
+                catch {
+                    messageText = String(nativeParams);
+                }
+            }
+            if (!messageText && ir.body?.text) {
+                messageText = ir.body.text;
+            }
+        }
         else if (msgContent.buttonsResponseMessage) {
             interactiveButtonId = msgContent.buttonsResponseMessage.selectedButtonId;
             messageText = msgContent.buttonsResponseMessage.selectedDisplayText || interactiveButtonId || "";
         }
         else if (msgContent.listResponseMessage) {
             interactiveButtonId = msgContent.listResponseMessage.singleSelectReply?.selectedRowId || msgContent.listResponseMessage.selectedRowId;
-            messageText = msgContent.listResponseMessage.title || interactiveButtonId || "";
+            messageText = msgContent.listResponseMessage.title || msgContent.listResponseMessage.description || interactiveButtonId || "";
         }
         else if (msgContent.templateButtonReplyMessage) {
             interactiveButtonId = msgContent.templateButtonReplyMessage.selectedId;
             messageText = msgContent.templateButtonReplyMessage.selectedDisplayText || interactiveButtonId || "";
-        }
-        else if (msgContent.interactiveResponseMessage) {
-            try {
-                const nativeParams = msgContent.interactiveResponseMessage.nativeFlowResponseMessage?.paramsJson;
-                if (nativeParams) {
-                    const parsed = JSON.parse(nativeParams);
-                    interactiveButtonId = parsed.id;
-                    messageText = parsed.title || parsed.display_text || parsed.id || "";
-                }
-            }
-            catch {
-                messageText = msgContent.interactiveResponseMessage.body?.text || "";
-            }
         }
         else if (msgContent.pollUpdateMessage) {
             const poll = msgContent.pollUpdateMessage;
