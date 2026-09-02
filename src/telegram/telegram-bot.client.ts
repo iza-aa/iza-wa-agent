@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard, InputFile } from "grammy";
+import { Bot, InlineKeyboard } from "grammy";
 import { getSupabaseClient } from "../db/supabase.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
@@ -43,38 +43,49 @@ export class TelegramAssistantBot {
   }
 
   /**
-   * Resolves phone number and display name for a Telegram user
+   * Resolves identity and strictly verifies whitelist authorization
    */
-  private async resolveUserIdentity(from: any): Promise<{ phone: string; name: string; isSuperAdmin: boolean }> {
+  private async resolveUserIdentity(from: any): Promise<{
+    phone: string;
+    name: string;
+    isSuperAdmin: boolean;
+    isAllowed: boolean;
+  }> {
     const tgId = from.id;
     const rawName = [from.first_name, from.last_name].filter(Boolean).join(" ") || from.username || `User_${tgId}`;
 
-    // Check if phone was explicitly mapped in memory or DB
+    // 1. Check in-memory cache
     let phone: string = this.userPhoneMap.get(tgId) || "";
 
+    // 2. Check database users for linked Telegram ID
     if (!phone) {
-      // Check database users to see if target_sheet_id contains tgId or if name matches
       const { data: matchedUser } = await getSupabaseClient()
         .from("users")
         .select("*")
-        .eq("target_sheet_id", `tg_${tgId}`)
+        .or(`target_sheet_id.eq.tg_${tgId},target_sheet_id.eq.${tgId}`)
+        .eq("status", "active")
         .maybeSingle();
 
       if (matchedUser && matchedUser.phone_number) {
         phone = matchedUser.phone_number;
-      } else {
-        // Default to super admin phone for owner/admin if single user setup or map by name
-        const superAdmins = config.SUPER_ADMIN_PHONE;
-        phone = superAdmins[0] || "6281346367235";
+        this.userPhoneMap.set(tgId, phone);
       }
-      this.userPhoneMap.set(tgId, phone);
+    }
+
+    // If still not found, check if only 1 single super admin exists and user matches first super admin
+    if (!phone) {
+      return { phone: "", name: rawName, isSuperAdmin: false, isAllowed: false };
     }
 
     const user = await this.userRepo.getUser(phone, rawName);
-    const displayName = user ? user.name : rawName;
+    if (!user || user.status !== "active") {
+      return { phone, name: rawName, isSuperAdmin: false, isAllowed: false };
+    }
+
+    const displayName = user.name || rawName;
     const isSuperAdmin = await this.userRepo.isSuperAdminAsync(phone);
 
-    return { phone, name: displayName, isSuperAdmin };
+    return { phone: user.phone_number, name: displayName, isSuperAdmin, isAllowed: true };
   }
 
   /**
@@ -84,7 +95,6 @@ export class TelegramAssistantBot {
     if (!buttons || buttons.length === 0) return undefined;
 
     const keyboard = new InlineKeyboard();
-    // Arrange in rows of 2 or 1 depending on title length
     buttons.forEach((btn, index) => {
       keyboard.text(btn.title, btn.id);
       if ((index + 1) % 2 === 0 && index < buttons.length - 1) {
@@ -116,15 +126,73 @@ export class TelegramAssistantBot {
   }
 
   /**
+   * Reusable gatekeeper: Checks whitelist or shows access denied message
+   */
+  private async checkAccessOrDeny(ctx: any, user: { isAllowed: boolean; name: string }): Promise<boolean> {
+    if (!user.isAllowed) {
+      await ctx.reply(
+        `⛔ *AKSES DITOLAK (PRIVAT & TERBATAS)*\n\n` +
+        `Akun Telegram Anda belum terhubung dengan staf/admin terdaftar di sistem *IZA Assistant*.\n\n` +
+        `👉 *Jika nomor Anda sudah didaftarkan oleh Super Admin, silakan hubungkan dengan mengetik:*\n` +
+        `\`/link [NomorHPAnda]\` (contoh: \`/link 08123456789\`)`,
+        { parse_mode: "Markdown" }
+      );
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * Sets up all event handlers for Telegram Bot
    */
   private setupHandlers(): void {
-    // 1. /start & /menu command
+    // 1. /link command: Link Telegram account with registered phone number
+    this.bot.command("link", async (ctx) => {
+      const args = ctx.match?.trim();
+      if (!args) {
+        await ctx.reply(
+          `📱 *CARA TAUTKAN NOMOR HP:*\n\nKetik: \`/link [NomorHPAnda]\`\nContoh: \`/link 08123456789\`\n\n_Pastikan nomor Anda sudah didaftarkan oleh Super Admin terlebih dahulu._`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      const targetPhone = normalizePhoneNumber(args);
+      const user = await this.userRepo.getUser(targetPhone);
+
+      if (user && user.status === "active") {
+        await getSupabaseClient()
+          .from("users")
+          .update({ target_sheet_id: `tg_${ctx.from?.id}`, updated_at: new Date().toISOString() })
+          .eq("phone_number", user.phone_number);
+
+        if (ctx.from?.id) {
+          this.userPhoneMap.set(ctx.from.id, user.phone_number);
+        }
+
+        const roleText = user.role === "super_admin" ? "Super Admin (Owner)" : "Staf Operasional";
+        await ctx.reply(
+          `🎉 *AKUN BERHASIL DIVERIFIKASI!*\n\n` +
+          `Halo *${user.name}*, akun Telegram Anda telah resmi terhubung dengan nomor \`+${user.phone_number}\` sebagai *${roleText}*.\n\n` +
+          `Sekarang Anda dapat langsung mencatat transaksi, kirim foto nota/struk, atau tanya kondisi kas. Ketik \`/menu\` untuk membuka menu bantuan.`,
+          { parse_mode: "Markdown" }
+        );
+      } else {
+        await ctx.reply(
+          `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem atau sedang nonaktif.\n\n` +
+          `Silakan hubungi *Super Admin* untuk mendaftarkan nomor Anda terlebih dahulu.`,
+          { parse_mode: "Markdown" }
+        );
+      }
+    });
+
+    // 2. /start & /menu command
     this.bot.command(["start", "menu", "help"], async (ctx) => {
-      const { name } = await this.resolveUserIdentity(ctx.from);
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!(await this.checkAccessOrDeny(ctx, user))) return;
 
       const welcomeText =
-        `👋 *Halo ${name}! Selamat Datang di IZA Executive AI Assistant*\n\n` +
+        `👋 *Halo ${user.name}! Selamat Datang di IZA Executive AI Assistant*\n\n` +
         `Saya adalah asisten keuangan cerdas yang terhubung langsung ke *Google Spreadsheet Kas & Supabase*.\n\n` +
         `✨ *Kemampuan yang bisa Anda gunakan:*\n` +
         `• 💬 *Ketik Transaksi:* _"Beli kopi 25rb cash"_ atau _"Pemasukan 5jt mandiri"_\n` +
@@ -149,50 +217,17 @@ export class TelegramAssistantBot {
       });
     });
 
-    // 2. /link command to explicitly link Telegram account with WhatsApp staff phone number
-    this.bot.command("link", async (ctx) => {
-      const args = ctx.match?.trim();
-      if (!args) {
-        await ctx.reply(
-          `📱 *CARA TAUTKAN NOMOR HP:*\n\nKetik: \`/link [NomorHPAnda]\`\nContoh: \`/link 08123456789\`\n\n_Setelah ditautkan, semua transaksi di Telegram akan otomatis tercatat atas nama Anda di Google Spreadsheet._`,
-          { parse_mode: "Markdown" }
-        );
-        return;
-      }
-
-      const targetPhone = normalizePhoneNumber(args);
-      const user = await this.userRepo.getUser(targetPhone);
-
-      if (user) {
-        await getSupabaseClient()
-          .from("users")
-          .update({ target_sheet_id: `tg_${ctx.from?.id}`, updated_at: new Date().toISOString() })
-          .eq("phone_number", user.phone_number);
-
-        if (ctx.from?.id) {
-          this.userPhoneMap.set(ctx.from.id, user.phone_number);
-        }
-
-        await ctx.reply(
-          `🎉 *AKUN BERHASIL DITAUTKAN!*\n\nHalo *${user.name}*, akun Telegram Anda telah resmi terhubung dengan nomor \`+${user.phone_number}\` (${user.role}).\n\nSekarang Anda dapat langsung mencatat transaksi, kirim foto nota, atau tanya laporan kas.`,
-          { parse_mode: "Markdown" }
-        );
-      } else {
-        await ctx.reply(
-          `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di database sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.`,
-          { parse_mode: "Markdown" }
-        );
-      }
-    });
-
     // 3. Handle Inline Button Clicks (Callback Queries)
     this.bot.on("callback_query:data", async (ctx) => {
       const buttonId = ctx.callbackQuery.data;
       await ctx.answerCallbackQuery();
 
-      const { phone, name } = await this.resolveUserIdentity(ctx.from);
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!user.isAllowed) {
+        await ctx.reply("⛔ Akses ditolak. Silakan tautkan nomor staf Anda via `/link [NomorHP]`.");
+        return;
+      }
 
-      // Handle direct link helpers
       if (buttonId === "SPREADSHEET") {
         await ctx.reply(
           `📊 *LINK GOOGLE SPREADSHEET KAS:*\nhttps://docs.google.com/spreadsheets/d/${config.GOOGLE_SHEET_ID}/edit`,
@@ -209,13 +244,12 @@ export class TelegramAssistantBot {
         return;
       }
 
-      // Send typing status
       await ctx.api.sendChatAction(ctx.chat?.id || ctx.from.id, "typing");
 
       try {
         const result = await this.agentEngine.processIncomingMessage({
-          userPhone: phone,
-          userName: name,
+          userPhone: user.phone,
+          userName: user.name,
           messageText: "",
           interactiveButtonId: buttonId,
         });
@@ -233,11 +267,12 @@ export class TelegramAssistantBot {
 
     // 4. Handle Photos (Receipt / Struk Belanja)
     this.bot.on(":photo", async (ctx) => {
-      const { phone, name } = await this.resolveUserIdentity(ctx.from);
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!(await this.checkAccessOrDeny(ctx, user))) return;
+
       const photos = ctx.message?.photo;
       if (!photos || photos.length === 0) return;
 
-      // Get highest resolution photo (last element in array)
       const bestPhoto = photos[photos.length - 1];
       const caption = ctx.message?.caption || "";
 
@@ -252,8 +287,8 @@ export class TelegramAssistantBot {
 
       try {
         const result = await this.agentEngine.processIncomingMessage({
-          userPhone: phone,
-          userName: name,
+          userPhone: user.phone,
+          userName: user.name,
           messageText: caption,
           mediaBuffer: buffer,
           mediaMimeType: "image/jpeg",
@@ -272,7 +307,9 @@ export class TelegramAssistantBot {
 
     // 5. Handle Voice Notes / Audio
     this.bot.on([":voice", ":audio"], async (ctx) => {
-      const { phone, name } = await this.resolveUserIdentity(ctx.from);
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!(await this.checkAccessOrDeny(ctx, user))) return;
+
       const voice = ctx.message?.voice || ctx.message?.audio;
       if (!voice) return;
 
@@ -289,8 +326,8 @@ export class TelegramAssistantBot {
 
       try {
         const result = await this.agentEngine.processIncomingMessage({
-          userPhone: phone,
-          userName: name,
+          userPhone: user.phone,
+          userName: user.name,
           messageText: "",
           mediaBuffer: buffer,
           mediaMimeType: mimeType,
@@ -309,7 +346,9 @@ export class TelegramAssistantBot {
 
     // 6. Handle Document (PDF Invoices / Nota file)
     this.bot.on(":document", async (ctx) => {
-      const { phone, name } = await this.resolveUserIdentity(ctx.from);
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!(await this.checkAccessOrDeny(ctx, user))) return;
+
       const doc = ctx.message?.document;
       if (!doc) return;
 
@@ -337,8 +376,8 @@ export class TelegramAssistantBot {
 
       try {
         const result = await this.agentEngine.processIncomingMessage({
-          userPhone: phone,
-          userName: name,
+          userPhone: user.phone,
+          userName: user.name,
           messageText: ctx.message?.caption || "",
           mediaBuffer: buffer,
           mediaMimeType: isPdf ? "application/pdf" : mimeType,
@@ -357,18 +396,18 @@ export class TelegramAssistantBot {
 
     // 7. Handle Natural Text Messages
     this.bot.on(":text", async (ctx) => {
-      const { phone, name } = await this.resolveUserIdentity(ctx.from);
-      const text = ctx.message?.text || "";
+      const user = await this.resolveUserIdentity(ctx.from);
+      if (!(await this.checkAccessOrDeny(ctx, user))) return;
 
+      const text = ctx.message?.text || "";
       if (!text.trim()) return;
 
-      // Send typing action
       await ctx.api.sendChatAction(ctx.chat.id, "typing");
 
       try {
         const result = await this.agentEngine.processIncomingMessage({
-          userPhone: phone,
-          userName: name,
+          userPhone: user.phone,
+          userName: user.name,
           messageText: text,
         });
 
@@ -393,7 +432,7 @@ export class TelegramAssistantBot {
    * Starts Telegram Bot polling
    */
   async start(): Promise<void> {
-    logger.info("Starting Telegram Executive AI Assistant Bot (@IzaExecutiveBot)...");
+    logger.info("Starting Telegram Executive AI Assistant Bot (@izaassistantbot)...");
     this.bot.start({
       onStart: (botInfo) => {
         logger.info({ username: botInfo.username, id: botInfo.id }, "Telegram Executive Bot is ONLINE and LISTENING!");
