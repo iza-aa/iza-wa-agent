@@ -360,6 +360,11 @@ export class TelegramAssistantBot {
         return;
       }
 
+      // If action was confirmation or cancellation, cleanly remove buttons from original draft message
+      if (buttonId === "CONFIRM_ACTION" || buttonId === "CANCEL_ACTION") {
+        await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => {});
+      }
+
       await ctx.api.sendChatAction(ctx.chat?.id || ctx.from.id, "typing");
 
       try {

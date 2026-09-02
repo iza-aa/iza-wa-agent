@@ -265,6 +265,10 @@ export class TelegramAssistantBot {
                 await ctx.reply(`📁 *LINK FOLDER GOOGLE DRIVE NOTA:*\nhttps://drive.google.com/drive/folders/${config.GOOGLE_DRIVE_FOLDER_ID}`, { parse_mode: "Markdown" });
                 return;
             }
+            // If action was confirmation or cancellation, cleanly remove buttons from original draft message
+            if (buttonId === "CONFIRM_ACTION" || buttonId === "CANCEL_ACTION") {
+                await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => { });
+            }
             await ctx.api.sendChatAction(ctx.chat?.id || ctx.from.id, "typing");
             try {
                 const result = await this.agentEngine.processIncomingMessage({
