@@ -18,6 +18,7 @@ export class TelegramAssistantBot {
     agentEngine;
     userPhoneMap = new Map(); // tgUserId -> phoneNumber
     activeInvites = new Map(); // inviteCode -> InviteTokenRecord
+    lastKeyboardMap = new Map(); // chatId -> messageId with active inline buttons
     constructor() {
         const token = config.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
         if (!token) {
@@ -80,6 +81,36 @@ export class TelegramAssistantBot {
         return keyboard;
     }
     /**
+     * Clears previous active inline keyboard in the chat so no stale buttons linger
+     */
+    async clearPreviousKeyboard(chatId) {
+        if (!chatId)
+            return;
+        const prevMsgId = this.lastKeyboardMap.get(chatId);
+        if (prevMsgId) {
+            this.lastKeyboardMap.delete(chatId);
+            await this.bot.api.editMessageReplyMarkup(chatId, prevMsgId, { reply_markup: undefined }).catch(() => { });
+        }
+    }
+    /**
+     * Sends a reply with inline buttons and tracks it so future actions automatically clean it up
+     */
+    async replyWithTrackedKeyboard(ctx, text, buttons) {
+        const chatId = ctx.chat?.id || ctx.from?.id;
+        if (chatId) {
+            await this.clearPreviousKeyboard(chatId);
+        }
+        const keyboard = this.buildKeyboard(buttons);
+        const sent = await ctx.reply(text, {
+            parse_mode: "Markdown",
+            reply_markup: keyboard,
+        });
+        if (buttons && buttons.length > 0 && chatId && sent?.message_id) {
+            this.lastKeyboardMap.set(chatId, sent.message_id);
+        }
+        return sent;
+    }
+    /**
      * Downloads a Telegram file into a Buffer
      */
     async downloadFileBuffer(fileId) {
@@ -116,6 +147,7 @@ export class TelegramAssistantBot {
     setupHandlers() {
         // 1. /myid command: Displays Telegram User ID & Connection Status
         this.bot.command("myid", async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const user = await this.resolveUserIdentity(ctx.from);
             const tgId = ctx.from?.id;
             const tgName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ");
@@ -135,6 +167,7 @@ export class TelegramAssistantBot {
         });
         // 2. /invite command: Super Admin generates a single-use invite token (15 mins validity)
         this.bot.command("invite", async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const adminUser = await this.resolveUserIdentity(ctx.from);
             if (!adminUser.isAllowed || !adminUser.isSuperAdmin) {
                 await ctx.reply("⛔ Perintah ini hanya dapat dijalankan oleh *Super Admin*.");
@@ -184,6 +217,7 @@ export class TelegramAssistantBot {
         });
         // 3. /start command: Handles both general start and invite claim token (?start=INV-XXXX)
         this.bot.command(["start", "menu", "help"], async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const payload = ctx.match?.trim();
             // Case A: User is claiming an invite token
             if (payload && payload.startsWith("INV-")) {
@@ -235,23 +269,21 @@ export class TelegramAssistantBot {
                 `• 📊 *Tanya Saldo & Laporan:* _"Berapa sisa saldo kas?"_ atau _"Rekap pengeluaran bulan ini"_\n` +
                 `• 🔍 *Audit Keuangan:* _"Audit selisih pembukuan kas"_\n\n` +
                 `Silakan pilih menu cepat di bawah atau langsung ketik pesan Anda:`;
-            const keyboard = new InlineKeyboard()
-                .text("💰 Cek Saldo", "CHECK_BALANCE")
-                .text("📊 Rekap Kas", "REKAP_KAS")
-                .row()
-                .text("🔍 Audit Kas", "AUDIT_KAS")
-                .text("📄 Spreadsheet", "SPREADSHEET")
-                .row()
-                .text("📁 Google Drive", "GOOGLE_DRIVE");
-            await ctx.reply(welcomeText, {
-                parse_mode: "Markdown",
-                reply_markup: keyboard,
-            });
+            const buttons = [
+                { id: "CHECK_BALANCE", title: "💰 Cek Saldo" },
+                { id: "REKAP_KAS", title: "📊 Rekap Kas" },
+                { id: "AUDIT_KAS", title: "🔍 Audit Kas" },
+                { id: "SPREADSHEET", title: "📄 Spreadsheet" },
+                { id: "GOOGLE_DRIVE", title: "📁 Google Drive" },
+            ];
+            await this.replyWithTrackedKeyboard(ctx, welcomeText, buttons);
         });
         // 4. Handle Inline Button Clicks (Callback Queries)
         this.bot.on("callback_query:data", async (ctx) => {
             const buttonId = ctx.callbackQuery.data;
             await ctx.answerCallbackQuery();
+            // Cleanly remove the buttons from the clicked message immediately
+            await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => { });
             const user = await this.resolveUserIdentity(ctx.from);
             if (!user.isAllowed) {
                 await ctx.reply("⛔ Akses ditolak. Anda belum memiliki izin akses.");
@@ -265,10 +297,6 @@ export class TelegramAssistantBot {
                 await ctx.reply(`📁 *LINK FOLDER GOOGLE DRIVE NOTA:*\nhttps://drive.google.com/drive/folders/${config.GOOGLE_DRIVE_FOLDER_ID}`, { parse_mode: "Markdown" });
                 return;
             }
-            // If action was confirmation or cancellation, cleanly remove buttons from original draft message
-            if (buttonId === "CONFIRM_ACTION" || buttonId === "CANCEL_ACTION") {
-                await ctx.editMessageReplyMarkup({ reply_markup: undefined }).catch(() => { });
-            }
             await ctx.api.sendChatAction(ctx.chat?.id || ctx.from.id, "typing");
             try {
                 const result = await this.agentEngine.processIncomingMessage({
@@ -277,11 +305,7 @@ export class TelegramAssistantBot {
                     messageText: "",
                     interactiveButtonId: buttonId,
                 });
-                const keyboard = this.buildKeyboard(result.buttons);
-                await ctx.reply(result.reply, {
-                    parse_mode: "Markdown",
-                    reply_markup: keyboard,
-                });
+                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
             catch (err) {
                 logger.error({ err, buttonId }, "TelegramAssistantBot: Error processing callback query");
@@ -290,6 +314,7 @@ export class TelegramAssistantBot {
         });
         // 5. Handle Photos (Receipt / Struk Belanja)
         this.bot.on(":photo", async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const user = await this.resolveUserIdentity(ctx.from);
             if (!(await this.checkAccessOrDeny(ctx, user)))
                 return;
@@ -313,11 +338,7 @@ export class TelegramAssistantBot {
                     mediaBuffer: buffer,
                     mediaMimeType: "image/jpeg",
                 });
-                const keyboard = this.buildKeyboard(result.buttons);
-                await ctx.reply(result.reply, {
-                    parse_mode: "Markdown",
-                    reply_markup: keyboard,
-                });
+                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing photo");
@@ -326,6 +347,7 @@ export class TelegramAssistantBot {
         });
         // 6. Handle Voice Notes / Audio
         this.bot.on([":voice", ":audio"], async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const user = await this.resolveUserIdentity(ctx.from);
             if (!(await this.checkAccessOrDeny(ctx, user)))
                 return;
@@ -348,11 +370,7 @@ export class TelegramAssistantBot {
                     mediaBuffer: buffer,
                     mediaMimeType: mimeType,
                 });
-                const keyboard = this.buildKeyboard(result.buttons);
-                await ctx.reply(result.reply, {
-                    parse_mode: "Markdown",
-                    reply_markup: keyboard,
-                });
+                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing voice message");
@@ -361,6 +379,7 @@ export class TelegramAssistantBot {
         });
         // 7. Handle Document (PDF Invoices / Nota file)
         this.bot.on(":document", async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const user = await this.resolveUserIdentity(ctx.from);
             if (!(await this.checkAccessOrDeny(ctx, user)))
                 return;
@@ -390,11 +409,7 @@ export class TelegramAssistantBot {
                     mediaBuffer: buffer,
                     mediaMimeType: isPdf ? "application/pdf" : mimeType,
                 });
-                const keyboard = this.buildKeyboard(result.buttons);
-                await ctx.reply(result.reply, {
-                    parse_mode: "Markdown",
-                    reply_markup: keyboard,
-                });
+                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing document");
@@ -403,6 +418,7 @@ export class TelegramAssistantBot {
         });
         // 8. Handle Natural Text Messages
         this.bot.on(":text", async (ctx) => {
+            await this.clearPreviousKeyboard(ctx.chat?.id);
             const user = await this.resolveUserIdentity(ctx.from);
             if (!(await this.checkAccessOrDeny(ctx, user)))
                 return;
@@ -416,11 +432,7 @@ export class TelegramAssistantBot {
                     userName: user.name,
                     messageText: text,
                 });
-                const keyboard = this.buildKeyboard(result.buttons);
-                await ctx.reply(result.reply, {
-                    parse_mode: "Markdown",
-                    reply_markup: keyboard,
-                });
+                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
             catch (err) {
                 logger.error({ err, text }, "TelegramAssistantBot: Error processing text message");
