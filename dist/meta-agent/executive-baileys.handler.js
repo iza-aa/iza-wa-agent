@@ -46,6 +46,7 @@ export class ExecutiveBaileysHandler {
         }
         const senderPhone = normalizePhoneNumber(remoteJid);
         const rawSenderName = rawMsg.pushName || "User";
+        const isLid = remoteJid.endsWith("@lid");
         // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
         try {
             if (rawMsg.key) {
@@ -68,6 +69,8 @@ export class ExecutiveBaileysHandler {
         }
         const displayName = user ? user.name : rawSenderName;
         const isAllowed = user && user.status === "active";
+        const effectivePhone = user ? user.phone_number : senderPhone;
+        const targetJid = isLid ? `${effectivePhone}@s.whatsapp.net` : remoteJid;
         // 2. Extract Message Content & Interactive Buttons (Unwrap all nested wrappers)
         let msgContent = rawMsg.message || {};
         for (let depth = 0; depth < 5; depth++) {
@@ -183,15 +186,18 @@ export class ExecutiveBaileysHandler {
                 const targetPhone = normalizePhoneNumber(digitsOnly);
                 const linkedUser = await this.userRepo.linkLidByPhoneNumber(targetPhone, senderPhone);
                 if (linkedUser) {
-                    await sock.sendMessage(remoteJid, { text: `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mengobrol dengan Asisten AI, mencatat transaksi, kirim foto nota/struk, atau tanya laporan kas.` }, { quoted: rawMsg });
+                    const verifyTargetJid = isLid ? `${targetPhone}@s.whatsapp.net` : remoteJid;
+                    await sock.sendMessage(verifyTargetJid, { text: `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mengobrol dengan Asisten AI, mencatat transaksi, kirim foto nota/struk, atau tanya laporan kas.` });
                     return;
                 }
                 else {
-                    await sock.sendMessage(remoteJid, { text: `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.` }, { quoted: rawMsg });
+                    const verifyTargetJid = isLid && senderPhone.length <= 13 ? `${senderPhone}@s.whatsapp.net` : remoteJid;
+                    await sock.sendMessage(verifyTargetJid, { text: `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.` });
                     return;
                 }
             }
-            await sock.sendMessage(remoteJid, { text: `👋 *HALO! SELAMAT DATANG DI IZA ASSISTANT*\n\nAkun WhatsApp Anda belum terhubung dengan nomor staf terdaftar.\n\nSilakan ketik nomor HP Anda yang terdaftar (contoh: \`08123456789\`) untuk verifikasi identitas.` }, { quoted: rawMsg });
+            const unlinkedTargetJid = isLid && senderPhone.length <= 13 ? `${senderPhone}@s.whatsapp.net` : remoteJid;
+            await sock.sendMessage(unlinkedTargetJid, { text: `👋 *HALO! SELAMAT DATANG DI IZA ASSISTANT*\n\nAkun WhatsApp Anda belum terhubung dengan nomor staf terdaftar.\n\nSilakan ketik nomor HP Anda yang terdaftar (contoh: \`08123456789\`) untuk verifikasi identitas.` });
             return;
         }
         // If user clicked interactive button or sent quick phrase, map to clear natural question
@@ -280,9 +286,8 @@ export class ExecutiveBaileysHandler {
             }
         }
         // 5. Send "typing..." presence indicator while AI processes
-        baileysInteractiveClient.sendPresence(remoteJid, "composing").catch(() => { });
+        baileysInteractiveClient.sendPresence(targetJid, "composing").catch(() => { });
         // 6. Delegate to AgentEngine for Full AI Processing
-        const effectivePhone = user ? user.phone_number : senderPhone;
         try {
             const result = await this.agentEngine.processIncomingMessage({
                 userPhone: effectivePhone,
@@ -294,6 +299,9 @@ export class ExecutiveBaileysHandler {
             // Stop composing presence
             try {
                 await sock.sendPresenceUpdate("paused", remoteJid);
+                if (isLid) {
+                    await sock.sendPresenceUpdate("paused", targetJid).catch(() => { });
+                }
             }
             catch { }
             if (!result.reply) {
@@ -307,14 +315,19 @@ export class ExecutiveBaileysHandler {
                     .join("\n");
                 finalReplyText += `\n\n${buttonList}`;
             }
-            // 7. Send Response directly via active socket with quoted message reference (Same as Bot Kasir)
-            const res = await sock.sendMessage(remoteJid, { text: finalReplyText }, { quoted: rawMsg });
-            logger.info({ destinationJid: remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
+            // 7. Send Response directly via active socket
+            // If incoming chat was from @lid, send to the user's canonical @s.whatsapp.net without cross-JID quoted context
+            const sendOptions = isLid ? undefined : { quoted: rawMsg };
+            const res = sendOptions
+                ? await sock.sendMessage(targetJid, { text: finalReplyText }, sendOptions)
+                : await sock.sendMessage(targetJid, { text: finalReplyText });
+            logger.info({ targetJid, remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
         }
         catch (err) {
             logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");
             try {
-                await sock.sendMessage(remoteJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." }, { quoted: rawMsg });
+                const errorTargetJid = isLid ? `${effectivePhone}@s.whatsapp.net` : remoteJid;
+                await sock.sendMessage(errorTargetJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." });
             }
             catch { }
         }
