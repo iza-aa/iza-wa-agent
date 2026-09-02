@@ -23,18 +23,29 @@ export class ConfirmationFlow {
         // Confirm keywords
         const confirmKeywords = [
             "ya", "iya", "oke", "ok", "yes", "gas", "simpan", "benar", "betul", "lanjut", "setuju", "acc",
-            "catat", "yup", "yoi", "sip", "mantap", "confirm", "sesuai", "bungkus", "sudah benar", "save", "hapus"
+            "catat", "yup", "yoi", "sip", "mantap", "confirm", "sesuai", "bungkus", "sudah benar", "save", "hapus",
+            "duplicate_save", "tetap catat", "tetap simpan", "tetap catat baru", "simpan sekarang"
         ];
-        if (confirmKeywords.includes(clean) || clean === "confirm_action" || clean.startsWith("✅")) {
+        if (confirmKeywords.includes(clean) || clean === "confirm_action" || clean.startsWith("✅") || clean.startsWith("🆕")) {
             return { type: "CONFIRM" };
         }
         // Cancel keywords
         const cancelKeywords = [
             "batal", "batalkan", "cancel", "tidak", "gak", "nggak", "ga jadi", "gak jadi", "nggak jadi", "ngga jadi",
-            "enggak jadi", "jangan", "cancel_action", "hapus draf", "buang"
+            "enggak jadi", "jangan", "cancel_action", "hapus draf", "buang", "duplicate_drop", "duplikat"
         ];
-        if (cancelKeywords.includes(clean) || clean === "cancel_action" || clean.startsWith("❌")) {
+        if (cancelKeywords.includes(clean) || clean === "cancel_action" || clean.startsWith("❌") || clean.startsWith("🚫")) {
             return { type: "CANCEL" };
+        }
+        // Department allocation keywords (Disambiguation)
+        if (clean.includes("dapur") ||
+            clean.includes("barista") ||
+            clean.includes("waiters") ||
+            clean.includes("kasir") ||
+            clean.includes("kafe") ||
+            clean.startsWith("dept_") ||
+            clean.includes("divisi")) {
+            return { type: "MODIFY", modificationText: userText };
         }
         // Direct income / expense switch or clarification keywords
         if (clean === "pemasukan" ||

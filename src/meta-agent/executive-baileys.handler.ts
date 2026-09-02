@@ -222,6 +222,17 @@ export class ExecutiveBaileysHandler {
       GOOGLE_DRIVE: "Minta link Google Drive folder nota",
       CONFIRM_ACTION: "Ya, simpan sekarang",
       CANCEL_ACTION: "Batal",
+      GENERATE_PDF: "Buat dokumen PDF laporan keuangan bulan ini",
+      DEPT_DAPUR: "Alokasikan untuk divisi Dapur",
+      DEPT_BARISTA: "Alokasikan untuk divisi Barista",
+      DEPT_WAITERS: "Alokasikan untuk divisi Waiters",
+      DEPT_KASIR: "Alokasikan untuk divisi Kasir",
+      DEPT_KAFE: "Alokasikan untuk divisi Kafe",
+      DUPLICATE_SAVE: "Ya, tetap simpan transaksi ini",
+      DUPLICATE_DROP: "Batal dan buang draf ini",
+      FILTER_THIS_WEEK: "Tampilkan ringkasan transaksi minggu ini",
+      FILTER_THIS_MONTH: "Tampilkan ringkasan transaksi bulan ini",
+      FILTER_LAST_MONTH: "Tampilkan ringkasan transaksi bulan lalu",
     };
 
     let effectiveText = messageText.trim();
