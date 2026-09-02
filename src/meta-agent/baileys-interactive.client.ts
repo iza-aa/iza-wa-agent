@@ -91,7 +91,7 @@ export class BaileysInteractiveClient {
     bodyText: string,
     buttons: InteractiveButton[],
     headerText?: string,
-    footerText: string = "IZA Executive Assistant"
+    footerText?: string
   ): Promise<boolean> {
     const jid = this.formatJid(to);
     const sock = this.getSocket();
@@ -119,9 +119,6 @@ export class BaileysInteractiveClient {
         body: proto?.Message?.InteractiveMessage?.Body?.create
           ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
           : { text: bodyText },
-        footer: proto?.Message?.InteractiveMessage?.Footer?.create
-          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-          : { text: footerText },
         nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
           ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
               buttons: formattedButtons,
@@ -130,6 +127,12 @@ export class BaileysInteractiveClient {
               buttons: formattedButtons,
             },
       };
+
+      if (footerText) {
+        interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
+          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+          : { text: footerText };
+      }
 
       if (headerText) {
         interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
@@ -204,7 +207,7 @@ export class BaileysInteractiveClient {
     description: string,
     buttonText: string,
     sections: ListSection[],
-    footerText: string = "IZA Executive Assistant"
+    footerText?: string
   ): Promise<boolean> {
     const jid = this.formatJid(to);
     const sock = this.getSocket();
@@ -233,9 +236,6 @@ export class BaileysInteractiveClient {
         body: proto?.Message?.InteractiveMessage?.Body?.create
           ? proto.Message.InteractiveMessage.Body.create({ text: description })
           : { text: description },
-        footer: proto?.Message?.InteractiveMessage?.Footer?.create
-          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-          : { text: footerText },
         nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
           ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
               buttons: [
@@ -254,6 +254,12 @@ export class BaileysInteractiveClient {
               ],
             },
       };
+
+      if (footerText) {
+        interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
+          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+          : { text: footerText };
+      }
 
       if (title) {
         interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create

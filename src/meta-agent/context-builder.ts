@@ -110,11 +110,92 @@ export class ContextBuilder {
   }
 
   /**
-   * Fetches live database records from all 7 Supabase tables to construct context
+   * Computes Month-to-date and Today financial summaries
+   */
+  private async getFinancialAggregates(todayStr: string, monthStr: string): Promise<{
+    monthIncome: number;
+    monthExpense: number;
+    monthNet: number;
+    categoryTotals: Record<string, number>;
+    todayIncome: number;
+    todayExpense: number;
+    todayTrx: Array<{ id: string; merchant: string; amount: number; type: string; category: string }>;
+  }> {
+    try {
+      const { data: trxs } = await this.supabase
+        .from("transactions")
+        .select("id, merchant, total_amount, date, category")
+        .order("date", { ascending: false });
+
+      let monthIncome = 0;
+      let monthExpense = 0;
+      let todayIncome = 0;
+      let todayExpense = 0;
+      const categoryTotals: Record<string, number> = {};
+      const todayTrx: any[] = [];
+
+      for (const t of trxs || []) {
+        const amt = Number(t.total_amount) || 0;
+        const isInc = t.category?.startsWith("Pemasukan");
+        const tDate = t.date || "";
+
+        if (tDate.startsWith(monthStr)) {
+          if (isInc) {
+            monthIncome += amt;
+          } else {
+            monthExpense += amt;
+            const cat = t.category || "Operasional";
+            categoryTotals[cat] = (categoryTotals[cat] || 0) + amt;
+          }
+        }
+
+        if (tDate === todayStr) {
+          if (isInc) {
+            todayIncome += amt;
+          } else {
+            todayExpense += amt;
+          }
+          todayTrx.push({
+            id: t.id,
+            merchant: t.merchant,
+            amount: amt,
+            type: isInc ? "Pemasukan" : "Pengeluaran",
+            category: t.category,
+          });
+        }
+      }
+
+      return {
+        monthIncome,
+        monthExpense,
+        monthNet: monthIncome - monthExpense,
+        categoryTotals,
+        todayIncome,
+        todayExpense,
+        todayTrx,
+      };
+    } catch (err) {
+      logger.error({ err }, "Failed to compute financial aggregates");
+      return {
+        monthIncome: 0,
+        monthExpense: 0,
+        monthNet: 0,
+        categoryTotals: {},
+        todayIncome: 0,
+        todayExpense: 0,
+        todayTrx: [],
+      };
+    }
+  }
+
+  /**
+   * Fetches live database records from all 7 Supabase tables to construct rich context
    */
   async buildContext(userPhone: string, userName: string, currentMessage: string): Promise<string> {
     try {
       const isSuperAdmin = await this.userRepo.isSuperAdminAsync(userPhone);
+      const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
+      const monthStr = todayStr.slice(0, 7); // YYYY-MM
 
       // 1. Fetch live multi-pocket balances
       let totalBalance = 0;
@@ -130,10 +211,13 @@ export class ContextBuilder {
         logger.warn({ balErr }, "Failed to fetch live balance for context");
       }
 
-      // 2. Fetch real-time Audit Data & Division Totals
+      // 2. Fetch real-time Financial Aggregates (Month & Today)
+      const aggregates = await this.getFinancialAggregates(todayStr, monthStr);
+
+      // 3. Fetch real-time Audit Data & Division Totals
       const audit = await this.getAuditData();
 
-      // 3. Fetch ALL Registered Users from 'users' table
+      // 4. Fetch ALL Registered Users from 'users' table
       let allUsersSummary = "";
       try {
         const { data: usersList } = await this.supabase
@@ -152,7 +236,7 @@ export class ContextBuilder {
         allUsersSummary = `• ${userName} (+${userPhone})`;
       }
 
-      // 4. Fetch Budgets & Bills
+      // 5. Fetch Budgets & Bills
       let budgetsSummary = "Belum ada batas anggaran aktif.";
       try {
         const { data: budgets } = await this.supabase.from("budgets").select("*");
@@ -173,7 +257,7 @@ export class ContextBuilder {
         }
       } catch {}
 
-      // 5. Fetch Pending Actions Status
+      // 6. Fetch Pending Actions Status
       let pendingActionsSummary = "Tidak ada draf transaksi yang sedang tertunda.";
       try {
         const { data: pendingActions } = await this.supabase
@@ -195,13 +279,13 @@ export class ContextBuilder {
         }
       } catch {}
 
-      // 6. Fetch recent chat history (last 5 messages)
-      const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 5);
+      // 7. Fetch recent chat history (last 6 messages)
+      const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 6);
       const recentChatStrings = chatLogs.map(
         (log) => `${log.direction === "inbound" ? "User" : "Asisten AI"}: ${log.content || ""}`
       );
 
-      // 7. Inspect if a specific transaction ID was mentioned (e.g. H120, H123, T026-H120)
+      // 8. Inspect if a specific transaction ID was mentioned (e.g. H120, H123, T026-H120)
       const idMatch = currentMessage.match(/T0\d{2}-[A-L]\d{3}|[A-L]\d{3}|\b\d{3}\b/i);
       let targetedTrxDetail = "";
       if (idMatch) {
@@ -223,7 +307,7 @@ export class ContextBuilder {
         }
       }
 
-      // 8. Fetch sample recent transactions
+      // 9. Fetch sample recent & searched transactions
       let sampleTrxList: any[] = [];
       try {
         const cleanWords = currentMessage
@@ -236,12 +320,12 @@ export class ContextBuilder {
         if (searchKeyword) {
           sampleTrxList = await this.trxRepo.searchTransactions({
             keyword: searchKeyword,
-            limit: 5,
+            limit: 6,
           });
         }
 
-        if (sampleTrxList.length < 5) {
-          const recentTrx = await this.trxRepo.getAllRecentTransactions(8);
+        if (sampleTrxList.length < 6) {
+          const recentTrx = await this.trxRepo.getAllRecentTransactions(10);
           const existingIds = new Set(sampleTrxList.map((t) => t.id));
           for (const r of recentTrx) {
             if (!existingIds.has(r.id)) {
@@ -253,12 +337,12 @@ export class ContextBuilder {
         logger.warn({ trxErr }, "Failed to fetch sample historical transactions");
       }
 
-      const trxExamples = sampleTrxList.slice(0, 8).map((t) => {
+      const trxExamples = sampleTrxList.slice(0, 10).map((t) => {
         const typeSign = t.category?.startsWith("Pemasukan") ? "+" : "-";
-        return `• [ID: ${t.id}] Toko/Sumber: "${t.merchant}" | Nominal: ${typeSign}${formatRupiah(t.total_amount)} | Kategori: "${t.category}" | Metode: "${t.payment_method || "Cash"}" | Teks Asli: "${t.raw_text || "-"}"`;
+        return `• [ID: ${t.id}] ${t.date} | "${t.merchant}" | ${typeSign}${formatRupiah(t.total_amount)} | Kat: "${t.category}" | Metode: "${t.payment_method || "Cash"}" | Input: "${t.raw_text || "-"}"`;
       });
 
-      // 9. Format everything into a clean prompt context block
+      // 10. Format balance block
       let balanceSummary = `Total Saldo Kas: ${formatRupiah(totalBalance)}\n`;
       if (Object.keys(pocketBalances).length > 0) {
         balanceSummary += "Rincian per Rekening/Kantong:\n";
@@ -267,6 +351,32 @@ export class ContextBuilder {
         }
       }
 
+      // 11. Format Monthly Summary
+      const topExpenseCategories = Object.entries(aggregates.categoryTotals)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([c, v]) => `  - ${c}: ${formatRupiah(v)}`)
+        .join("\n");
+
+      let monthlyFinancialSummary = `• Periode: Bulan ${monthStr}\n` +
+        `• Total Pemasukan: ${formatRupiah(aggregates.monthIncome)}\n` +
+        `• Total Pengeluaran: ${formatRupiah(aggregates.monthExpense)}\n` +
+        `• Arus Kas Bersih (Net Cashflow): ${formatRupiah(aggregates.monthNet)} (${aggregates.monthNet >= 0 ? "Surplus" : "Defisit"})\n` +
+        (topExpenseCategories ? `• Kategori Pengeluaran Terbesar:\n${topExpenseCategories}` : "");
+
+      // 12. Format Today's Summary
+      let todaySummaryText = `• Tanggal: ${todayStr}\n` +
+        `• Pemasukan Hari Ini: ${formatRupiah(aggregates.todayIncome)}\n` +
+        `• Pengeluaran Hari Ini: ${formatRupiah(aggregates.todayExpense)}\n`;
+
+      if (aggregates.todayTrx.length > 0) {
+        todaySummaryText += `• Transaksi Terjadi Hari Ini (${aggregates.todayTrx.length} trx):\n` +
+          aggregates.todayTrx.map((t) => `  - [${t.id}] ${t.type}: ${t.merchant} (${formatRupiah(t.amount)})`).join("\n");
+      } else {
+        todaySummaryText += `• (Belum ada transaksi yang dicatat hari ini)`;
+      }
+
+      // 13. Format Audit Data
       let auditSummary = `Total Pengeluaran di Tabset Transaksi: ${formatRupiah(audit.totalTrxExpense)}\n` +
         `Total Pengeluaran di Tabset Rincian Belanja: ${formatRupiah(audit.totalItemsExpense)}\n` +
         `Selisih: ${formatRupiah(audit.difference)}\n\n`;
@@ -287,7 +397,7 @@ export class ContextBuilder {
         });
       }
 
-      // Department breakdown summary
+      // 14. Department breakdown summary
       let deptSummary = "Total Pengeluaran per Divisi (dari Tabset Rincian Belanja & Dashboard):\n";
       for (const [dept, total] of Object.entries(audit.departmentTotals)) {
         deptSummary += `• ${dept}: ${formatRupiah(total)}\n`;
@@ -299,35 +409,40 @@ export class ContextBuilder {
 - Nomor WhatsApp: ${userPhone}
 - Hak Akses: ${isSuperAdmin ? "SUPER ADMIN / OWNER" : "ANGGOTA OPERASIONAL"}
 
---- DAFTAR SELURUH ANGGOTA TIM (TABEL USERS) ---
-${allUsersSummary}
-
---- REKAP PENGELUARAN PER DIVISI / DASHBOARD OPERASIONAL ---
-${deptSummary.trim()}
-
---- STATUS DRAF TRANSAKSI (TABEL PENDING_AGENT_ACTIONS) ---
-${pendingActionsSummary}
-
 --- SALDO KAS REAL-TIME (SUMBER DATA SUPABASE) ---
 ${balanceSummary.trim()}
 
---- DATA AUDIT & REKONSILIASI REAL-TIME (TABEL TRANSACTIONS VS RECEIPT_ITEMS) ---
+--- RINGKASAN KEUANGAN BULAN INI (${monthStr}) ---
+${monthlyFinancialSummary.trim()}
+
+--- RINGKASAN TRANSAKSI HARI INI (${todayStr}) ---
+${todaySummaryText.trim()}
+
+--- REKAP PENGELUARAN PER DIVISI OPERASIONAL ---
+${deptSummary.trim()}
+
+--- DATA AUDIT & REKONSILIASI KAS REAL-TIME ---
 ${auditSummary.trim()}
 ${targetedTrxDetail}
+
+--- DAFTAR ANGGOTA TIM TERDAFTAR (TABEL USERS) ---
+${allUsersSummary}
+
+--- STATUS DRAF TRANSAKSI TERAKHIR (TABEL PENDING_AGENT_ACTIONS) ---
+${pendingActionsSummary}
 
 --- TAUTAN SISTEM RESMI ---
 • Google Spreadsheet Utama: https://docs.google.com/spreadsheets/d/${config.GOOGLE_SHEET_ID}/edit
 • Google Drive Folder Nota: https://drive.google.com/drive/folders/${config.GOOGLE_DRIVE_FOLDER_ID}
-• Media Sosial (Instagram / TikTok): Belum dikonfigurasi di sistem (sampaikan dengan ramah bahwa belum ditautkan jika ditanya).
 
 --- ANGGARAN & TAGIHAN RUTIN (TABEL BUDGETS & BILLS) ---
 • Anggaran: ${budgetsSummary}
 • Tagihan: ${billsSummary}
 
---- CONTOH TRANSAKSI NYATA TERBARU (SOURCE OF TRUTH) ---
+--- 10 TRANSAKSI TERBARU (SOURCE OF TRUTH) ---
 ${trxExamples.length > 0 ? trxExamples.join("\n") : "(Belum ada transaksi historis)"}
 
---- RIWAYAT PERCAKAPAN TERAKHIR DENGAN USER INI (TABEL CHAT_LOGS) ---
+--- RIWAYAT PERCAKAPAN TERAKHIR DENGAN USER INI ---
 ${recentChatStrings.length > 0 ? recentChatStrings.join("\n") : "(Belum ada riwayat percakapan baru)"}
 `.trim();
 

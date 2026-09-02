@@ -67,7 +67,7 @@ export class BaileysInteractiveClient {
      * Sends real interactive buttons via NativeFlowMessage with proper binary nodes (biz + bot)
      * Rendered natively as clickable buttons on Android, iOS, and WhatsApp Web (NO viewOnce wrapper)
      */
-    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText = "IZA Executive Assistant") {
+    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText) {
         const jid = this.formatJid(to);
         const sock = this.getSocket();
         if (!sock) {
@@ -90,9 +90,6 @@ export class BaileysInteractiveClient {
                 body: proto?.Message?.InteractiveMessage?.Body?.create
                     ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
                     : { text: bodyText },
-                footer: proto?.Message?.InteractiveMessage?.Footer?.create
-                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-                    : { text: footerText },
                 nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
                     ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
                         buttons: formattedButtons,
@@ -101,6 +98,11 @@ export class BaileysInteractiveClient {
                         buttons: formattedButtons,
                     },
             };
+            if (footerText) {
+                interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
+                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+                    : { text: footerText };
+            }
             if (headerText) {
                 interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
                     ? proto.Message.InteractiveMessage.Header.create({
@@ -164,7 +166,7 @@ export class BaileysInteractiveClient {
     /**
      * Sends interactive List (single_select) bottom-sheet menu via NativeFlowMessage
      */
-    async sendInteractiveList(to, title, description, buttonText, sections, footerText = "IZA Executive Assistant") {
+    async sendInteractiveList(to, title, description, buttonText, sections, footerText) {
         const jid = this.formatJid(to);
         const sock = this.getSocket();
         if (!sock) {
@@ -189,9 +191,6 @@ export class BaileysInteractiveClient {
                 body: proto?.Message?.InteractiveMessage?.Body?.create
                     ? proto.Message.InteractiveMessage.Body.create({ text: description })
                     : { text: description },
-                footer: proto?.Message?.InteractiveMessage?.Footer?.create
-                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-                    : { text: footerText },
                 nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
                     ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
                         buttons: [
@@ -210,6 +209,11 @@ export class BaileysInteractiveClient {
                         ],
                     },
             };
+            if (footerText) {
+                interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
+                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+                    : { text: footerText };
+            }
             if (title) {
                 interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
                     ? proto.Message.InteractiveMessage.Header.create({

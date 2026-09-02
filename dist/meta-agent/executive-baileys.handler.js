@@ -147,8 +147,25 @@ export class ExecutiveBaileysHandler {
             await baileysInteractiveClient.sendTextMessage(senderPhone, `👋 *HALO! SELAMAT DATANG DI IZA ASSISTANT*\n\nAkun WhatsApp Anda belum terhubung dengan nomor staf terdaftar.\n\nSilakan ketik nomor HP Anda yang terdaftar (contoh: \`08123456789\`) untuk verifikasi identitas.`);
             return;
         }
-        // If user clicked interactive button, prioritize that text
-        const effectiveText = interactiveButtonId ? (messageText || interactiveButtonId) : messageText;
+        // If user clicked interactive button, map button ID to natural conversational text
+        const BUTTON_ID_MAP = {
+            CHECK_BALANCE: "Berapa total saldo kas dan rekening kita saat ini?",
+            REKAP_KAS: "Tampilkan rekap kondisi keuangan kas terbaru",
+            AUDIT_KAS: "Audit pengeluaran yang belum dirinci dan periksa selisih kas",
+            AUDIT_RINCIAN: "Audit pengeluaran yang belum dirinci",
+            AUDIT_SELISIH: "Cek apakah ada selisih di pembukuan kas",
+            SPREADSHEET: "Minta link Google Spreadsheet kas",
+            GOOGLE_DRIVE: "Minta link Google Drive folder nota",
+            CONFIRM_ACTION: "Ya, simpan sekarang",
+            CANCEL_ACTION: "Batal",
+        };
+        let effectiveText = messageText;
+        if (interactiveButtonId && BUTTON_ID_MAP[interactiveButtonId]) {
+            effectiveText = BUTTON_ID_MAP[interactiveButtonId];
+        }
+        else if (interactiveButtonId && (!effectiveText || effectiveText === interactiveButtonId)) {
+            effectiveText = BUTTON_ID_MAP[interactiveButtonId] || interactiveButtonId;
+        }
         // 4. Download Media if present (Image/Receipt, Audio/Voice Note, Document)
         let mediaBuffer;
         let mediaMimeType;
