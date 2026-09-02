@@ -310,14 +310,24 @@ export class ExecutiveBaileysHandler {
                     .join("\n");
                 finalReplyText += `\n\n${buttonList}`;
             }
-            // 7. Send Response directly via active socket to remoteJid with quoted message
-            const res = await sock.sendMessage(remoteJid, { text: finalReplyText }, { quoted: rawMsg });
-            logger.info({ remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
+            // 7. Send Response directly via active socket
+            // When sender is on @lid (iOS/companion), route to their canonical phone @s.whatsapp.net without cross-JID quoted context
+            const targetJid = isLid ? `${effectivePhone}@s.whatsapp.net` : remoteJid;
+            const res = isLid
+                ? await sock.sendMessage(targetJid, { text: finalReplyText })
+                : await sock.sendMessage(targetJid, { text: finalReplyText }, { quoted: rawMsg });
+            logger.info({ targetJid, remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
         }
         catch (err) {
             logger.error({ err, senderPhone, remoteJid }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");
             try {
-                await sock.sendMessage(remoteJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." }, { quoted: rawMsg });
+                const targetJid = isLid ? `${effectivePhone}@s.whatsapp.net` : remoteJid;
+                if (isLid) {
+                    await sock.sendMessage(targetJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." });
+                }
+                else {
+                    await sock.sendMessage(targetJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." }, { quoted: rawMsg });
+                }
             }
             catch { }
         }
