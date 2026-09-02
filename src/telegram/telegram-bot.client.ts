@@ -267,6 +267,18 @@ export class TelegramAssistantBot {
           return;
         }
 
+        // Prevent Super Admin creator from accidentally claiming their own invite for someone else
+        const currentUser = await this.resolveUserIdentity(ctx.from);
+        if (currentUser.isAllowed && currentUser.isSuperAdmin && currentUser.phone !== invite.phone) {
+          await ctx.reply(
+            `⚠️ *Ini adalah Link Undangan khusus untuk ${invite.name} (+${invite.phone}).*\n\n` +
+            `Akun Telegram Anda sudah resmi terdaftar sebagai Super Admin (*${currentUser.name}*).\n\n` +
+            `👉 *Jangan klik link ini di akun Anda sendiri, melainkan teruskan/kirim link ini ke Telegram ${invite.name}* agar akun HP beliau yang diverifikasi.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
+
         // Link Telegram ID permanently to database record
         const tgId = ctx.from?.id;
         await getSupabaseClient()
