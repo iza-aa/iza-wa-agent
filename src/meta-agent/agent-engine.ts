@@ -443,9 +443,11 @@ export class AgentEngine {
 
     // Case 3I: Export PDF Report
     if (aiResponse.response_type === "EXPORT_PDF") {
-      const targetMonth =
-        aiResponse.export_year_month ||
-        new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date()).slice(0, 7);
+      const currentMonthStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date()).slice(0, 7);
+      const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 6);
+      const recentChatStrings = chatLogs.map((l) => l.content || "");
+      const contextMonth = this.contextBuilder.resolveRequestedMonth(effectiveText, currentMonthStr, recentChatStrings);
+      const targetMonth = aiResponse.export_year_month || contextMonth || currentMonthStr;
 
       try {
         const summary = await this.trxRepo.getMonthlySummary(targetMonth);

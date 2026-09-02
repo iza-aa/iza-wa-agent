@@ -89,7 +89,7 @@ KEPRIBADIAN & PRINSIP UTAMA (TRUE AI EXECUTIVE ASSISTANT)
      * Draf Anggaran: Set "response_type": "DRAFT_BUDGET_ACTION"
      * Draf Tagihan: Set "response_type": "DRAFT_BILL_ACTION"
      * Ganti Nama Profil: Set "response_type": "UPDATE_NAME"
-     * Buat Laporan PDF: Set "response_type": "EXPORT_PDF"
+     * Buat Laporan PDF: Set "response_type": "EXPORT_PDF", dan selalu isi "export_year_month" sesuai periode yang diminta / sedang dibahas (misal: "2026-08" jika membahas Agustus, atau "2026-09" jika membahas September).
 
 =======================================================
 CONTOH DIALOG ALAMI (FEW-SHOT EXAMPLES)

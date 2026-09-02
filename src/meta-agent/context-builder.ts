@@ -251,7 +251,7 @@ export class ContextBuilder {
   /**
    * Resolves requested yearMonth from user text if specified (e.g. "agustus" -> "2026-08", "bulan lalu" -> previous month)
    */
-  private resolveRequestedMonth(currentMessage: string, currentYearMonth: string): string {
+  public resolveRequestedMonth(currentMessage: string, currentYearMonth: string, recentHistory?: string[]): string {
     const text = currentMessage.toLowerCase();
     const [currYearStr, currMonthStr] = currentYearMonth.split("-");
     const currentYear = parseInt(currYearStr, 10);
@@ -272,6 +272,7 @@ export class ContextBuilder {
       desember: 12, des: 12, dec: 12, december: 12,
     };
 
+    // 1. Direct match in current message
     if (text.includes("bulan lalu") || text.includes("kemarin")) {
       const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
       const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
@@ -288,6 +289,25 @@ export class ContextBuilder {
       }
     }
 
+    // 2. If current message is a follow-up request (e.g. "buatkan pdf", "minta pdf", "laporan tadi"), inspect recent chat history
+    if (recentHistory && recentHistory.length > 0) {
+      const historyCombined = recentHistory.join(" ").toLowerCase();
+      if (historyCombined.includes("bulan lalu") || historyCombined.includes("kemarin")) {
+        const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+        const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+        return `${prevYear}-${prevMonth.toString().padStart(2, "0")}`;
+      }
+
+      for (const [name, mNum] of Object.entries(monthNames)) {
+        const regex = new RegExp(`\\b${name}\\b`, "i");
+        if (regex.test(historyCombined)) {
+          const yearMatch = historyCombined.match(/\b(202[0-9])\b/);
+          const targetYear = yearMatch ? parseInt(yearMatch[1], 10) : currentYear;
+          return `${targetYear}-${mNum.toString().padStart(2, "0")}`;
+        }
+      }
+    }
+
     return currentYearMonth;
   }
 
@@ -299,7 +319,14 @@ export class ContextBuilder {
       const isSuperAdmin = await this.userRepo.isSuperAdminAsync(userPhone);
       const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
       const currentMonthStr = todayStr.slice(0, 7); // YYYY-MM
-      const requestedMonthStr = this.resolveRequestedMonth(currentMessage, currentMonthStr);
+
+      // 0. Fetch recent chat history first to resolve context-aware periods
+      const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 6);
+      const recentChatStrings = chatLogs.map(
+        (log) => `${log.direction === "inbound" ? "User" : "Asisten AI"}: ${log.content || ""}`
+      );
+
+      const requestedMonthStr = this.resolveRequestedMonth(currentMessage, currentMonthStr, recentChatStrings);
 
       // 1. Fetch live multi-pocket balances
       let totalBalance = 0;
@@ -387,11 +414,7 @@ export class ContextBuilder {
         }
       } catch {}
 
-      // 7. Fetch recent chat history (last 6 messages)
-      const chatLogs = await this.chatRepo.getRecentChatHistory(userPhone, 6);
-      const recentChatStrings = chatLogs.map(
-        (log) => `${log.direction === "inbound" ? "User" : "Asisten AI"}: ${log.content || ""}`
-      );
+      // 7. Recent chat history already fetched in step 0
 
       // 8. Inspect if a specific transaction ID was mentioned (e.g. H120, H123, T026-H120)
       const idMatch = currentMessage.match(/T0\d{2}-[A-L]\d{3}|[A-L]\d{3}|\b\d{3}\b/i);
