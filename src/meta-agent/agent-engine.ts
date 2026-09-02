@@ -290,13 +290,45 @@ export class AgentEngine {
     // Case 3B: Propose deleting a transaction
     if (aiResponse.response_type === "DRAFT_DELETE" && aiResponse.delete_draft?.transaction_id) {
       const del = aiResponse.delete_draft;
+      const found = await this.trxRepo.findTransactionByIdOrShortCode(del.transaction_id);
+
+      if (!found) {
+        return {
+          reply: `⚠️ Transaksi dengan ID \`${del.transaction_id}\` tidak ditemukan di pembukuan kas (mungkin sudah pernah dihapus sebelumnya atau ID salah).\n\nKetik _"10 transaksi terakhir"_ untuk melihat daftar transaksi aktif.`,
+          success: false,
+        };
+      }
+
+      // Populate draft with REAL database transaction data
+      const fullDetail = await this.trxRepo.getTransactionWithItems(found.id);
+      const targetTrx = fullDetail?.trx || found;
+      const targetItems = fullDetail?.items || [];
+
+      del.transaction_id = targetTrx.id;
+      del.merchant = targetTrx.merchant;
+      del.total_amount = targetTrx.total_amount;
+
       await this.confirmationFlow.createDraft(userPhone, userName, "DELETE_TRANSACTION", del);
-      const confirmText = `${aiResponse.reply_text}\n\n⚠️ *KONFIRMASI PENGHAPUSAN:*\n• ID: \`${del.transaction_id}\`\n• Keterangan: ${del.merchant || "-"}\n• Nominal: ${del.total_amount ? formatRupiah(del.total_amount) : "-"}\n\n👉 *Apakah Anda yakin ingin menghapus transaksi ini?*`;
+
+      let itemsPreview = "";
+      if (targetItems.length > 0) {
+        itemsPreview = `\n📋 *Rincian Barang (${targetItems.length} item):*\n` +
+          targetItems.map((it: any) => ` • ${it.item_name} (${it.qty} ${it.unit || "unit"}) = ${formatRupiah(it.total_price)} [${it.department || "Kafe"}]`).join("\n");
+      }
+
+      const confirmText = `⚠️ *KONFIRMASI PENGHAPUSAN TRANSAKSI:*\n\n` +
+        `• ID Transaksi: \`${targetTrx.id}\`\n` +
+        `• Keterangan / Toko: *${targetTrx.merchant}*\n` +
+        `• Nominal: *${formatRupiah(targetTrx.total_amount)}*\n` +
+        `• Tanggal: ${targetTrx.date}\n` +
+        `• Metode: ${targetTrx.payment_method || "Cash"} | Kategori: ${targetTrx.category || "Operasional"}` +
+        itemsPreview +
+        `\n\n👉 *Apakah Anda yakin ingin menghapus transaksi ini secara permanen dari kas & Google Sheets?*`;
 
       return {
         reply: confirmText,
         buttons: [
-          { id: "CONFIRM_ACTION", title: "✅ Ya, Hapus" },
+          { id: "CONFIRM_ACTION", title: "🗑️ Ya, Hapus Sekarang" },
           { id: "CANCEL_ACTION", title: "❌ Batalkan" },
         ],
         success: true,
@@ -306,8 +338,18 @@ export class AgentEngine {
     // Case 3C: Propose editing a transaction
     if (aiResponse.response_type === "DRAFT_EDIT" && aiResponse.edit_draft?.transaction_id) {
       const ed = aiResponse.edit_draft;
+      const found = await this.trxRepo.findTransactionByIdOrShortCode(ed.transaction_id);
+
+      if (!found) {
+        return {
+          reply: `⚠️ Transaksi dengan ID \`${ed.transaction_id}\` tidak ditemukan di pembukuan kas.\n\nKetik _"10 transaksi terakhir"_ untuk mengecek ID transaksi yang valid.`,
+          success: false,
+        };
+      }
+
+      ed.transaction_id = found.id;
       await this.confirmationFlow.createDraft(userPhone, userName, "EDIT_TRANSACTION", ed);
-      const confirmText = `${aiResponse.reply_text}\n\n✏️ *KONFIRMASI PERUBAHAN:*\n• ID: \`${ed.transaction_id}\`\n• Ringkasan Perubahan: ${ed.summary}\n\n👉 *Apakah Anda yakin ingin menyimpan perubahan ini?*`;
+      const confirmText = `${aiResponse.reply_text}\n\n✏️ *KONFIRMASI PERUBAHAN:*\n• ID: \`${found.id}\` (*${found.merchant}*)\n• Ringkasan Perubahan: *${ed.summary}*\n\n👉 *Apakah Anda yakin ingin menyimpan perubahan ini ke kas & Google Sheets?*`;
 
       return {
         reply: confirmText,
