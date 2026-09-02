@@ -162,13 +162,52 @@ export class ContextBuilder {
         }
     }
     /**
+     * Resolves requested yearMonth from user text if specified (e.g. "agustus" -> "2026-08", "bulan lalu" -> previous month)
+     */
+    resolveRequestedMonth(currentMessage, currentYearMonth) {
+        const text = currentMessage.toLowerCase();
+        const [currYearStr, currMonthStr] = currentYearMonth.split("-");
+        const currentYear = parseInt(currYearStr, 10);
+        const currentMonth = parseInt(currMonthStr, 10);
+        const monthNames = {
+            januari: 1, jan: 1, january: 1,
+            februari: 2, feb: 2, february: 2,
+            maret: 3, mar: 3, march: 3,
+            april: 4, apr: 4,
+            mei: 5, may: 5,
+            juni: 6, jun: 6, june: 6,
+            juli: 7, jul: 7, july: 7,
+            agustus: 8, agu: 8, agt: 8, august: 8,
+            september: 9, sep: 9,
+            oktober: 10, okt: 10, oct: 10, october: 10,
+            november: 11, nov: 11,
+            desember: 12, des: 12, dec: 12, december: 12,
+        };
+        if (text.includes("bulan lalu") || text.includes("kemarin")) {
+            const prevMonth = currentMonth === 1 ? 12 : currentMonth - 1;
+            const prevYear = currentMonth === 1 ? currentYear - 1 : currentYear;
+            return `${prevYear}-${prevMonth.toString().padStart(2, "0")}`;
+        }
+        for (const [name, mNum] of Object.entries(monthNames)) {
+            const regex = new RegExp(`\\b${name}\\b`, "i");
+            if (regex.test(text)) {
+                // If year is also mentioned, e.g. "agustus 2025" or "agustus 2026"
+                const yearMatch = text.match(/\b(202[0-9])\b/);
+                const targetYear = yearMatch ? parseInt(yearMatch[1], 10) : currentYear;
+                return `${targetYear}-${mNum.toString().padStart(2, "0")}`;
+            }
+        }
+        return currentYearMonth;
+    }
+    /**
      * Fetches live database records from all 7 Supabase tables to construct rich context
      */
     async buildContext(userPhone, userName, currentMessage) {
         try {
             const isSuperAdmin = await this.userRepo.isSuperAdminAsync(userPhone);
             const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Makassar" }).format(new Date());
-            const monthStr = todayStr.slice(0, 7); // YYYY-MM
+            const currentMonthStr = todayStr.slice(0, 7); // YYYY-MM
+            const requestedMonthStr = this.resolveRequestedMonth(currentMessage, currentMonthStr);
             // 1. Fetch live multi-pocket balances
             let totalBalance = 0;
             const pocketBalances = {};
@@ -183,8 +222,11 @@ export class ContextBuilder {
             catch (balErr) {
                 logger.warn({ balErr }, "Failed to fetch live balance for context");
             }
-            // 2. Fetch real-time Financial Aggregates (Month & Today)
-            const aggregates = await this.getFinancialAggregates(todayStr, monthStr);
+            // 2. Fetch real-time Financial Aggregates for both Current Month and Requested Month
+            const currentAggregates = await this.getFinancialAggregates(todayStr, currentMonthStr);
+            const targetAggregates = requestedMonthStr === currentMonthStr
+                ? currentAggregates
+                : await this.getFinancialAggregates(todayStr, requestedMonthStr);
             // 3. Fetch real-time Audit Data & Division Totals
             const audit = await this.getAuditData();
             // 4. Fetch ALL Registered Users from 'users' table
@@ -315,23 +357,23 @@ export class ContextBuilder {
                 }
             }
             // 11. Format Monthly Summary
-            const topExpenseCategories = Object.entries(aggregates.categoryTotals)
+            const topExpenseCategories = Object.entries(targetAggregates.categoryTotals)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 4)
                 .map(([c, v]) => `  - ${c}: ${formatRupiah(v)}`)
                 .join("\n");
-            let monthlyFinancialSummary = `• Periode: Bulan ${monthStr}\n` +
-                `• Total Pemasukan: ${formatRupiah(aggregates.monthIncome)}\n` +
-                `• Total Pengeluaran: ${formatRupiah(aggregates.monthExpense)}\n` +
-                `• Arus Kas Bersih (Net Cashflow): ${formatRupiah(aggregates.monthNet)} (${aggregates.monthNet >= 0 ? "Surplus" : "Defisit"})\n` +
+            let monthlyFinancialSummary = `• Periode: Bulan ${requestedMonthStr}\n` +
+                `• Total Pemasukan: ${formatRupiah(targetAggregates.monthIncome)}\n` +
+                `• Total Pengeluaran: ${formatRupiah(targetAggregates.monthExpense)}\n` +
+                `• Arus Kas Bersih (Net Cashflow): ${formatRupiah(targetAggregates.monthNet)} (${targetAggregates.monthNet >= 0 ? "Surplus" : "Defisit"})\n` +
                 (topExpenseCategories ? `• Kategori Pengeluaran Terbesar:\n${topExpenseCategories}` : "");
             // 12. Format Today's Summary
             let todaySummaryText = `• Tanggal: ${todayStr}\n` +
-                `• Pemasukan Hari Ini: ${formatRupiah(aggregates.todayIncome)}\n` +
-                `• Pengeluaran Hari Ini: ${formatRupiah(aggregates.todayExpense)}\n`;
-            if (aggregates.todayTrx.length > 0) {
-                todaySummaryText += `• Transaksi Terjadi Hari Ini (${aggregates.todayTrx.length} trx):\n` +
-                    aggregates.todayTrx.map((t) => `  - [${t.id}] ${t.type}: ${t.merchant} (${formatRupiah(t.amount)})`).join("\n");
+                `• Pemasukan Hari Ini: ${formatRupiah(currentAggregates.todayIncome)}\n` +
+                `• Pengeluaran Hari Ini: ${formatRupiah(currentAggregates.todayExpense)}\n`;
+            if (currentAggregates.todayTrx.length > 0) {
+                todaySummaryText += `• Transaksi Terjadi Hari Ini (${currentAggregates.todayTrx.length} trx):\n` +
+                    currentAggregates.todayTrx.map((t) => `  - [${t.id}] ${t.type}: ${t.merchant} (${formatRupiah(t.amount)})`).join("\n");
             }
             else {
                 todaySummaryText += `• (Belum ada transaksi yang dicatat hari ini)`;
@@ -369,7 +411,7 @@ export class ContextBuilder {
 --- SALDO KAS REAL-TIME (SUMBER DATA SUPABASE) ---
 ${balanceSummary.trim()}
 
---- RINGKASAN KEUANGAN BULAN INI (${monthStr}) ---
+--- RINGKASAN KEUANGAN PERIODE TARGET (${requestedMonthStr}) ---
 ${monthlyFinancialSummary.trim()}
 
 --- RINGKASAN TRANSAKSI HARI INI (${todayStr}) ---
