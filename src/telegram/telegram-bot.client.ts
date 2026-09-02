@@ -137,9 +137,14 @@ export class TelegramAssistantBot {
     }
 
     const keyboard = this.buildKeyboard(buttons);
+    const replyParams = ctx.message?.message_id
+      ? { message_id: ctx.message.message_id }
+      : undefined;
+
     const sent = await ctx.reply(text, {
       parse_mode: "Markdown",
       reply_markup: keyboard,
+      reply_parameters: replyParams,
     });
 
     if (buttons && buttons.length > 0 && chatId && sent?.message_id) {
