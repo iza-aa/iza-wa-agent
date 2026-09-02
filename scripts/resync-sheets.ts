@@ -29,7 +29,7 @@ async function resyncAllTransactions() {
   const { data: transactions, error } = await supabase
     .from("transactions")
     .select("*")
-    .order("created_at", { ascending: true });
+    .order("id", { ascending: true });
 
   if (error) {
     console.error("Error fetching transactions:", error);

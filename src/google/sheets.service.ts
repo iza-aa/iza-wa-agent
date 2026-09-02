@@ -167,6 +167,36 @@ export class GoogleSheetsService {
         },
       });
 
+      // Ensure basic filter covers all columns A to L (indices 0..12)
+      const currentTrxSheet = existingSheets.find(
+        (s: any) => s.properties?.title === this.sheetTitle
+      );
+      const trxSheetId = currentTrxSheet?.properties?.sheetId || 0;
+      try {
+        await this.sheetsClient.spreadsheets.batchUpdate({
+          spreadsheetId: sheetId,
+          requestBody: {
+            requests: [
+              {
+                setBasicFilter: {
+                  filter: {
+                    range: {
+                      sheetId: trxSheetId,
+                      startRowIndex: 0,
+                      endRowIndex: 2000,
+                      startColumnIndex: 0,
+                      endColumnIndex: 12, // Columns A through L
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        });
+      } catch (filterErr) {
+        logger.debug({ filterErr }, "Basic filter update skipped/handled");
+      }
+
       // Setup or refresh Dashboard tab (Sesuai Foto 1 & 2)
       await this.setupDashboardTab(sheetId);
 
