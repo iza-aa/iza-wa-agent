@@ -53,16 +53,8 @@ export class ExecutiveBaileysHandler {
     }
 
     const msgId = rawMsg.key.id;
-    if (msgId) {
-      if (this.processedMessageIds.has(msgId)) {
-        return;
-      }
-      this.processedMessageIds.add(msgId);
-      // Clean up set memory if too large
-      if (this.processedMessageIds.size > 2000) {
-        const first = this.processedMessageIds.values().next().value;
-        if (first) this.processedMessageIds.delete(first);
-      }
+    if (msgId && this.processedMessageIds.has(msgId)) {
+      return;
     }
 
     const senderPhone = normalizePhoneNumber(remoteJid);
@@ -96,6 +88,10 @@ export class ExecutiveBaileysHandler {
       else if (msgContent?.viewOnceMessage?.message) msgContent = msgContent.viewOnceMessage.message;
       else if (msgContent?.viewOnceMessageV2?.message) msgContent = msgContent.viewOnceMessageV2.message;
       else if (msgContent?.documentWithCaptionMessage?.message) msgContent = msgContent.documentWithCaptionMessage.message;
+      else if (msgContent?.protocolMessage?.editedMessage) msgContent = msgContent.protocolMessage.editedMessage;
+      else if (msgContent?.templateMessage?.hydratedTemplate) msgContent = msgContent.templateMessage.hydratedTemplate;
+      else if (msgContent?.templateMessage?.fourRowTemplate) msgContent = msgContent.templateMessage.fourRowTemplate;
+      else if (msgContent?.templateMessage?.hydratedFourRowTemplate) msgContent = msgContent.templateMessage.hydratedFourRowTemplate;
       else break;
     }
 
@@ -260,6 +256,15 @@ export class ExecutiveBaileysHandler {
         "ExecutiveBaileysHandler: Ignoring empty or undecrypted message packet"
       );
       return;
+    }
+
+    // Message is valid and decrypted - mark as processed to avoid double processing
+    if (msgId) {
+      this.processedMessageIds.add(msgId);
+      if (this.processedMessageIds.size > 2000) {
+        const first = this.processedMessageIds.values().next().value;
+        if (first) this.processedMessageIds.delete(first);
+      }
     }
 
     if (hasImage || hasAudio || hasDoc) {

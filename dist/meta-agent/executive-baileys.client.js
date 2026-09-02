@@ -6,6 +6,8 @@ const makeWASocket = typeof Baileys.default === "function"
         Baileys.makeWASocket;
 const useMultiFileAuthState = Baileys.useMultiFileAuthState ||
     Baileys.default?.useMultiFileAuthState;
+const makeCacheableSignalKeyStore = Baileys.makeCacheableSignalKeyStore ||
+    Baileys.default?.makeCacheableSignalKeyStore;
 const DisconnectReason = Baileys.DisconnectReason ||
     Baileys.default?.DisconnectReason;
 const fetchLatestBaileysVersion = Baileys.fetchLatestBaileysVersion ||
@@ -24,13 +26,36 @@ export function createExecutiveBot() {
         const { state, saveCreds } = await useMultiFileAuthState(authFolder);
         const { version, isLatest } = await fetchLatestBaileysVersion();
         logger.info({ version, isLatest, authFolder }, "Using Baileys WA Version for Executive Assistant");
+        const msgStore = new Map();
+        const saveMessageToStore = (msg) => {
+            if (msg?.key?.id && msg?.message) {
+                msgStore.set(msg.key.id, msg.message);
+                if (msgStore.size > 1000) {
+                    const firstKey = msgStore.keys().next().value;
+                    if (firstKey)
+                        msgStore.delete(firstKey);
+                }
+            }
+        };
         const sock = makeWASocket({
             version,
-            auth: state,
+            auth: {
+                creds: state.creds,
+                keys: makeCacheableSignalKeyStore
+                    ? makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }))
+                    : state.keys,
+            },
             printQRInTerminal: false,
             logger: pino({ level: "silent" }),
             browser: ["IZA Executive Assistant", "Chrome", "1.0.0"],
             generateHighQualityLinkPreview: true,
+            syncFullHistory: false,
+            getMessage: async (key) => {
+                if (key?.id && msgStore.has(key.id)) {
+                    return msgStore.get(key.id);
+                }
+                return undefined;
+            },
         });
         setExecutiveSocket(sock);
         sock.ev.on("creds.update", saveCreds);
@@ -72,6 +97,7 @@ export function createExecutiveBot() {
             if (type !== "notify")
                 return;
             for (const msg of messages) {
+                saveMessageToStore(msg);
                 // Skip outgoing messages from bot itself
                 if (msg.key?.fromMe)
                     continue;
@@ -89,6 +115,27 @@ export function createExecutiveBot() {
                 }
                 catch (error) {
                     logger.error({ error, msgKey: msg.key }, "Error processing Executive Baileys incoming message");
+                }
+            }
+        });
+        // Also listen to messages.update in case an undecrypted message gets decrypted afterwards
+        sock.ev.on("messages.update", async (updates) => {
+            for (const update of updates) {
+                if (update.update?.message) {
+                    saveMessageToStore({ key: update.key, message: update.update.message });
+                    if (!update.key?.fromMe) {
+                        try {
+                            await executiveBaileysHandler.handleBaileysMessage(sock, {
+                                key: update.key,
+                                message: update.update.message,
+                                messageTimestamp: update.update.messageTimestamp || Math.floor(Date.now() / 1000),
+                                pushName: update.update.pushName,
+                            });
+                        }
+                        catch (error) {
+                            logger.error({ error, msgKey: update.key }, "Error processing Executive Baileys messages.update");
+                        }
+                    }
                 }
             }
         });
