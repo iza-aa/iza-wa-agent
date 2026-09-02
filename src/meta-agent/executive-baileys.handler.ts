@@ -233,11 +233,11 @@ export class ExecutiveBaileysHandler {
 
     if (interactiveButtonId && BUTTON_ID_MAP[interactiveButtonId]) {
       effectiveText = BUTTON_ID_MAP[interactiveButtonId];
-    } else if (cleanLower.includes("cek saldo") || cleanLower.includes("saldo kas") || cleanLower === "saldo" || cleanLower.includes("cek uang")) {
+    } else if (cleanLower === "1" || cleanLower.includes("cek saldo") || cleanLower.includes("saldo kas") || cleanLower === "saldo" || cleanLower.includes("cek uang")) {
       effectiveText = "Berapa total saldo kas dan rekening kita saat ini?";
-    } else if (cleanLower.includes("rekap kas") || cleanLower.includes("rekap divisi") || cleanLower.includes("rekap keuangan")) {
+    } else if (cleanLower === "2" || cleanLower.includes("rekap kas") || cleanLower.includes("rekap divisi") || cleanLower.includes("rekap keuangan")) {
       effectiveText = "Tampilkan rekap kondisi keuangan kas terbaru bulan ini";
-    } else if (cleanLower.includes("audit rincian") || cleanLower.includes("audit kas") || cleanLower.includes("audit selisih") || cleanLower.includes("cek selisih")) {
+    } else if (cleanLower === "3" || cleanLower.includes("audit rincian") || cleanLower.includes("audit kas") || cleanLower.includes("audit selisih") || cleanLower.includes("cek selisih")) {
       effectiveText = "Audit pengeluaran yang belum dirinci dan periksa selisih di pembukuan kas";
     } else if (cleanLower.includes("spreadsheet") || cleanLower.includes("sheet") || cleanLower.includes("excel")) {
       effectiveText = "Minta link Google Spreadsheet kas";

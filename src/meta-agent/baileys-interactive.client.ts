@@ -83,8 +83,8 @@ export class BaileysInteractiveClient {
   }
 
   /**
-   * Sends real interactive buttons via NativeFlowMessage with proper binary nodes (biz + bot)
-   * Rendered natively as clickable buttons on Android, iOS, and WhatsApp Web (NO viewOnce wrapper)
+   * Sends clean, beautifully formatted message with quick numbered options
+   * (Avoids binary bot node ratchet corruption on WhatsApp Desktop / Web)
    */
   async sendInteractiveButtons(
     to: string,
@@ -101,105 +101,30 @@ export class BaileysInteractiveClient {
       return false;
     }
 
-    if (!buttons || buttons.length === 0) {
-      return this.sendTextMessage(jid, bodyText);
+    let message = bodyText;
+    if (headerText && !message.startsWith(headerText)) {
+      message = `*${headerText}*\n\n${message}`;
     }
 
-    // Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
-    try {
-      const formattedButtons = buttons.slice(0, 3).map((btn) => ({
-        name: "quick_reply",
-        buttonParamsJson: JSON.stringify({
-          display_text: btn.title.slice(0, 25),
-          id: btn.id,
-        }),
-      }));
-
-      const interactiveMessagePayload: any = {
-        body: proto?.Message?.InteractiveMessage?.Body?.create
-          ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
-          : { text: bodyText },
-        nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
-          ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
-              buttons: formattedButtons,
-            })
-          : {
-              buttons: formattedButtons,
-            },
-      };
-
-      if (footerText) {
-        interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
-          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-          : { text: footerText };
-      }
-
-      if (headerText) {
-        interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
-          ? proto.Message.InteractiveMessage.Header.create({
-              title: headerText,
-              hasMediaAttachment: false,
-            })
-          : {
-              title: headerText,
-              hasMediaAttachment: false,
-            };
-      }
-
-      const fullMessage = {
-        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-          ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-          : interactiveMessagePayload,
-      };
-
-      const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
-      const additionalNodes = [
-        {
-          tag: "biz",
-          attrs: {},
-          content: [
-            {
-              tag: "interactive",
-              attrs: { type: "native_flow", v: "1" },
-              content: [
-                {
-                  tag: "native_flow",
-                  attrs: { v: "9", name: "mixed" },
-                },
-              ],
-            },
-          ],
-        },
-        { tag: "bot", attrs: { biz_bot: "1" } },
-      ];
-
-      if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
-        const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
-        await sock.relayMessage(jid, msg.message, {
-          messageId: msg.key.id,
-          additionalNodes,
-        });
-        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
-        return true;
-      }
-    } catch (err) {
-      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, falling back to clean text");
+    if (buttons && buttons.length > 0) {
+      const buttonList = buttons
+        .map((b, i) => `👉 *[${i + 1}]* ${b.title}`)
+        .join("\n");
+      message += `\n\n${buttonList}`;
     }
 
-    // Fallback: send clean text with numbered choices
-    let fallbackText = bodyText;
-    if (headerText && !fallbackText.startsWith(headerText)) {
-      fallbackText = `*${headerText}*\n\n${fallbackText}`;
-    }
-    fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}. *${b.title}*`).join("\n");
     if (footerText) {
-      fallbackText += `\n\n_${footerText}_`;
+      message += `\n\n_${footerText}_`;
     }
-    return this.sendTextMessage(jid, fallbackText);
+
+    return this.sendTextMessage(jid, message);
   }
 
   /**
    * Sends interactive List (single_select) bottom-sheet menu via NativeFlowMessage
+   */
+  /**
+   * Sends interactive List formatted as clean text with numbered choices
    */
   async sendInteractiveList(
     to: string,
@@ -217,110 +142,27 @@ export class BaileysInteractiveClient {
       return false;
     }
 
-    try {
-      const listParams = {
-        title: buttonText.slice(0, 20),
-        sections: sections.map((sec) => ({
-          title: sec.title,
-          highlight_label: sec.highlight_label,
-          rows: sec.rows.map((row) => ({
-            header: row.header,
-            title: row.title.slice(0, 24),
-            description: row.description || this.getButtonDescription(row.id, row.title),
-            id: row.id,
-          })),
-        })),
-      };
+    let message = "";
+    if (title) message += `*${title}*\n\n`;
+    message += description;
 
-      const interactiveMessagePayload: any = {
-        body: proto?.Message?.InteractiveMessage?.Body?.create
-          ? proto.Message.InteractiveMessage.Body.create({ text: description })
-          : { text: description },
-        nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
-          ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
-              buttons: [
-                {
-                  name: "single_select",
-                  buttonParamsJson: JSON.stringify(listParams),
-                },
-              ],
-            })
-          : {
-              buttons: [
-                {
-                  name: "single_select",
-                  buttonParamsJson: JSON.stringify(listParams),
-                },
-              ],
-            },
-      };
-
-      if (footerText) {
-        interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
-          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-          : { text: footerText };
+    let index = 1;
+    for (const section of sections) {
+      if (section.title) {
+        message += `\n\n📌 *${section.title.toUpperCase()}*`;
       }
-
-      if (title) {
-        interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
-          ? proto.Message.InteractiveMessage.Header.create({
-              title: title,
-              hasMediaAttachment: false,
-            })
-          : {
-              title: title,
-              hasMediaAttachment: false,
-            };
-      }
-
-      const fullMessage = {
-        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-          ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-          : interactiveMessagePayload,
-      };
-
-      const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
-      const additionalNodes = [
-        {
-          tag: "biz",
-          attrs: {},
-          content: [
-            {
-              tag: "interactive",
-              attrs: { type: "native_flow", v: "1" },
-              content: [
-                {
-                  tag: "native_flow",
-                  attrs: { v: "2", name: "single_select" },
-                },
-              ],
-            },
-          ],
-        },
-        { tag: "bot", attrs: { biz_bot: "1" } },
-      ];
-
-      if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
-        const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
-        await sock.relayMessage(jid, msg.message, {
-          messageId: msg.key.id,
-          additionalNodes,
-        });
-        logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
-        return true;
-      }
-    } catch (err) {
-      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive list, falling back to buttons");
-    }
-
-    // Flatten rows to buttons fallback
-    const flatButtons: InteractiveButton[] = [];
-    for (const sec of sections) {
-      for (const r of sec.rows) {
-        flatButtons.push({ id: r.id, title: r.title });
+      for (const row of section.rows) {
+        message += `\n👉 *[${index}]* ${row.title}`;
+        if (row.description) message += ` — _${row.description}_`;
+        index++;
       }
     }
-    return this.sendInteractiveButtons(jid, description, flatButtons.slice(0, 3), title, footerText);
+
+    if (footerText) {
+      message += `\n\n_${footerText}_`;
+    }
+
+    return this.sendTextMessage(jid, message);
   }
 
   /**
