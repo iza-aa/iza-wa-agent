@@ -29,7 +29,7 @@ const envSchema = z.object({
   EVOLUTION_INSTANCE_NAME: z.string().optional().default("iza-executive"),
   EVOLUTION_AGENT_PHONE: z.string().optional().default("6287864550486"),
   AGY_CLI_PATH: z.string().optional().default("agy"),
-  TELEGRAM_BOT_TOKEN: z.string().optional().default("8881925496:AAFUCvYB2yyCFNxQQlcgOB5KGR3oWwBTs1U"),
+  TELEGRAM_BOT_TOKEN: z.string().optional().default(""),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

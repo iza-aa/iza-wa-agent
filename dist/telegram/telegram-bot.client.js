@@ -17,8 +17,11 @@ export class TelegramAssistantBot {
     agentEngine;
     userPhoneMap = new Map(); // tgUserId -> phoneNumber
     constructor() {
-        const token = config.TELEGRAM_BOT_TOKEN || "8881925496:AAFUCvYB2yyCFNxQQlcgOB5KGR3oWwBTs1U";
-        this.bot = new Bot(token);
+        const token = config.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
+        if (!token) {
+            logger.warn("TelegramAssistantBot: TELEGRAM_BOT_TOKEN is not configured in .env");
+        }
+        this.bot = new Bot(token || "dummy_token");
         const supabase = getSupabaseClient();
         this.userRepo = new UserRepository(supabase, config.SUPER_ADMIN_PHONE);
         this.trxRepo = new TransactionRepository(supabase);
@@ -81,7 +84,7 @@ export class TelegramAssistantBot {
             const file = await this.bot.api.getFile(fileId);
             if (!file.file_path)
                 return null;
-            const token = config.TELEGRAM_BOT_TOKEN || "8881925496:AAFUCvYB2yyCFNxQQlcgOB5KGR3oWwBTs1U";
+            const token = config.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
             const fileUrl = `https://api.telegram.org/file/bot${token}/${file.file_path}`;
             const res = await fetch(fileUrl);
             const arrayBuffer = await res.arrayBuffer();
