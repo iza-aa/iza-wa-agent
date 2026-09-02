@@ -17,6 +17,8 @@ import { metaApiClient } from "./meta-agent/meta-api.client.js";
 import { metaWebhookHandler } from "./meta-agent/meta-webhook.handler.js";
 import { evolutionApiClient } from "./meta-agent/evolution-api.client.js";
 import { evolutionWebhookHandler } from "./meta-agent/evolution-webhook.handler.js";
+import { createExecutiveBot } from "./meta-agent/executive-baileys.client.js";
+import { getExecutiveQr, getExecutiveStatus } from "./meta-agent/executive-socket-holder.js";
 
 async function bootstrap() {
   console.log("=================================================");
@@ -106,52 +108,52 @@ async function bootstrap() {
       }
     } else if ((parsedUrl.pathname === "/qr" || parsedUrl.pathname === "/qr-executive") && req.method === "GET") {
       try {
-        const qrData = await evolutionApiClient.getConnectQrCode();
-        if (!qrData) {
-          res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:50px;">
-            <h2>❌ Gagal memuat status Evolution API</h2>
-            <p>Pastikan container Evolution API berjalan di port 8080.</p>
-          </body></html>`);
-          return;
-        }
+        const executiveStatus = getExecutiveStatus();
+        const executiveQr = getExecutiveQr();
 
-        if (qrData.status === "open") {
+        if (executiveStatus === "open") {
           res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
           res.end(`<!DOCTYPE html>
           <html>
             <head>
-              <title>WhatsApp Business - Terhubung</title>
+              <title>WhatsApp Executive - Terhubung</title>
               <meta http-equiv="refresh" content="10">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
             </head>
             <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;padding:40px 16px;background:#f0f2f5;">
               <div style="background:#fff;max-width:440px;margin:auto;padding:32px 24px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
                 <div style="font-size:48px;margin-bottom:12px;">✅</div>
-                <h2 style="color:#0f5132;margin:0 0 10px;">WhatsApp Terhubung!</h2>
-                <p style="color:#4b5563;font-size:14px;line-height:1.5;">Nomor <b>${config.EVOLUTION_AGENT_PHONE || "087864550486"}</b> (Instance: <code>${config.EVOLUTION_INSTANCE_NAME}</code>) aktif dan siap melayani percakapan.</p>
-                <div style="margin-top:20px;padding:12px;background:#d1e7dd;border-radius:8px;color:#0f5132;font-size:14px;font-weight:600;">Status: ONLINE</div>
+                <h2 style="color:#0f5132;margin:0 0 10px;">Executive WhatsApp Terhubung!</h2>
+                <p style="color:#4b5563;font-size:14px;line-height:1.5;">Nomor <b>${config.EVOLUTION_AGENT_PHONE || "087864550486"}</b> aktif dengan mesin <b>Direct Baileys NativeFlow</b> dan siap melayani percakapan.</p>
+                <div style="margin-top:20px;padding:12px;background:#d1e7dd;border-radius:8px;color:#0f5132;font-size:14px;font-weight:600;">Status: ONLINE (Direct Baileys)</div>
               </div>
             </body>
           </html>`);
           return;
         }
 
-        const base64Img = qrData.base64 || "";
+        const qrCodeImageUrl = executiveQr
+          ? `https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(executiveQr)}&size=280x280`
+          : "";
+
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(`<!DOCTYPE html>
         <html>
           <head>
-            <title>Scan QR WhatsApp Business - IZA Agent</title>
-            <meta http-equiv="refresh" content="5">
+            <title>Scan QR WhatsApp Executive Assistant</title>
+            <meta http-equiv="refresh" content="4">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
           </head>
           <body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;text-align:center;padding:30px 16px;background:#f0f2f5;color:#1c1e21;">
             <div style="background:#fff;max-width:440px;margin:auto;padding:28px 20px;border-radius:16px;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
-              <h2 style="margin:0 0 6px;color:#111827;font-size:20px;">Scan QR WhatsApp Business</h2>
-              <p style="color:#6b7280;font-size:13px;margin:0 0 18px;">Instance: <b>${config.EVOLUTION_INSTANCE_NAME}</b> | Auto-refresh setiap 5 detik</p>
+              <h2 style="margin:0 0 6px;color:#111827;font-size:20px;">Scan QR Executive Assistant</h2>
+              <p style="color:#6b7280;font-size:13px;margin:0 0 18px;">Nomor: <b>${config.EVOLUTION_AGENT_PHONE || "087864550486"}</b> | Auto-refresh setiap 4 detik</p>
               
-              ${base64Img ? `<img src="${base64Img}" alt="QR Code" style="width:280px;height:280px;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 12px rgba(0,0,0,0.06);display:block;margin:auto;" />` : `<div style="padding:60px 20px;background:#f9fafb;border-radius:12px;color:#6b7280;">⏳ Menghasilkan QR Code baru...</div>`}
+              ${
+                qrCodeImageUrl
+                  ? `<img src="${qrCodeImageUrl}" alt="QR Code" style="width:280px;height:280px;border-radius:12px;border:1px solid #e5e7eb;box-shadow:0 2px 12px rgba(0,0,0,0.06);display:block;margin:auto;" />`
+                  : `<div style="padding:60px 20px;background:#f9fafb;border-radius:12px;color:#6b7280;">⏳ Menghasilkan QR Code baru...</div>`
+              }
               
               <div style="text-align:left;background:#f9fafb;padding:16px;border-radius:10px;margin-top:20px;font-size:13px;color:#374151;line-height:1.6;border:1px solid #e5e7eb;">
                 <b style="color:#111827;">Petunjuk Tautkan:</b><br/>
@@ -194,9 +196,14 @@ async function bootstrap() {
     logger.warn({ sheetErr }, "Warning: Could not initialize Google Sheet automatically. Verify Service Account permissions.");
   }
 
-  // 4. Initialize WhatsApp Bot Client
+  // 4. Initialize WhatsApp Bot Clients (Main Kasir Bot & Executive Assistant Bot)
+  logger.info("Starting Main WhatsApp Bot Client (0881082854818)...");
   const bot = createWhatsAppBot();
   await bot.start();
+
+  logger.info("Starting Executive WhatsApp Assistant Bot (087864550486)...");
+  const executiveBot = createExecutiveBot();
+  await executiveBot.start();
 
   // 5. Initialize Background Scheduler Service (Nightly Recap & Reminders)
   try {

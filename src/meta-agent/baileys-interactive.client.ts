@@ -1,0 +1,379 @@
+import * as Baileys from "@whiskeysockets/baileys";
+import { getExecutiveSocket } from "./executive-socket-holder.js";
+import { logger } from "../utils/logger.js";
+import { normalizePhoneNumber } from "../utils/phone.utils.js";
+
+const proto = (Baileys as any).proto || (Baileys as any).default?.proto;
+const generateWAMessageFromContent =
+  (Baileys as any).generateWAMessageFromContent ||
+  (Baileys as any).default?.generateWAMessageFromContent;
+
+export interface InteractiveButton {
+  id: string;
+  title: string;
+}
+
+export interface ListRow {
+  id: string;
+  title: string;
+  description?: string;
+  header?: string;
+}
+
+export interface ListSection {
+  title: string;
+  highlight_label?: string;
+  rows: ListRow[];
+}
+
+export class BaileysInteractiveClient {
+  /**
+   * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
+   */
+  private formatJid(target: string): string {
+    if (target.includes("@s.whatsapp.net") || target.includes("@g.us")) {
+      return target;
+    }
+    const cleanNumber = normalizePhoneNumber(target);
+    return `${cleanNumber}@s.whatsapp.net`;
+  }
+
+  /**
+   * Get active executive socket instance
+   */
+  private getSocket(): any {
+    return getExecutiveSocket();
+  }
+
+  /**
+   * Generates descriptions for buttons when shown in list views
+   */
+  private getButtonDescription(id: string, title: string): string {
+    const lower = (id + " " + title).toLowerCase();
+    if (lower.includes("saldo") || lower.includes("balance")) return "Cek saldo kas tunai & rekening";
+    if (lower.includes("rekap") || lower.includes("laporan")) return "Lihat rekapan transaksi kas";
+    if (lower.includes("audit") || lower.includes("selisih")) return "Periksa transaksi belum dirinci";
+    if (lower.includes("confirm") || lower.includes("simpan")) return "Konfirmasi & simpan transaksi";
+    if (lower.includes("cancel") || lower.includes("batal")) return "Batalkan draf transaksi";
+    if (lower.includes("drive") || lower.includes("gdrive")) return "Buka folder Google Drive nota";
+    if (lower.includes("sheet") || lower.includes("spreadsheet")) return "Buka Google Spreadsheet kas";
+    return "Pilih opsi ini";
+  }
+
+  /**
+   * Sends text message to WhatsApp user via Baileys socket
+   */
+  async sendTextMessage(to: string, messageText: string): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+
+    if (!sock) {
+      logger.error({ to, jid }, "BaileysInteractiveClient: Executive socket not connected");
+      return false;
+    }
+
+    try {
+      await sock.sendMessage(jid, { text: messageText });
+      logger.info({ jid }, "BaileysInteractiveClient: Sent text message");
+      return true;
+    } catch (err) {
+      logger.error({ err, jid }, "BaileysInteractiveClient: Failed to send text message");
+      return false;
+    }
+  }
+
+  /**
+   * Sends real interactive buttons via NativeFlowMessage (viewOnceMessage wrapper)
+   * Rendered natively on Android & iOS mobile devices
+   */
+  async sendInteractiveButtons(
+    to: string,
+    bodyText: string,
+    buttons: InteractiveButton[],
+    headerText?: string,
+    footerText: string = "IZA Executive Assistant"
+  ): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+
+    if (!sock) {
+      logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for interactive buttons");
+      return false;
+    }
+
+    if (!buttons || buttons.length === 0) {
+      return this.sendTextMessage(jid, bodyText);
+    }
+
+    // Format Native Flow Quick Reply buttons
+    const formattedButtons = buttons.slice(0, 3).map((btn) => ({
+      name: "quick_reply",
+      buttonParamsJson: JSON.stringify({
+        display_text: btn.title.slice(0, 25),
+        id: btn.id,
+      }),
+    }));
+
+    try {
+      const interactiveMessagePayload: any = {
+        body: proto?.Message?.InteractiveMessage?.Body?.create
+          ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
+          : { text: bodyText },
+        footer: proto?.Message?.InteractiveMessage?.Footer?.create
+          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+          : { text: footerText },
+        nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
+          ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
+              buttons: formattedButtons,
+            })
+          : {
+              buttons: formattedButtons,
+            },
+      };
+
+      if (headerText) {
+        interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
+          ? proto.Message.InteractiveMessage.Header.create({
+              title: headerText,
+              hasMediaAttachment: false,
+            })
+          : {
+              title: headerText,
+              hasMediaAttachment: false,
+            };
+      }
+
+      const fullMessage = {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2,
+            },
+            interactiveMessage: proto?.Message?.InteractiveMessage?.create
+              ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+              : interactiveMessagePayload,
+          },
+        },
+      };
+
+      if (typeof generateWAMessageFromContent === "function") {
+        const msg = generateWAMessageFromContent(jid, fullMessage, {});
+        await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
+        return true;
+      } else {
+        // Fallback to direct relay or sendMessage
+        await sock.sendMessage(jid, fullMessage);
+        logger.info({ jid }, "BaileysInteractiveClient: Sent direct interactive message");
+        return true;
+      }
+    } catch (err) {
+      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, falling back to text");
+      // Fallback: send clean text with numbered choices
+      let fallbackText = bodyText;
+      if (headerText && !fallbackText.startsWith(headerText)) {
+        fallbackText = `*${headerText}*\n\n${fallbackText}`;
+      }
+      fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}. *${b.title}*`).join("\n");
+      if (footerText) {
+        fallbackText += `\n\n_${footerText}_`;
+      }
+      return this.sendTextMessage(jid, fallbackText);
+    }
+  }
+
+  /**
+   * Sends interactive List (single_select) bottom-sheet menu via NativeFlowMessage
+   */
+  async sendInteractiveList(
+    to: string,
+    title: string,
+    description: string,
+    buttonText: string,
+    sections: ListSection[],
+    footerText: string = "IZA Executive Assistant"
+  ): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+
+    if (!sock) {
+      logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for list message");
+      return false;
+    }
+
+    try {
+      const listParams = {
+        title: buttonText.slice(0, 20),
+        sections: sections.map((sec) => ({
+          title: sec.title,
+          highlight_label: sec.highlight_label,
+          rows: sec.rows.map((row) => ({
+            header: row.header,
+            title: row.title.slice(0, 24),
+            description: row.description || this.getButtonDescription(row.id, row.title),
+            id: row.id,
+          })),
+        })),
+      };
+
+      const interactiveMessagePayload: any = {
+        body: proto?.Message?.InteractiveMessage?.Body?.create
+          ? proto.Message.InteractiveMessage.Body.create({ text: description })
+          : { text: description },
+        footer: proto?.Message?.InteractiveMessage?.Footer?.create
+          ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
+          : { text: footerText },
+        nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
+          ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
+              buttons: [
+                {
+                  name: "single_select",
+                  buttonParamsJson: JSON.stringify(listParams),
+                },
+              ],
+            })
+          : {
+              buttons: [
+                {
+                  name: "single_select",
+                  buttonParamsJson: JSON.stringify(listParams),
+                },
+              ],
+            },
+      };
+
+      if (title) {
+        interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
+          ? proto.Message.InteractiveMessage.Header.create({
+              title: title,
+              hasMediaAttachment: false,
+            })
+          : {
+              title: title,
+              hasMediaAttachment: false,
+            };
+      }
+
+      const fullMessage = {
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2,
+            },
+            interactiveMessage: proto?.Message?.InteractiveMessage?.create
+              ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+              : interactiveMessagePayload,
+          },
+        },
+      };
+
+      if (typeof generateWAMessageFromContent === "function") {
+        const msg = generateWAMessageFromContent(jid, fullMessage, {});
+        await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
+        logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
+        return true;
+      } else {
+        await sock.sendMessage(jid, fullMessage);
+        return true;
+      }
+    } catch (err) {
+      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive list, falling back to buttons");
+      // Flatten rows to buttons fallback
+      const flatButtons: InteractiveButton[] = [];
+      for (const sec of sections) {
+        for (const r of sec.rows) {
+          flatButtons.push({ id: r.id, title: r.title });
+        }
+      }
+      return this.sendInteractiveButtons(jid, description, flatButtons.slice(0, 3), title, footerText);
+    }
+  }
+
+  /**
+   * Emits presence typing state ("composing" = sedang mengetik...)
+   */
+  async sendPresence(to: string, presence: "composing" | "paused" = "composing"): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+    if (!sock) return false;
+
+    try {
+      await sock.sendPresenceUpdate(presence, jid);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Marks a message as read (blue checkmarks)
+   */
+  async markAsRead(to: string, messageId: string): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+    if (!sock) return false;
+
+    try {
+      await sock.readMessages([
+        {
+          remoteJid: jid,
+          id: messageId,
+          fromMe: false,
+        },
+      ]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Sends media / document / PDF / image to WhatsApp user
+   */
+  async sendMedia(
+    to: string,
+    buffer: Buffer,
+    fileName: string,
+    caption: string = "",
+    mimeType: string = "application/pdf"
+  ): Promise<boolean> {
+    const jid = this.formatJid(to);
+    const sock = this.getSocket();
+    if (!sock) {
+      logger.error({ jid, fileName }, "BaileysInteractiveClient: Socket not connected for media send");
+      return false;
+    }
+
+    try {
+      if (mimeType.startsWith("image/")) {
+        await sock.sendMessage(jid, {
+          image: buffer,
+          caption: caption,
+        });
+      } else if (mimeType.startsWith("audio/")) {
+        await sock.sendMessage(jid, {
+          audio: buffer,
+          mimetype: mimeType,
+          ptt: true,
+        });
+      } else {
+        await sock.sendMessage(jid, {
+          document: buffer,
+          mimetype: mimeType,
+          fileName: fileName,
+          caption: caption,
+        });
+      }
+
+      logger.info({ jid, fileName }, "BaileysInteractiveClient: Sent media successfully");
+      return true;
+    } catch (err) {
+      logger.error({ err, jid, fileName }, "BaileysInteractiveClient: Error sending media");
+      return false;
+    }
+  }
+}
+
+export const baileysInteractiveClient = new BaileysInteractiveClient();
