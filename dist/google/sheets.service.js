@@ -1295,7 +1295,12 @@ export class GoogleSheetsService {
             await supabase.from("receipt_items").delete().neq("id", "00000000-0000-0000-0000-000000000000");
             if (rincianRows.length > 0) {
                 const itemsPayload = rincianRows.map((row) => {
-                    const trxId = row[1]?.toString().trim();
+                    let trxId = row[1]?.toString().trim() || "";
+                    // Canonicalize ID to full T026-Hxxx format if needed
+                    const shortMatch = trxId.match(/^([A-L])(\d{1,3})$/i);
+                    if (shortMatch) {
+                        trxId = `T026-${shortMatch[1].toUpperCase()}${shortMatch[2].padStart(3, "0")}`;
+                    }
                     const itemName = row[3]?.toString().trim();
                     const qtyStr = row[4]?.toString().trim() || "1 unit";
                     const qtyMatch = qtyStr.match(/^(\d+)\s*(.*)$/);

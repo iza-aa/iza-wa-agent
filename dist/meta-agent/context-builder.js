@@ -13,14 +13,44 @@ export class ContextBuilder {
         this.userRepo = userRepo;
     }
     /**
+     * Helper to normalize ID for matching (e.g. "T026-H144" -> ["T026-H144", "H144", "144"])
+     */
+    getMatchableIds(rawId) {
+        if (!rawId)
+            return [];
+        const clean = rawId.trim().toUpperCase();
+        const ids = new Set([clean]);
+        // If "T026-H144", add "H144" and "144"
+        const prefixMatch = clean.match(/^T\d{3}-([A-L]\d{3})$/);
+        if (prefixMatch) {
+            ids.add(prefixMatch[1]);
+            ids.add(prefixMatch[1].slice(1));
+        }
+        // If "H144", add "144" and "T026-H144"
+        const shortMatch = clean.match(/^([A-L])(\d{1,3})$/);
+        if (shortMatch) {
+            ids.add(shortMatch[2].padStart(3, "0"));
+            ids.add(`T026-${shortMatch[1]}${shortMatch[2].padStart(3, "0")}`);
+        }
+        return Array.from(ids);
+    }
+    /**
      * Performs an instant real-time audit between transactions and receipt items, including division totals
      */
-    async getAuditData() {
+    async getAuditData(targetMonth) {
         try {
-            const { data: trxs } = await this.supabase
+            let query = this.supabase
                 .from("transactions")
                 .select("id, merchant, total_amount, date, category")
                 .order("date", { ascending: false });
+            if (targetMonth) {
+                const [yearStr, monthStr] = targetMonth.split("-");
+                const yearNum = parseInt(yearStr, 10) || new Date().getFullYear();
+                const monthNum = parseInt(monthStr, 10) || 1;
+                const lastDay = new Date(yearNum, monthNum, 0).getDate();
+                query = query.gte("date", `${targetMonth}-01`).lte("date", `${targetMonth}-${lastDay.toString().padStart(2, "0")}`);
+            }
+            const { data: trxs } = await query;
             const { data: items } = await this.supabase
                 .from("receipt_items")
                 .select("transaction_id, total_price, category, department");
@@ -37,7 +67,10 @@ export class ContextBuilder {
                 const price = Number(it.total_price) || 0;
                 departmentTotals[dept] = (departmentTotals[dept] || 0) + price;
                 if (it.transaction_id) {
-                    itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + price;
+                    const matchKeys = this.getMatchableIds(it.transaction_id);
+                    for (const key of matchKeys) {
+                        itemSums[key] = (itemSums[key] || 0) + price;
+                    }
                 }
             }
             let totalTrxExpense = 0;
@@ -46,12 +79,21 @@ export class ContextBuilder {
             const mismatched = [];
             for (const t of trxs || []) {
                 const isInc = t.category?.startsWith("Pemasukan");
-                if (!isInc) {
+                const isInternalTransfer = t.category?.toLowerCase().includes("mutasi kas");
+                if (!isInc && !isInternalTransfer) {
                     const trxAmount = Number(t.total_amount) || 0;
                     totalTrxExpense += trxAmount;
-                    const itemsTotal = itemSums[t.id] || 0;
+                    // Check if itemsTotal exists for any matchable key
+                    const matchKeys = this.getMatchableIds(t.id);
+                    let itemsTotal = 0;
+                    for (const k of matchKeys) {
+                        if (itemSums[k] !== undefined) {
+                            itemsTotal = itemSums[k];
+                            break;
+                        }
+                    }
                     totalItemsExpense += itemsTotal;
-                    if (!itemSums[t.id] || itemsTotal === 0) {
+                    if (itemsTotal === 0) {
                         unitemized.push({
                             id: t.id,
                             merchant: t.merchant,
@@ -227,8 +269,8 @@ export class ContextBuilder {
             const targetAggregates = requestedMonthStr === currentMonthStr
                 ? currentAggregates
                 : await this.getFinancialAggregates(todayStr, requestedMonthStr);
-            // 3. Fetch real-time Audit Data & Division Totals
-            const audit = await this.getAuditData();
+            // 3. Fetch real-time Audit Data & Division Totals for Requested Month
+            const audit = await this.getAuditData(requestedMonthStr);
             // 4. Fetch ALL Registered Users from 'users' table
             let allUsersSummary = "";
             try {
