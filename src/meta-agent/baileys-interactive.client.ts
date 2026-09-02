@@ -181,10 +181,12 @@ export class BaileysInteractiveClient {
 
       if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
         const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
-        await sock.relayMessage(jid, msg.message, {
+        logger.info({ jid, fullMessage: JSON.stringify(fullMessage), userJid, msgKeyId: msg?.key?.id }, "DEBUG: Attempting relayMessage for buttons");
+        
+        const responseId = await sock.relayMessage(jid, msg.message, {
           messageId: msg.key.id,
         });
-        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed Hydrated Template buttons message");
+        logger.info({ jid, responseId, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed Hydrated Template buttons message");
         return true;
       }
     } catch (err) {

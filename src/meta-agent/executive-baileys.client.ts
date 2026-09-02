@@ -65,7 +65,7 @@ export function createExecutiveBot(): { start: () => Promise<void> } {
           : state.keys,
       },
       printQRInTerminal: false,
-      logger: pino({ level: "silent" }) as any,
+      logger: pino({ level: "info" }) as any, // Aktifkan level info untuk melihat log internal transmisi Baileys
       browser: ["IZA Executive Assistant", "Chrome", "1.0.0"],
       generateHighQualityLinkPreview: true,
       syncFullHistory: false,
