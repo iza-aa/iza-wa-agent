@@ -9,6 +9,30 @@ import { AgentEngine } from "../meta-agent/agent-engine.js";
 import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { normalizePhoneNumber } from "../utils/phone.utils.js";
+const BUTTON_ID_MAP = {
+    CHECK_BALANCE: "Berapa total saldo kas dan rekening kita saat ini?",
+    REKAP_KAS: "Tampilkan rekap kondisi keuangan kas terbaru bulan ini",
+    AUDIT_KAS: "Audit pengeluaran yang belum dirinci dan periksa selisih di pembukuan kas",
+    AUDIT_RINCIAN: "Audit pengeluaran yang belum dirinci",
+    AUDIT_SELISIH: "Cek apakah ada selisih di pembukuan kas",
+    GENERATE_PDF: "Buat dokumen PDF laporan keuangan periode yang baru saja dibahas",
+    CONFIRM_ACTION: "Ya, simpan sekarang",
+    CANCEL_ACTION: "Batal dan hapus draf",
+    EDIT_DRAFT: "Ubah draf transaksi",
+    SWITCH_TYPE: "Ubah jenis transaksi (Pemasukan / Pengeluaran)",
+    SWITCH_PAYMENT: "Ubah metode pembayaran",
+    SWITCH_DEPT: "Ubah divisi",
+    DEPT_DAPUR: "Alokasikan untuk divisi Dapur",
+    DEPT_BARISTA: "Alokasikan untuk divisi Barista",
+    DEPT_WAITERS: "Alokasikan untuk divisi Waiters",
+    DEPT_KASIR: "Alokasikan untuk divisi Kasir",
+    DEPT_KAFE: "Alokasikan untuk divisi Kafe",
+    DUPLICATE_SAVE: "Ya, tetap simpan transaksi ini",
+    DUPLICATE_DROP: "Batal dan buang draf ini",
+    FILTER_THIS_WEEK: "Tampilkan ringkasan transaksi minggu ini",
+    FILTER_THIS_MONTH: "Tampilkan ringkasan transaksi bulan ini",
+    FILTER_LAST_MONTH: "Tampilkan ringkasan transaksi bulan lalu",
+};
 export class TelegramAssistantBot {
     bot;
     userRepo;
@@ -302,12 +326,29 @@ export class TelegramAssistantBot {
                 return;
             }
             await ctx.api.sendChatAction(ctx.chat?.id || ctx.from.id, "typing");
+            const mappedPrompt = BUTTON_ID_MAP[buttonId] || "";
+            // Log inbound click intent
+            await this.chatRepo.logMessage({
+                user_phone: user.phone,
+                user_name: user.name,
+                message_type: "text",
+                direction: "inbound",
+                content: mappedPrompt || buttonId,
+            });
             try {
                 const result = await this.agentEngine.processIncomingMessage({
                     userPhone: user.phone,
                     userName: user.name,
-                    messageText: "",
+                    messageText: mappedPrompt,
                     interactiveButtonId: buttonId,
+                });
+                // Log outbound response
+                await this.chatRepo.logMessage({
+                    user_phone: user.phone,
+                    user_name: "IZA (AI)",
+                    message_type: "text",
+                    direction: "outbound",
+                    content: result.reply,
                 });
                 await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
@@ -334,6 +375,13 @@ export class TelegramAssistantBot {
                 await ctx.reply("⚠️ Gagal mengunduh foto struk dari Telegram. Silakan coba kirim ulang.");
                 return;
             }
+            await this.chatRepo.logMessage({
+                user_phone: user.phone,
+                user_name: user.name,
+                message_type: "image",
+                direction: "inbound",
+                content: caption || "Foto Struk Belanja",
+            });
             try {
                 const result = await this.agentEngine.processIncomingMessage({
                     userPhone: user.phone,
@@ -341,6 +389,13 @@ export class TelegramAssistantBot {
                     messageText: caption,
                     mediaBuffer: buffer,
                     mediaMimeType: "image/jpeg",
+                });
+                await this.chatRepo.logMessage({
+                    user_phone: user.phone,
+                    user_name: "IZA (AI)",
+                    message_type: "text",
+                    direction: "outbound",
+                    content: result.reply,
                 });
                 await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
@@ -366,6 +421,13 @@ export class TelegramAssistantBot {
                 return;
             }
             const mimeType = voice.mime_type || "audio/ogg";
+            await this.chatRepo.logMessage({
+                user_phone: user.phone,
+                user_name: user.name,
+                message_type: "audio",
+                direction: "inbound",
+                content: "Voice Note Audio",
+            });
             try {
                 const result = await this.agentEngine.processIncomingMessage({
                     userPhone: user.phone,
@@ -373,6 +435,13 @@ export class TelegramAssistantBot {
                     messageText: "",
                     mediaBuffer: buffer,
                     mediaMimeType: mimeType,
+                });
+                await this.chatRepo.logMessage({
+                    user_phone: user.phone,
+                    user_name: "IZA (AI)",
+                    message_type: "text",
+                    direction: "outbound",
+                    content: result.reply,
                 });
                 await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
@@ -405,6 +474,13 @@ export class TelegramAssistantBot {
                 await ctx.reply("⚠️ Gagal mengunduh file dokumen dari Telegram. Silakan coba kirim ulang.");
                 return;
             }
+            await this.chatRepo.logMessage({
+                user_phone: user.phone,
+                user_name: user.name,
+                message_type: "document",
+                direction: "inbound",
+                content: `Dokumen: ${fileName}`,
+            });
             try {
                 const result = await this.agentEngine.processIncomingMessage({
                     userPhone: user.phone,
@@ -412,6 +488,13 @@ export class TelegramAssistantBot {
                     messageText: ctx.message?.caption || "",
                     mediaBuffer: buffer,
                     mediaMimeType: isPdf ? "application/pdf" : mimeType,
+                });
+                await this.chatRepo.logMessage({
+                    user_phone: user.phone,
+                    user_name: "IZA (AI)",
+                    message_type: "text",
+                    direction: "outbound",
+                    content: result.reply,
                 });
                 await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
@@ -430,11 +513,27 @@ export class TelegramAssistantBot {
             if (!text.trim())
                 return;
             await ctx.api.sendChatAction(ctx.chat.id, "typing");
+            // Log inbound user message
+            await this.chatRepo.logMessage({
+                user_phone: user.phone,
+                user_name: user.name,
+                message_type: "text",
+                direction: "inbound",
+                content: text,
+            });
             try {
                 const result = await this.agentEngine.processIncomingMessage({
                     userPhone: user.phone,
                     userName: user.name,
                     messageText: text,
+                });
+                // Log outbound AI response
+                await this.chatRepo.logMessage({
+                    user_phone: user.phone,
+                    user_name: "IZA (AI)",
+                    message_type: "text",
+                    direction: "outbound",
+                    content: result.reply,
                 });
                 await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
             }
