@@ -60,12 +60,17 @@ export class ExecutiveBaileysHandler {
     const senderPhone = normalizePhoneNumber(remoteJid);
     const rawSenderName = rawMsg.pushName || "User";
 
+    // Target JID to send reply: resolve LID or regular phone JID to canonical destination
+    const destinationJid = remoteJid.endsWith("@lid")
+      ? `${senderPhone}@s.whatsapp.net`
+      : remoteJid;
+
     // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
     try {
       if (rawMsg.key) {
         await sock.readMessages([rawMsg.key]);
       }
-      await sock.sendPresenceUpdate("composing", remoteJid);
+      await sock.sendPresenceUpdate("composing", destinationJid);
     } catch (presenceErr) {
       logger.debug({ presenceErr }, "Presence update non-critical error");
     }
@@ -326,7 +331,7 @@ export class ExecutiveBaileysHandler {
 
       // Stop composing presence
       try {
-        await sock.sendPresenceUpdate("paused", remoteJid);
+        await sock.sendPresenceUpdate("paused", destinationJid);
       } catch {}
 
       if (!result.reply) {
@@ -343,13 +348,13 @@ export class ExecutiveBaileysHandler {
       }
 
       // 7. Send Response directly via active socket with quoted message reference (Same as Bot Kasir)
-      const res = await sock.sendMessage(remoteJid, { text: finalReplyText }, { quoted: rawMsg });
-      logger.info({ remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
+      const res = await sock.sendMessage(destinationJid, { text: finalReplyText }, { quoted: rawMsg });
+      logger.info({ destinationJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
     } catch (err) {
       logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");
       try {
         await sock.sendMessage(
-          remoteJid,
+          destinationJid,
           { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." },
           { quoted: rawMsg }
         );
