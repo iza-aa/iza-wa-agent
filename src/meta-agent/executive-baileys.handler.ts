@@ -185,11 +185,11 @@ export class ExecutiveBaileysHandler {
       return;
     }
 
-    // If user clicked interactive button, map button ID to natural conversational text
+    // If user clicked interactive button or sent quick phrase, map to clear natural question
     const BUTTON_ID_MAP: Record<string, string> = {
       CHECK_BALANCE: "Berapa total saldo kas dan rekening kita saat ini?",
-      REKAP_KAS: "Tampilkan rekap kondisi keuangan kas terbaru",
-      AUDIT_KAS: "Audit pengeluaran yang belum dirinci dan periksa selisih kas",
+      REKAP_KAS: "Tampilkan rekap kondisi keuangan kas terbaru bulan ini",
+      AUDIT_KAS: "Audit pengeluaran yang belum dirinci dan periksa selisih di pembukuan kas",
       AUDIT_RINCIAN: "Audit pengeluaran yang belum dirinci",
       AUDIT_SELISIH: "Cek apakah ada selisih di pembukuan kas",
       SPREADSHEET: "Minta link Google Spreadsheet kas",
@@ -198,11 +198,21 @@ export class ExecutiveBaileysHandler {
       CANCEL_ACTION: "Batal",
     };
 
-    let effectiveText = messageText;
+    let effectiveText = messageText.trim();
+    const cleanLower = effectiveText.toLowerCase();
+
     if (interactiveButtonId && BUTTON_ID_MAP[interactiveButtonId]) {
       effectiveText = BUTTON_ID_MAP[interactiveButtonId];
-    } else if (interactiveButtonId && (!effectiveText || effectiveText === interactiveButtonId)) {
-      effectiveText = BUTTON_ID_MAP[interactiveButtonId] || interactiveButtonId;
+    } else if (cleanLower.includes("cek saldo") || cleanLower.includes("saldo kas") || cleanLower === "saldo" || cleanLower.includes("cek uang")) {
+      effectiveText = "Berapa total saldo kas dan rekening kita saat ini?";
+    } else if (cleanLower.includes("rekap kas") || cleanLower.includes("rekap divisi") || cleanLower.includes("rekap keuangan")) {
+      effectiveText = "Tampilkan rekap kondisi keuangan kas terbaru bulan ini";
+    } else if (cleanLower.includes("audit rincian") || cleanLower.includes("audit kas") || cleanLower.includes("audit selisih") || cleanLower.includes("cek selisih")) {
+      effectiveText = "Audit pengeluaran yang belum dirinci dan periksa selisih di pembukuan kas";
+    } else if (cleanLower.includes("spreadsheet") || cleanLower.includes("sheet") || cleanLower.includes("excel")) {
+      effectiveText = "Minta link Google Spreadsheet kas";
+    } else if (cleanLower.includes("google drive") || cleanLower.includes("gdrive") || cleanLower.includes("folder nota")) {
+      effectiveText = "Minta link Google Drive folder nota";
     }
 
     // 4. Download Media if present (Image/Receipt, Audio/Voice Note, Document)

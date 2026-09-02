@@ -91,7 +91,7 @@ JSON Respon:
 }
 
 Contoh 3 (Tanya Saldo):
-Pesan: "cek saldo"
+Pesan: "Berapa total saldo kas dan rekening kita saat ini?"
 JSON Respon:
 {
   "response_type": "ANSWER_QUERY",
@@ -103,7 +103,32 @@ JSON Respon:
   ]
 }
 
-Contoh 4 (Menyapa Santai):
+Contoh 4 (Tanya Rekap Kas):
+Pesan: "Tampilkan rekap kondisi keuangan kas terbaru bulan ini"
+JSON Respon:
+{
+  "response_type": "ANSWER_QUERY",
+  "reply_text": "Berikut ringkasan kas kita bulan ini ya Mas Rezki:\n\n• *Total Pemasukan*: Rp 25.400.000\n• *Total Pengeluaran*: Rp 12.850.000\n• *Arus Kas Bersih (Surplus)*: Rp 12.550.000\n\nPengeluaran terbanyak ada di bahan Dapur dan Operasional. Ada yang ingin dicek lebih detail?",
+  "suggested_buttons": [
+    { "id": "AUDIT_KAS", "title": "🔍 Audit Kas" },
+    { "id": "CHECK_BALANCE", "title": "💰 Cek Saldo" },
+    { "id": "SPREADSHEET", "title": "📑 Spreadsheet" }
+  ]
+}
+
+Contoh 5 (Tanya Audit):
+Pesan: "Audit pengeluaran yang belum dirinci dan periksa selisih di pembukuan kas"
+JSON Respon:
+{
+  "response_type": "ANSWER_QUERY",
+  "reply_text": "Hasil audit pembukuan kita saat ini:\n\n• *Status Selisih*: Pembukuan seimbang (tidak ada selisih total).\n• *Belum Dirinci*: Ada beberapa transaksi pengeluaran yang belum memiliki rincian item barang.\n\nBapak bisa kirimkan foto struknya kapan saja agar saya rincikan otomatis ya!",
+  "suggested_buttons": [
+    { "id": "CHECK_BALANCE", "title": "💰 Cek Saldo" },
+    { "id": "REKAP_KAS", "title": "📊 Rekap Kas" }
+  ]
+}
+
+Contoh 6 (Menyapa Santai):
 Pesan: "halo"
 JSON Respon:
 {
