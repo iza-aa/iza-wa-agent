@@ -325,15 +325,18 @@ export class ExecutiveBaileysHandler {
         return;
       }
 
-      // 7. Send Response: Real Interactive Buttons (NativeFlowMessage) if buttons provided
+      // 7. Send Response: Real Interactive Buttons / Text with quoted message reference
       if (result.buttons && result.buttons.length > 0) {
         await baileysInteractiveClient.sendInteractiveButtons(
-          senderPhone,
+          remoteJid,
           result.reply,
-          result.buttons
+          result.buttons,
+          undefined,
+          undefined,
+          rawMsg
         );
       } else {
-        await baileysInteractiveClient.sendTextMessage(senderPhone, result.reply);
+        await baileysInteractiveClient.sendTextMessage(remoteJid, result.reply, rawMsg);
       }
     } catch (err) {
       logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");

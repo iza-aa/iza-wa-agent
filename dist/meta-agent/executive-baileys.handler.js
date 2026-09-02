@@ -290,12 +290,12 @@ export class ExecutiveBaileysHandler {
             if (!result.reply) {
                 return;
             }
-            // 7. Send Response: Real Interactive Buttons (NativeFlowMessage) if buttons provided
+            // 7. Send Response: Real Interactive Buttons / Text with quoted message reference
             if (result.buttons && result.buttons.length > 0) {
-                await baileysInteractiveClient.sendInteractiveButtons(senderPhone, result.reply, result.buttons);
+                await baileysInteractiveClient.sendInteractiveButtons(remoteJid, result.reply, result.buttons, undefined, undefined, rawMsg);
             }
             else {
-                await baileysInteractiveClient.sendTextMessage(senderPhone, result.reply);
+                await baileysInteractiveClient.sendTextMessage(remoteJid, result.reply, rawMsg);
             }
         }
         catch (err) {

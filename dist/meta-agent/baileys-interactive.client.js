@@ -13,7 +13,7 @@ export class BaileysInteractiveClient {
      * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
      */
     formatJid(target) {
-        if (target.includes("@s.whatsapp.net") || target.includes("@g.us")) {
+        if (target.includes("@s.whatsapp.net") || target.includes("@g.us") || target.includes("@lid")) {
             return target;
         }
         const cleanNumber = normalizePhoneNumber(target);
@@ -49,7 +49,7 @@ export class BaileysInteractiveClient {
     /**
      * Sends standard text message to WhatsApp user via Baileys socket
      */
-    async sendTextMessage(to, messageText) {
+    async sendTextMessage(to, messageText, quotedMsg) {
         const jid = this.formatJid(to);
         const sock = this.getSocket();
         if (!sock) {
@@ -57,8 +57,12 @@ export class BaileysInteractiveClient {
             return false;
         }
         try {
-            await sock.sendMessage(jid, { text: messageText });
-            logger.info({ jid }, "BaileysInteractiveClient: Sent text message");
+            const sendOptions = { text: messageText };
+            const options = quotedMsg ? { quoted: quotedMsg } : undefined;
+            const res = options
+                ? await sock.sendMessage(jid, sendOptions, options)
+                : await sock.sendMessage(jid, sendOptions);
+            logger.info({ jid, msgId: res?.key?.id, status: res?.status }, "BaileysInteractiveClient: Sent text message successfully");
             return true;
         }
         catch (err) {
@@ -70,7 +74,7 @@ export class BaileysInteractiveClient {
      * Sends clean, beautifully formatted interactive message with quick numbered options
      * (100% compatible across Android, iOS, and WhatsApp Desktop without triggering Error 463 NACK)
      */
-    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText) {
+    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText, quotedMsg) {
         const jid = this.formatJid(to);
         const sock = this.getSocket();
         if (!sock) {
@@ -78,7 +82,7 @@ export class BaileysInteractiveClient {
             return false;
         }
         if (!buttons || buttons.length === 0) {
-            return this.sendTextMessage(jid, bodyText);
+            return this.sendTextMessage(jid, bodyText, quotedMsg);
         }
         let message = bodyText;
         if (headerText && !message.startsWith(headerText)) {
@@ -93,7 +97,7 @@ export class BaileysInteractiveClient {
         if (footerText) {
             message += `\n\n_${footerText}_`;
         }
-        return this.sendTextMessage(jid, message);
+        return this.sendTextMessage(jid, message, quotedMsg);
     }
     /**
      * Sends interactive List formatted as clean text with numbered choices

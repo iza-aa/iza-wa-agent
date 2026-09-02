@@ -35,7 +35,7 @@ export class BaileysInteractiveClient {
    * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
    */
   private formatJid(target: string): string {
-    if (target.includes("@s.whatsapp.net") || target.includes("@g.us")) {
+    if (target.includes("@s.whatsapp.net") || target.includes("@g.us") || target.includes("@lid")) {
       return target;
     }
     const cleanNumber = normalizePhoneNumber(target);
@@ -67,7 +67,7 @@ export class BaileysInteractiveClient {
   /**
    * Sends standard text message to WhatsApp user via Baileys socket
    */
-  async sendTextMessage(to: string, messageText: string): Promise<boolean> {
+  async sendTextMessage(to: string, messageText: string, quotedMsg?: any): Promise<boolean> {
     const jid = this.formatJid(to);
     const sock = this.getSocket();
 
@@ -77,8 +77,12 @@ export class BaileysInteractiveClient {
     }
 
     try {
-      await sock.sendMessage(jid, { text: messageText });
-      logger.info({ jid }, "BaileysInteractiveClient: Sent text message");
+      const sendOptions: any = { text: messageText };
+      const options = quotedMsg ? { quoted: quotedMsg } : undefined;
+      const res = options
+        ? await sock.sendMessage(jid, sendOptions, options)
+        : await sock.sendMessage(jid, sendOptions);
+      logger.info({ jid, msgId: res?.key?.id, status: res?.status }, "BaileysInteractiveClient: Sent text message successfully");
       return true;
     } catch (err) {
       logger.error({ err, jid }, "BaileysInteractiveClient: Failed to send text message");
@@ -95,7 +99,8 @@ export class BaileysInteractiveClient {
     bodyText: string,
     buttons: InteractiveButton[],
     headerText?: string,
-    footerText?: string
+    footerText?: string,
+    quotedMsg?: any
   ): Promise<boolean> {
     const jid = this.formatJid(to);
     const sock = this.getSocket();
@@ -106,7 +111,7 @@ export class BaileysInteractiveClient {
     }
 
     if (!buttons || buttons.length === 0) {
-      return this.sendTextMessage(jid, bodyText);
+      return this.sendTextMessage(jid, bodyText, quotedMsg);
     }
 
     let message = bodyText;
@@ -125,7 +130,7 @@ export class BaileysInteractiveClient {
       message += `\n\n_${footerText}_`;
     }
 
-    return this.sendTextMessage(jid, message);
+    return this.sendTextMessage(jid, message, quotedMsg);
   }
 
   /**
