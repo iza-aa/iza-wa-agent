@@ -325,18 +325,20 @@ export class ExecutiveBaileysHandler {
         return;
       }
 
-      // 7. Send Response: Real Interactive Buttons / Text with quoted message reference
+      // 7. Send Response: Real Interactive Buttons / Text directly to valid phone @s.whatsapp.net
+      const targetPhoneJid = `${senderPhone}@s.whatsapp.net`;
       if (result.buttons && result.buttons.length > 0) {
         await baileysInteractiveClient.sendInteractiveButtons(
-          remoteJid,
+          targetPhoneJid,
           result.reply,
           result.buttons,
           undefined,
           undefined,
-          rawMsg
+          rawMsg,
+          senderPhone
         );
       } else {
-        await baileysInteractiveClient.sendTextMessage(remoteJid, result.reply, rawMsg);
+        await baileysInteractiveClient.sendTextMessage(targetPhoneJid, result.reply, rawMsg, senderPhone);
       }
     } catch (err) {
       logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");

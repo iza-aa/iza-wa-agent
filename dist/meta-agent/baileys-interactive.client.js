@@ -10,13 +10,14 @@ const jidNormalizedUser = Baileys.jidNormalizedUser ||
     ((jid) => jid ? jid.split(":")[0].split("@")[0] + "@s.whatsapp.net" : jid);
 export class BaileysInteractiveClient {
     /**
-     * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
+     * Normalize any phone/JID into a valid WhatsApp user JID (e.g. 6281346367235@s.whatsapp.net)
      */
-    formatJid(target) {
-        if (target.includes("@s.whatsapp.net") || target.includes("@g.us") || target.includes("@lid")) {
+    formatJid(target, fallbackPhone) {
+        if (target && target.endsWith("@s.whatsapp.net")) {
             return target;
         }
-        const cleanNumber = normalizePhoneNumber(target);
+        // If LID or pure digits, map directly to standard @s.whatsapp.net phone JID
+        const cleanNumber = normalizePhoneNumber(fallbackPhone || target);
         return `${cleanNumber}@s.whatsapp.net`;
     }
     /**
@@ -49,8 +50,8 @@ export class BaileysInteractiveClient {
     /**
      * Sends standard text message to WhatsApp user via Baileys socket
      */
-    async sendTextMessage(to, messageText, quotedMsg) {
-        const jid = this.formatJid(to);
+    async sendTextMessage(to, messageText, quotedMsg, fallbackPhone) {
+        const jid = this.formatJid(to, fallbackPhone);
         const sock = this.getSocket();
         if (!sock) {
             logger.error({ to, jid }, "BaileysInteractiveClient: Executive socket not connected");
@@ -74,15 +75,15 @@ export class BaileysInteractiveClient {
      * Sends clean, beautifully formatted interactive message with quick numbered options
      * (100% compatible across Android, iOS, and WhatsApp Desktop without triggering Error 463 NACK)
      */
-    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText, quotedMsg) {
-        const jid = this.formatJid(to);
+    async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText, quotedMsg, fallbackPhone) {
+        const jid = this.formatJid(to, fallbackPhone);
         const sock = this.getSocket();
         if (!sock) {
             logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for interactive buttons");
             return false;
         }
         if (!buttons || buttons.length === 0) {
-            return this.sendTextMessage(jid, bodyText, quotedMsg);
+            return this.sendTextMessage(jid, bodyText, quotedMsg, fallbackPhone);
         }
         let message = bodyText;
         if (headerText && !message.startsWith(headerText)) {
@@ -97,7 +98,7 @@ export class BaileysInteractiveClient {
         if (footerText) {
             message += `\n\n_${footerText}_`;
         }
-        return this.sendTextMessage(jid, message, quotedMsg);
+        return this.sendTextMessage(jid, message, quotedMsg, fallbackPhone);
     }
     /**
      * Sends interactive List formatted as clean text with numbered choices

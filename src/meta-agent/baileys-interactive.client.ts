@@ -32,13 +32,14 @@ export interface ListSection {
 
 export class BaileysInteractiveClient {
   /**
-   * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
+   * Normalize any phone/JID into a valid WhatsApp user JID (e.g. 6281346367235@s.whatsapp.net)
    */
-  private formatJid(target: string): string {
-    if (target.includes("@s.whatsapp.net") || target.includes("@g.us") || target.includes("@lid")) {
+  private formatJid(target: string, fallbackPhone?: string): string {
+    if (target && target.endsWith("@s.whatsapp.net")) {
       return target;
     }
-    const cleanNumber = normalizePhoneNumber(target);
+    // If LID or pure digits, map directly to standard @s.whatsapp.net phone JID
+    const cleanNumber = normalizePhoneNumber(fallbackPhone || target);
     return `${cleanNumber}@s.whatsapp.net`;
   }
 
@@ -67,8 +68,8 @@ export class BaileysInteractiveClient {
   /**
    * Sends standard text message to WhatsApp user via Baileys socket
    */
-  async sendTextMessage(to: string, messageText: string, quotedMsg?: any): Promise<boolean> {
-    const jid = this.formatJid(to);
+  async sendTextMessage(to: string, messageText: string, quotedMsg?: any, fallbackPhone?: string): Promise<boolean> {
+    const jid = this.formatJid(to, fallbackPhone);
     const sock = this.getSocket();
 
     if (!sock) {
@@ -100,9 +101,10 @@ export class BaileysInteractiveClient {
     buttons: InteractiveButton[],
     headerText?: string,
     footerText?: string,
-    quotedMsg?: any
+    quotedMsg?: any,
+    fallbackPhone?: string
   ): Promise<boolean> {
-    const jid = this.formatJid(to);
+    const jid = this.formatJid(to, fallbackPhone);
     const sock = this.getSocket();
 
     if (!sock) {
@@ -111,7 +113,7 @@ export class BaileysInteractiveClient {
     }
 
     if (!buttons || buttons.length === 0) {
-      return this.sendTextMessage(jid, bodyText, quotedMsg);
+      return this.sendTextMessage(jid, bodyText, quotedMsg, fallbackPhone);
     }
 
     let message = bodyText;
@@ -130,7 +132,7 @@ export class BaileysInteractiveClient {
       message += `\n\n_${footerText}_`;
     }
 
-    return this.sendTextMessage(jid, message, quotedMsg);
+    return this.sendTextMessage(jid, message, quotedMsg, fallbackPhone);
   }
 
   /**

@@ -290,12 +290,13 @@ export class ExecutiveBaileysHandler {
             if (!result.reply) {
                 return;
             }
-            // 7. Send Response: Real Interactive Buttons / Text with quoted message reference
+            // 7. Send Response: Real Interactive Buttons / Text directly to valid phone @s.whatsapp.net
+            const targetPhoneJid = `${senderPhone}@s.whatsapp.net`;
             if (result.buttons && result.buttons.length > 0) {
-                await baileysInteractiveClient.sendInteractiveButtons(remoteJid, result.reply, result.buttons, undefined, undefined, rawMsg);
+                await baileysInteractiveClient.sendInteractiveButtons(targetPhoneJid, result.reply, result.buttons, undefined, undefined, rawMsg, senderPhone);
             }
             else {
-                await baileysInteractiveClient.sendTextMessage(remoteJid, result.reply, rawMsg);
+                await baileysInteractiveClient.sendTextMessage(targetPhoneJid, result.reply, rawMsg, senderPhone);
             }
         }
         catch (err) {
