@@ -29,12 +29,8 @@ export function createExecutiveBot() {
             auth: state,
             printQRInTerminal: false,
             logger: pino({ level: "silent" }),
-            browser: ["Ubuntu", "Chrome", "20.0.04"],
+            browser: ["IZA Executive Assistant", "Chrome", "1.0.0"],
             generateHighQualityLinkPreview: true,
-            syncFullHistory: false,
-            getMessage: async (key) => {
-                return undefined;
-            },
         });
         setExecutiveSocket(sock);
         sock.ev.on("creds.update", saveCreds);
