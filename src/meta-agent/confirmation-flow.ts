@@ -488,11 +488,8 @@ export class ConfirmationFlow {
     }
 
     preview += `\n━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    preview += `❓ *Apakah data di atas sudah benar untuk dicatat?*\n\n`;
-    preview += `• Ketik *Ya* / *Simpan* untuk mencatat ke pembukuan.\n`;
-    preview += `• Ketik *Pemasukan* / *Pengeluaran* jika ingin mengubah jenis transaksi.\n`;
-    preview += `• Ketik revisi (contoh: _"ubah ke cash"_ atau _"nominal 200rb"_).\n`;
-    preview += `• Ketik *Batal* untuk membatalkan draf.`;
+    preview += `❓ *Mohon konfirmasi, apakah data di atas sudah sesuai?*\n`;
+    preview += `_Ketuk tombol di bawah atau ketik revisi jika ada yang ingin diubah._`;
 
     return preview;
   }

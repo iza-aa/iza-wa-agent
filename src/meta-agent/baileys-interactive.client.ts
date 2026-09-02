@@ -3,17 +3,6 @@ import { getExecutiveSocket } from "./executive-socket-holder.js";
 import { logger } from "../utils/logger.js";
 import { normalizePhoneNumber } from "../utils/phone.utils.js";
 
-// @ts-ignore
-import * as buttonHelperModule from "@ryuu-reinzz/button-helper";
-
-const sendButtonsHelper =
-  (buttonHelperModule as any).sendButtons ||
-  (buttonHelperModule as any).default?.sendButtons;
-
-const sendInteractiveHelper =
-  (buttonHelperModule as any).sendInteractiveMessage ||
-  (buttonHelperModule as any).default?.sendInteractiveMessage;
-
 const proto = (Baileys as any).proto || (Baileys as any).default?.proto;
 const generateWAMessageFromContent =
   (Baileys as any).generateWAMessageFromContent ||
@@ -72,7 +61,7 @@ export class BaileysInteractiveClient {
   }
 
   /**
-   * Sends text message to WhatsApp user via Baileys socket
+   * Sends standard text message to WhatsApp user via Baileys socket
    */
   async sendTextMessage(to: string, messageText: string): Promise<boolean> {
     const jid = this.formatJid(to);
@@ -116,29 +105,7 @@ export class BaileysInteractiveClient {
       return this.sendTextMessage(jid, bodyText);
     }
 
-    // Attempt 1: Using button-helper with automatic binary node injection (bot + biz)
-    if (typeof sendButtonsHelper === "function") {
-      try {
-        const formattedButtons = buttons.slice(0, 3).map((b) => ({
-          id: b.id,
-          text: b.title.slice(0, 25),
-        }));
-
-        await sendButtonsHelper(sock, jid, {
-          title: headerText || "",
-          text: bodyText,
-          footer: footerText || "",
-          buttons: formattedButtons,
-        });
-
-        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Sent buttons via button-helper with bot node");
-        return true;
-      } catch (helperErr) {
-        logger.warn({ helperErr, jid }, "BaileysInteractiveClient: button-helper dispatch failed, attempting direct relay");
-      }
-    }
-
-    // Attempt 2: Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
+    // Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
     try {
       const formattedButtons = buttons.slice(0, 3).map((btn) => ({
         name: "quick_reply",
@@ -209,7 +176,7 @@ export class BaileysInteractiveClient {
           messageId: msg.key.id,
           additionalNodes,
         });
-        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message without viewOnce");
+        logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
         return true;
       }
     } catch (err) {
@@ -247,43 +214,6 @@ export class BaileysInteractiveClient {
       return false;
     }
 
-    // Attempt 1: Using button-helper with single_select
-    if (typeof sendInteractiveHelper === "function") {
-      try {
-        const listParams = {
-          title: buttonText.slice(0, 20),
-          sections: sections.map((sec) => ({
-            title: sec.title,
-            highlight_label: sec.highlight_label,
-            rows: sec.rows.map((row) => ({
-              header: row.header,
-              title: row.title.slice(0, 24),
-              description: row.description || this.getButtonDescription(row.id, row.title),
-              id: row.id,
-            })),
-          })),
-        };
-
-        await sendInteractiveHelper(sock, jid, {
-          title: title || "",
-          text: description,
-          footer: footerText || "",
-          interactiveButtons: [
-            {
-              name: "single_select",
-              buttonParamsJson: JSON.stringify(listParams),
-            },
-          ],
-        });
-
-        logger.info({ jid, title }, "BaileysInteractiveClient: Sent list menu via button-helper");
-        return true;
-      } catch (helperErr) {
-        logger.warn({ helperErr, jid }, "BaileysInteractiveClient: sendInteractiveHelper failed, attempting direct relay");
-      }
-    }
-
-    // Attempt 2: Direct relay without viewOnce
     try {
       const listParams = {
         title: buttonText.slice(0, 20),
@@ -370,7 +300,7 @@ export class BaileysInteractiveClient {
           messageId: msg.key.id,
           additionalNodes,
         });
-        logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message without viewOnce");
+        logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
         return true;
       }
     } catch (err) {

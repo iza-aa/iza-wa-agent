@@ -132,7 +132,7 @@ describe("Meta WA True AI Agent Test Suite", () => {
   describe("AgentPersona", () => {
     it("should build structured system prompt with knowledge and context", () => {
       const prompt = buildSystemPrompt("KNOWLEDGE_DOCS_SAMPLE", "LIVE_DATABASE_CONTEXT_SAMPLE");
-      expect(prompt).toContain("IZA AI AGENT");
+      expect(prompt).toContain("IZA — Asisten Eksekutif");
       expect(prompt).toContain("KNOWLEDGE_DOCS_SAMPLE");
       expect(prompt).toContain("LIVE_DATABASE_CONTEXT_SAMPLE");
       expect(prompt).toContain("DRAFT_TRANSACTION");

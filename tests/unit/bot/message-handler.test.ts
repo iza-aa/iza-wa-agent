@@ -251,8 +251,7 @@ describe("WhatsApp Bot Handlers", () => {
       expect(preview).toContain("Mammi Cafe");
       expect(preview).toContain("234.300");
       expect(preview).toContain("QRIS BRI");
-      expect(preview).toContain("Ketik *Ya* / *Simpan*");
-      expect(preview).toContain("Ketik *Pemasukan* / *Pengeluaran*");
+      expect(preview).toContain("Mohon konfirmasi, apakah data di atas sudah sesuai?");
     });
 
     it("should classify user decisions accurately (Confirm, Cancel, Modify)", async () => {

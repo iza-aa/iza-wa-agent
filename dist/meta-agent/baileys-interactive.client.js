@@ -2,12 +2,6 @@ import * as Baileys from "@whiskeysockets/baileys";
 import { getExecutiveSocket } from "./executive-socket-holder.js";
 import { logger } from "../utils/logger.js";
 import { normalizePhoneNumber } from "../utils/phone.utils.js";
-// @ts-ignore
-import * as buttonHelperModule from "@ryuu-reinzz/button-helper";
-const sendButtonsHelper = buttonHelperModule.sendButtons ||
-    buttonHelperModule.default?.sendButtons;
-const sendInteractiveHelper = buttonHelperModule.sendInteractiveMessage ||
-    buttonHelperModule.default?.sendInteractiveMessage;
 const proto = Baileys.proto || Baileys.default?.proto;
 const generateWAMessageFromContent = Baileys.generateWAMessageFromContent ||
     Baileys.default?.generateWAMessageFromContent;
@@ -50,7 +44,7 @@ export class BaileysInteractiveClient {
         return "Pilih opsi ini";
     }
     /**
-     * Sends text message to WhatsApp user via Baileys socket
+     * Sends standard text message to WhatsApp user via Baileys socket
      */
     async sendTextMessage(to, messageText) {
         const jid = this.formatJid(to);
@@ -83,27 +77,7 @@ export class BaileysInteractiveClient {
         if (!buttons || buttons.length === 0) {
             return this.sendTextMessage(jid, bodyText);
         }
-        // Attempt 1: Using button-helper with automatic binary node injection (bot + biz)
-        if (typeof sendButtonsHelper === "function") {
-            try {
-                const formattedButtons = buttons.slice(0, 3).map((b) => ({
-                    id: b.id,
-                    text: b.title.slice(0, 25),
-                }));
-                await sendButtonsHelper(sock, jid, {
-                    title: headerText || "",
-                    text: bodyText,
-                    footer: footerText || "",
-                    buttons: formattedButtons,
-                });
-                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Sent buttons via button-helper with bot node");
-                return true;
-            }
-            catch (helperErr) {
-                logger.warn({ helperErr, jid }, "BaileysInteractiveClient: button-helper dispatch failed, attempting direct relay");
-            }
-        }
-        // Attempt 2: Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
+        // Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
         try {
             const formattedButtons = buttons.slice(0, 3).map((btn) => ({
                 name: "quick_reply",
@@ -169,7 +143,7 @@ export class BaileysInteractiveClient {
                     messageId: msg.key.id,
                     additionalNodes,
                 });
-                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message without viewOnce");
+                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
                 return true;
             }
         }
@@ -197,41 +171,6 @@ export class BaileysInteractiveClient {
             logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for list message");
             return false;
         }
-        // Attempt 1: Using button-helper with single_select
-        if (typeof sendInteractiveHelper === "function") {
-            try {
-                const listParams = {
-                    title: buttonText.slice(0, 20),
-                    sections: sections.map((sec) => ({
-                        title: sec.title,
-                        highlight_label: sec.highlight_label,
-                        rows: sec.rows.map((row) => ({
-                            header: row.header,
-                            title: row.title.slice(0, 24),
-                            description: row.description || this.getButtonDescription(row.id, row.title),
-                            id: row.id,
-                        })),
-                    })),
-                };
-                await sendInteractiveHelper(sock, jid, {
-                    title: title || "",
-                    text: description,
-                    footer: footerText || "",
-                    interactiveButtons: [
-                        {
-                            name: "single_select",
-                            buttonParamsJson: JSON.stringify(listParams),
-                        },
-                    ],
-                });
-                logger.info({ jid, title }, "BaileysInteractiveClient: Sent list menu via button-helper");
-                return true;
-            }
-            catch (helperErr) {
-                logger.warn({ helperErr, jid }, "BaileysInteractiveClient: sendInteractiveHelper failed, attempting direct relay");
-            }
-        }
-        // Attempt 2: Direct relay without viewOnce
         try {
             const listParams = {
                 title: buttonText.slice(0, 20),
@@ -313,7 +252,7 @@ export class BaileysInteractiveClient {
                     messageId: msg.key.id,
                     additionalNodes,
                 });
-                logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message without viewOnce");
+                logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
                 return true;
             }
         }
