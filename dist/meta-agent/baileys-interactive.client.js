@@ -116,48 +116,38 @@ export class BaileysInteractiveClient {
                         hasMediaAttachment: false,
                     };
             }
-            const interactiveMessageObj = proto?.Message?.InteractiveMessage?.create
-                ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-                : interactiveMessagePayload;
-            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
-            const userJid = jidNormalizedUser(rawUserJid);
-            // Structure: viewOnceMessage wrapping interactiveMessage with messageContextInfo
+            // Direct template buttons message format: standard native buttons on all WhatsApp clients
+            const templateButtons = buttons.slice(0, 3).map((btn, index) => ({
+                index: index + 1,
+                quickReplyButton: {
+                    displayText: btn.title.slice(0, 25),
+                    id: btn.id,
+                },
+            }));
+            const templateMessagePayload = {
+                hydratedTemplate: {
+                    hydratedContentText: bodyText,
+                    hydratedButtons: templateButtons,
+                    hydratedFooterText: footerText || undefined,
+                },
+            };
             const fullMessage = {
                 viewOnceMessage: {
                     message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2,
-                        },
-                        interactiveMessage: interactiveMessageObj,
+                        templateMessage: proto?.Message?.TemplateMessage?.create
+                            ? proto.Message.TemplateMessage.create(templateMessagePayload)
+                            : templateMessagePayload,
                     },
                 },
             };
-            const additionalNodes = [
-                {
-                    tag: "biz",
-                    attrs: {},
-                    content: [
-                        {
-                            tag: "interactive",
-                            attrs: { type: "native_flow", v: "1" },
-                            content: [
-                                {
-                                    tag: "native_flow",
-                                    attrs: { v: "9", name: "mixed" },
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ];
+            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const userJid = jidNormalizedUser(rawUserJid);
             if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
                 const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
                 await sock.relayMessage(jid, msg.message, {
                     messageId: msg.key.id,
-                    additionalNodes,
                 });
-                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
+                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed Hydrated Template buttons message");
                 return true;
             }
         }

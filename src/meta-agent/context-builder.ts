@@ -98,8 +98,13 @@ export class ContextBuilder {
       const mismatched: any[] = [];
 
       for (const t of trxs || []) {
-        const isInc = t.category?.startsWith("Pemasukan");
-        const isInternalTransfer = t.category?.toLowerCase().includes("mutasi kas");
+        const isInc =
+          (t.category || "").toLowerCase().includes("pemasukan") ||
+          (t.merchant || "").toLowerCase().includes("saldo bulan juli") ||
+          (t.merchant || "").toLowerCase().includes("pemasukan") ||
+          (t as any).status === "income" ||
+          (t as any).type === "income";
+        const isInternalTransfer = (t.category || "").toLowerCase().includes("mutasi kas");
 
         if (!isInc && !isInternalTransfer) {
           const trxAmount = Number(t.total_amount) || 0;
@@ -186,7 +191,12 @@ export class ContextBuilder {
 
       for (const t of trxs || []) {
         const amt = Number(t.total_amount) || 0;
-        const isInc = t.category?.startsWith("Pemasukan");
+        const isInc =
+          (t.category || "").toLowerCase().includes("pemasukan") ||
+          (t.merchant || "").toLowerCase().includes("saldo bulan juli") ||
+          (t.merchant || "").toLowerCase().includes("pemasukan") ||
+          (t as any).status === "income" ||
+          (t as any).type === "income";
         const tDate = t.date || "";
 
         if (tDate.startsWith(monthStr)) {
@@ -436,7 +446,13 @@ export class ContextBuilder {
       }
 
       const trxExamples = sampleTrxList.slice(0, 10).map((t) => {
-        const typeSign = t.category?.startsWith("Pemasukan") ? "+" : "-";
+        const isInc =
+          (t.category || "").toLowerCase().includes("pemasukan") ||
+          (t.merchant || "").toLowerCase().includes("saldo bulan juli") ||
+          (t.merchant || "").toLowerCase().includes("pemasukan") ||
+          t.status === "income" ||
+          t.type === "income";
+        const typeSign = isInc ? "+" : "-";
         return `• [ID: ${t.id}] ${t.date} | "${t.merchant}" | ${typeSign}${formatRupiah(t.total_amount)} | Kat: "${t.category}" | Metode: "${t.payment_method || "Cash"}" | Input: "${t.raw_text || "-"}"`;
       });
 
