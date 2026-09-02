@@ -46,11 +46,16 @@ export class ExecutiveBaileysHandler {
         }
         const senderPhone = normalizePhoneNumber(remoteJid);
         const rawSenderName = rawMsg.pushName || "User";
-        // Mark message as read immediately (blue tick)
-        if (msgId) {
-            baileysInteractiveClient.markAsRead(remoteJid, msgId).catch(() => { });
+        // Send Read Receipt (Centang Biru) & Typing Indicator ("Sedang mengetik...")
+        try {
+            if (rawMsg.key) {
+                await sock.readMessages([rawMsg.key]);
+            }
+            await sock.sendPresenceUpdate("composing", remoteJid);
         }
-        logger.info({ senderPhone, rawSenderName, msgId }, "ExecutiveBaileysHandler: Received direct WhatsApp message");
+        catch (presenceErr) {
+            logger.debug({ presenceErr }, "Presence update non-critical error");
+        }
         // 1. User Access & Status Resolution
         let user = await this.userRepo.getUser(senderPhone, rawSenderName);
         if (!user && this.userRepo.isSuperAdmin(senderPhone)) {
@@ -178,15 +183,15 @@ export class ExecutiveBaileysHandler {
                 const targetPhone = normalizePhoneNumber(digitsOnly);
                 const linkedUser = await this.userRepo.linkLidByPhoneNumber(targetPhone, senderPhone);
                 if (linkedUser) {
-                    await baileysInteractiveClient.sendTextMessage(senderPhone, `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mengobrol dengan Asisten AI, mencatat transaksi, kirim foto nota/struk, atau tanya laporan kas.`);
+                    await sock.sendMessage(remoteJid, { text: `🎉 *VERIFIKASI BERHASIL!*\n\nHalo *${linkedUser.name}*, akun WhatsApp Anda telah resmi terhubung dengan nomor \`+${targetPhone}\`.\n\nSekarang Anda dapat langsung mengobrol dengan Asisten AI, mencatat transaksi, kirim foto nota/struk, atau tanya laporan kas.` }, { quoted: rawMsg });
                     return;
                 }
                 else {
-                    await baileysInteractiveClient.sendTextMessage(senderPhone, `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.`);
+                    await sock.sendMessage(remoteJid, { text: `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem.\n\nPastikan Super Admin telah mendaftarkan nomor Anda terlebih dahulu via \`/tambah ${targetPhone} [NamaAnda]\`.` }, { quoted: rawMsg });
                     return;
                 }
             }
-            await baileysInteractiveClient.sendTextMessage(senderPhone, `👋 *HALO! SELAMAT DATANG DI IZA ASSISTANT*\n\nAkun WhatsApp Anda belum terhubung dengan nomor staf terdaftar.\n\nSilakan ketik nomor HP Anda yang terdaftar (contoh: \`08123456789\`) untuk verifikasi identitas.`);
+            await sock.sendMessage(remoteJid, { text: `👋 *HALO! SELAMAT DATANG DI IZA ASSISTANT*\n\nAkun WhatsApp Anda belum terhubung dengan nomor staf terdaftar.\n\nSilakan ketik nomor HP Anda yang terdaftar (contoh: \`08123456789\`) untuk verifikasi identitas.` }, { quoted: rawMsg });
             return;
         }
         // If user clicked interactive button or sent quick phrase, map to clear natural question
@@ -286,22 +291,31 @@ export class ExecutiveBaileysHandler {
                 mediaMimeType,
             });
             // Stop composing presence
-            baileysInteractiveClient.sendPresence(senderPhone, "paused").catch(() => { });
+            try {
+                await sock.sendPresenceUpdate("paused", remoteJid);
+            }
+            catch { }
             if (!result.reply) {
                 return;
             }
-            // 7. Send Response: Real Interactive Buttons / Text directly to valid phone @s.whatsapp.net
-            const targetPhoneJid = `${senderPhone}@s.whatsapp.net`;
+            // Format reply message with choices if buttons are provided
+            let finalReplyText = result.reply;
             if (result.buttons && result.buttons.length > 0) {
-                await baileysInteractiveClient.sendInteractiveButtons(targetPhoneJid, result.reply, result.buttons, undefined, undefined, rawMsg, senderPhone);
+                const buttonList = result.buttons
+                    .map((b, i) => `👉 *[${i + 1}]* ${b.title}`)
+                    .join("\n");
+                finalReplyText += `\n\n${buttonList}`;
             }
-            else {
-                await baileysInteractiveClient.sendTextMessage(targetPhoneJid, result.reply, rawMsg, senderPhone);
-            }
+            // 7. Send Response directly via active socket with quoted message reference (Same as Bot Kasir)
+            const res = await sock.sendMessage(remoteJid, { text: finalReplyText }, { quoted: rawMsg });
+            logger.info({ remoteJid, msgId: res?.key?.id, status: res?.status }, "ExecutiveBaileysHandler: Sent reply message directly via socket");
         }
         catch (err) {
             logger.error({ err, senderPhone }, "ExecutiveBaileysHandler: Error processing message through AgentEngine");
-            await baileysInteractiveClient.sendTextMessage(senderPhone, "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi.");
+            try {
+                await sock.sendMessage(remoteJid, { text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi." }, { quoted: rawMsg });
+            }
+            catch { }
         }
     }
 }
