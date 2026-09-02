@@ -1,5 +1,9 @@
 import * as Baileys from "@whiskeysockets/baileys";
 const { downloadMediaMessage } = Baileys;
+import { PendingActionRepository } from "../../db/repositories/pending-action.repository.js";
+import { ConfirmationFlow } from "../../meta-agent/confirmation-flow.js";
+import { extractDeterministicEdits } from "../../ai/parsers/edit.parser.js";
+import { getSupabaseClient } from "../../db/supabase.js";
 import { CommandHandler } from "./command.handler.js";
 import { parseTransactionText } from "../../ai/parsers/text.parser.js";
 import { parseReceiptVision } from "../../ai/parsers/receipt-vision.parser.js";
@@ -7,7 +11,7 @@ import { parseAudioVoiceNote } from "../../ai/parsers/audio.parser.js";
 import { executeNaturalQuerySearch } from "../../ai/parsers/search.parser.js";
 import { googleDriveService } from "../../google/drive.service.js";
 import { googleSheetsService } from "../../google/sheets.service.js";
-import { formatTransactionSuccess, formatDuplicateWarning, formatBudgetWarning, } from "../formatters/reply.formatter.js";
+import { formatDuplicateWarning, formatBudgetWarning, } from "../formatters/reply.formatter.js";
 import { DuplicateDetectorService } from "../../services/duplicate-detector.service.js";
 import { logger } from "../../utils/logger.js";
 import { normalizePhoneNumber } from "../../utils/phone.utils.js";
@@ -19,8 +23,10 @@ export class MessageHandler {
     billRepo;
     commandHandler;
     duplicateDetector;
+    pendingRepo;
+    confirmationFlow;
     processedMessageIds = new Set();
-    constructor(userRepo, trxRepo, chatRepo, budgetRepo, billRepo) {
+    constructor(userRepo, trxRepo, chatRepo, budgetRepo, billRepo, pendingRepo) {
         this.userRepo = userRepo;
         this.trxRepo = trxRepo;
         this.chatRepo = chatRepo;
@@ -28,6 +34,8 @@ export class MessageHandler {
         this.billRepo = billRepo;
         this.commandHandler = new CommandHandler(userRepo, trxRepo, budgetRepo, billRepo);
         this.duplicateDetector = new DuplicateDetectorService(trxRepo);
+        this.pendingRepo = pendingRepo || new PendingActionRepository(getSupabaseClient());
+        this.confirmationFlow = new ConfirmationFlow(this.pendingRepo, trxRepo, userRepo, budgetRepo, billRepo);
     }
     async checkBudgetAlert(category, dateStr) {
         if (!this.budgetRepo || category.startsWith("Pemasukan"))
@@ -157,21 +165,99 @@ export class MessageHandler {
             }
             // 3. Command Check (Super Admin vs Member commands)
             if (body.startsWith("/")) {
+                if (body.toLowerCase() === "/batal" || body.toLowerCase() === "/cancel") {
+                    const activeDraft = await this.confirmationFlow.getActiveDraft(user.phone_number);
+                    if (activeDraft) {
+                        const cancelReply = await this.confirmationFlow.cancelActiveDraft(activeDraft);
+                        await sock.sendMessage(remoteJid, { text: cancelReply }, { quoted: msg });
+                        return;
+                    }
+                }
                 const { handled, responseMessage } = await this.commandHandler.handleCommand(user.phone_number, body);
                 if (handled) {
                     await sock.sendMessage(remoteJid, { text: responseMessage }, { quoted: msg });
                     return;
                 }
                 else {
-                    // Gap 2: Safety guard to prevent unhandled slash messages from falling through to AI
+                    // Safety guard to prevent unhandled slash messages from falling through to AI
                     await sock.sendMessage(remoteJid, { text: "❓ Perintah tidak dikenal. Ketik `/menu` untuk melihat daftar panduan & perintah." }, { quoted: msg });
                     return;
                 }
             }
             const userName = user.name || pushName;
-            // 4. Handle Media Messages (Receipt Photos & Voice Notes)
+            // 4. Check if there is an active pending draft for this user (Interactive Decision Handling)
+            const activeDraft = await this.confirmationFlow.getActiveDraft(user.phone_number);
+            if (activeDraft && !hasMedia) {
+                const decision = this.confirmationFlow.classifyUserDecision(body);
+                // Case A: Confirm draft -> save officially
+                if (decision.type === "CONFIRM") {
+                    const result = await this.confirmationFlow.executeConfirmedDraft(activeDraft);
+                    await sock.sendMessage(remoteJid, { text: result.replyText }, { quoted: msg });
+                    await this.chatRepo.logMessage({
+                        user_phone: user.phone_number,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: result.replyText,
+                    });
+                    return;
+                }
+                // Case B: Cancel draft
+                if (decision.type === "CANCEL") {
+                    const cancelReply = await this.confirmationFlow.cancelActiveDraft(activeDraft);
+                    await sock.sendMessage(remoteJid, { text: cancelReply }, { quoted: msg });
+                    await this.chatRepo.logMessage({
+                        user_phone: user.phone_number,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: cancelReply,
+                    });
+                    return;
+                }
+                // Case C: Modify / Clarify draft
+                if (decision.type === "MODIFY") {
+                    const clean = body.trim().toLowerCase();
+                    const currentPayload = { ...activeDraft.payload };
+                    if (clean === "pemasukan" || clean === "1" || clean === "income" || clean === "masuk" || clean === "penjualan" || clean === "uang masuk") {
+                        currentPayload.type = "income";
+                        if (!currentPayload.category || !currentPayload.category.toLowerCase().startsWith("pemasukan")) {
+                            currentPayload.category = "Pemasukan: Penjualan";
+                        }
+                        await this.pendingRepo.updatePayload(activeDraft.id, currentPayload, user.phone_number);
+                        const preview = this.confirmationFlow.formatDraftPreview(currentPayload);
+                        const reply = `✅ Draf diubah menjadi *Pemasukan*:\n\n${preview}`;
+                        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+                        return;
+                    }
+                    if (clean === "pengeluaran" || clean === "2" || clean === "expense" || clean === "keluar" || clean === "belanja" || clean === "uang keluar") {
+                        currentPayload.type = "expense";
+                        if (currentPayload.category && currentPayload.category.toLowerCase().startsWith("pemasukan")) {
+                            currentPayload.category = "Makanan & Minuman";
+                        }
+                        await this.pendingRepo.updatePayload(activeDraft.id, currentPayload, user.phone_number);
+                        const preview = this.confirmationFlow.formatDraftPreview(currentPayload);
+                        const reply = `✅ Draf diubah menjadi *Pengeluaran*:\n\n${preview}`;
+                        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+                        return;
+                    }
+                    // Field edits (e.g. "ubah metode ke Cash", "nominal 150rb", "toko Alfamart")
+                    const edits = extractDeterministicEdits(body);
+                    if (Object.keys(edits).length > 0) {
+                        Object.assign(currentPayload, edits);
+                        if (edits.total_amount)
+                            currentPayload.subtotal = edits.total_amount;
+                        await this.pendingRepo.updatePayload(activeDraft.id, currentPayload, user.phone_number);
+                        const preview = this.confirmationFlow.formatDraftPreview(currentPayload);
+                        const reply = `✏️ *Draf Transaksi Berhasil Diperbarui:*\n\n${preview}`;
+                        await sock.sendMessage(remoteJid, { text: reply }, { quoted: msg });
+                        return;
+                    }
+                }
+            }
+            // 5. Handle Media Messages (Receipt Photos & Voice Notes)
             if (hasMedia) {
-                // CASE A: Image / Receipt / Nota / PDF Invoice / Uncompressed Image Document (Gap 32)
+                // CASE A: Image / Receipt / Nota / PDF Invoice / Uncompressed Image Document
                 if (isImage || isDocument) {
                     const docMime = messageContent.documentMessage?.mimetype || "";
                     const docFileName = messageContent.documentMessage?.fileName || "";
@@ -189,59 +275,47 @@ export class MessageHandler {
                         await sock.sendMessage(remoteJid, { text: isPdf ? "⚠️ AI tidak dapat mendeteksi transaksi dari dokumen PDF ini." : "⚠️ AI tidak dapat mendeteksi total belanja dari foto struk ini. Pastikan foto jelas dan tidak buram." }, { quoted: msg });
                         return;
                     }
-                    const trxId = await this.trxRepo.generateTransactionId(parsed.date);
                     // Upload to Google Drive (Compressed WebP / PDF) with Supabase Storage fallback
                     let gdriveLink = "";
                     let gdriveFileId = "";
                     try {
-                        const uploadRes = await googleDriveService.uploadReceipt(mediaBuffer, trxId + "_" + parsed.merchant.replace(/[^a-zA-Z0-9]/g, "_"), userName, isPdf);
+                        const uploadRes = await googleDriveService.uploadReceipt(mediaBuffer, `DRAFT_${Date.now()}_${parsed.merchant.replace(/[^a-zA-Z0-9]/g, "_")}`, userName, isPdf);
                         gdriveLink = uploadRes.webViewLink;
                         gdriveFileId = uploadRes.fileId;
                     }
                     catch (driveErr) {
-                        logger.error({ driveErr }, "Failed to upload receipt file");
+                        logger.error({ driveErr }, "Failed to upload receipt file to Drive");
                     }
                     // Check for potential duplicate within last 10 minutes
                     const potentialDuplicate = await this.duplicateDetector.detectDuplicate(parsed.total_amount, parsed.merchant, 10);
-                    // Save to Supabase
-                    const transactionRecord = await this.trxRepo.createTransaction({
-                        id: trxId,
-                        user_phone: senderPhone,
-                        user_name: userName,
-                        date: parsed.date,
+                    const draft = {
                         type: parsed.type,
                         merchant: parsed.merchant,
+                        date: parsed.date,
                         category: parsed.category,
                         subtotal: parsed.subtotal,
                         tax: parsed.tax,
                         discount: parsed.discount,
                         total_amount: parsed.total_amount,
                         payment_method: parsed.payment_method,
+                        raw_text: body || "-",
+                        items: parsed.items,
                         gdrive_file_id: gdriveFileId,
                         gdrive_web_view_link: gdriveLink,
-                        raw_text: body,
-                        confidence_score: parsed.confidence_score,
-                    }, parsed.items);
-                    // Sync to Google Sheet
-                    try {
-                        const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, parsed.items);
-                        await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
-                    }
-                    catch (sheetErr) {
-                        logger.error({ sheetErr }, "Failed to append row to Google Sheet");
-                    }
-                    // Reply Success (with duplicate warning or budget warning if detected)
-                    const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
-                    const wallet = await this.trxRepo.getWalletBalance();
-                    const budgetNotice = await this.checkBudgetAlert(parsed.category, parsed.date);
-                    let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+                    };
+                    await this.confirmationFlow.createDraft(user.phone_number, userName, "CREATE_TRANSACTION", draft, gdriveLink);
+                    let preview = this.confirmationFlow.formatDraftPreview(draft);
                     if (potentialDuplicate) {
-                        replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+                        preview = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + preview;
                     }
-                    if (budgetNotice) {
-                        replyText += "\n\n────────────────────────\n\n" + budgetNotice;
-                    }
-                    await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    await sock.sendMessage(remoteJid, { text: preview }, { quoted: msg });
+                    await this.chatRepo.logMessage({
+                        user_phone: user.phone_number,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: preview,
+                    });
                     return;
                 }
                 // CASE B: Audio / Voice Note
@@ -279,15 +353,11 @@ export class MessageHandler {
                         });
                         return;
                     }
-                    const trxId = await this.trxRepo.generateTransactionId(transaction.date);
-                    // Check for potential duplicate within last 10 minutes
                     const potentialDuplicate = await this.duplicateDetector.detectDuplicate(transaction.total_amount, transaction.merchant, 10);
-                    const transactionRecord = await this.trxRepo.createTransaction({
-                        id: trxId,
-                        user_phone: senderPhone,
-                        user_name: userName,
-                        date: transaction.date,
+                    const draft = {
+                        type: transaction.type,
                         merchant: transaction.merchant,
+                        date: transaction.date,
                         category: transaction.category,
                         subtotal: transaction.subtotal,
                         tax: transaction.tax,
@@ -295,31 +365,26 @@ export class MessageHandler {
                         total_amount: transaction.total_amount,
                         payment_method: transaction.payment_method,
                         raw_text: transcription,
-                        confidence_score: transaction.confidence_score,
-                    }, transaction.items);
-                    try {
-                        const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, transaction.items);
-                        await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
-                    }
-                    catch (sheetErr) {
-                        logger.error({ sheetErr }, "Failed to append row to Google Sheet");
-                    }
-                    const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
-                    const wallet = await this.trxRepo.getWalletBalance();
-                    const budgetNotice = await this.checkBudgetAlert(transaction.category, transaction.date);
-                    let replyText = "🗣️ *Transkrip:* \"" + transcription + "\"\n\n";
-                    replyText += formatTransactionSuccess(transactionRecord, transaction.items, isSuperAdmin, wallet.balance);
+                        items: transaction.items,
+                    };
+                    await this.confirmationFlow.createDraft(user.phone_number, userName, "CREATE_TRANSACTION", draft);
+                    let preview = this.confirmationFlow.formatDraftPreview(draft);
                     if (potentialDuplicate) {
-                        replyText = formatDuplicateWarning(potentialDuplicate, transaction.total_amount, transaction.merchant) + "\n\n────────────────────────\n\n" + replyText;
+                        preview = formatDuplicateWarning(potentialDuplicate, transaction.total_amount, transaction.merchant) + "\n\n────────────────────────\n\n" + preview;
                     }
-                    if (budgetNotice) {
-                        replyText += "\n\n────────────────────────\n\n" + budgetNotice;
-                    }
+                    const replyText = `🗣️ *Transkrip Suara:* "${transcription}"\n\n${preview}`;
                     await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    await this.chatRepo.logMessage({
+                        user_phone: senderPhone,
+                        user_name: "Bot",
+                        message_type: "text",
+                        direction: "outbound",
+                        content: replyText,
+                    });
                     return;
                 }
             }
-            // 5. Handle Text Messages
+            // 6. Handle Text Messages
             if (body.trim().length > 0) {
                 const isSuperAdmin = await this.userRepo.isSuperAdminAsync(senderPhone);
                 // Check if message is a natural query or question (e.g. "Berapa saldo kas?", "Cari nota bensin")
@@ -364,15 +429,11 @@ export class MessageHandler {
                     return;
                 }
                 const parsed = textResult.transaction;
-                const trxId = await this.trxRepo.generateTransactionId(parsed.date);
-                // Check for potential duplicate within last 10 minutes
                 const potentialDuplicate = await this.duplicateDetector.detectDuplicate(parsed.total_amount, parsed.merchant, 10);
-                const transactionRecord = await this.trxRepo.createTransaction({
-                    id: trxId,
-                    user_phone: senderPhone,
-                    user_name: userName,
-                    date: parsed.date,
+                const draft = {
+                    type: parsed.type,
                     merchant: parsed.merchant,
+                    date: parsed.date,
                     category: parsed.category,
                     subtotal: parsed.subtotal,
                     tax: parsed.tax,
@@ -380,31 +441,20 @@ export class MessageHandler {
                     total_amount: parsed.total_amount,
                     payment_method: parsed.payment_method,
                     raw_text: body,
-                    confidence_score: parsed.confidence_score,
-                }, parsed.items);
-                try {
-                    const sheetRes = await googleSheetsService.appendTransaction(transactionRecord, parsed.items);
-                    await this.trxRepo.updateGSheetRow(trxId, sheetRes.rowIndex);
-                }
-                catch (sheetErr) {
-                    logger.error({ sheetErr }, "Failed to append row to Google Sheet");
-                }
-                const wallet = await this.trxRepo.getWalletBalance();
-                const budgetNotice = await this.checkBudgetAlert(parsed.category, parsed.date);
-                let replyText = formatTransactionSuccess(transactionRecord, parsed.items, isSuperAdmin, wallet.balance);
+                    items: parsed.items,
+                };
+                await this.confirmationFlow.createDraft(user.phone_number, userName, "CREATE_TRANSACTION", draft);
+                let preview = this.confirmationFlow.formatDraftPreview(draft);
                 if (potentialDuplicate) {
-                    replyText = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + replyText;
+                    preview = formatDuplicateWarning(potentialDuplicate, parsed.total_amount, parsed.merchant) + "\n\n────────────────────────\n\n" + preview;
                 }
-                if (budgetNotice) {
-                    replyText += "\n\n────────────────────────\n\n" + budgetNotice;
-                }
-                await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                await sock.sendMessage(remoteJid, { text: preview }, { quoted: msg });
                 await this.chatRepo.logMessage({
                     user_phone: senderPhone,
                     user_name: "Bot",
                     message_type: "text",
                     direction: "outbound",
-                    content: replyText,
+                    content: preview,
                 });
             }
         }

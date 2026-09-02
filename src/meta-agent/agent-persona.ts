@@ -21,6 +21,8 @@ export interface TransactionDraft {
   items: DraftItem[];
   raw_text?: string;
   notes?: string;
+  gdrive_file_id?: string;
+  gdrive_web_view_link?: string;
 }
 
 export interface DeleteDraft {

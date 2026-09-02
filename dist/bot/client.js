@@ -44,7 +44,9 @@ export function createWhatsAppBot() {
         const chatRepo = new ChatRepository(supabase);
         const budgetRepo = new BudgetRepository(supabase);
         const billRepo = new BillRepository(supabase);
-        const messageHandler = new MessageHandler(userRepo, trxRepo, chatRepo, budgetRepo, billRepo);
+        const { PendingActionRepository } = await import("../db/repositories/pending-action.repository.js");
+        const pendingRepo = new PendingActionRepository(supabase);
+        const messageHandler = new MessageHandler(userRepo, trxRepo, chatRepo, budgetRepo, billRepo, pendingRepo);
         sock.ev.on("creds.update", saveCreds);
         sock.ev.on("connection.update", async (update) => {
             const { connection, lastDisconnect, qr } = update;

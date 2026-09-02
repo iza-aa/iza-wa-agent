@@ -220,4 +220,51 @@ describe("WhatsApp Bot Handlers", () => {
       expect(formatRupiah(50000)).toMatch(/Rp\s*50\.000/);
     });
   });
+
+  describe("Interactive Confirmation & Draft Flow", () => {
+    it("should format interactive draft preview with clear action instructions", async () => {
+      const { ConfirmationFlow } = await import("../../../src/meta-agent/confirmation-flow.js");
+      const { PendingActionRepository } = await import("../../../src/db/repositories/pending-action.repository.js");
+
+      const mockSupabase: any = {
+        from: vi.fn().mockReturnValue({
+          insert: vi.fn().mockReturnValue({ select: vi.fn().mockReturnValue({ single: vi.fn().mockResolvedValue({ data: null, error: null }) }) }),
+          select: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ eq: vi.fn().mockReturnValue({ gt: vi.fn().mockReturnValue({ order: vi.fn().mockReturnValue({ limit: vi.fn().mockReturnValue({ maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }) }) }) }) }) }) }),
+          update: vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) }),
+        }),
+      };
+
+      const pendingRepo = new PendingActionRepository(mockSupabase);
+      const confirmationFlow = new ConfirmationFlow(pendingRepo, mockTrxRepo, mockUserRepo);
+
+      const preview = confirmationFlow.formatDraftPreview({
+        type: "income",
+        merchant: "Mammi Cafe",
+        date: "2026-09-01",
+        category: "Pemasukan: Penjualan",
+        total_amount: 234300,
+        payment_method: "QRIS BRI",
+      });
+
+      expect(preview).toContain("DRAF TRANSAKSI BARU");
+      expect(preview).toContain("🟢 *Pemasukan*");
+      expect(preview).toContain("Mammi Cafe");
+      expect(preview).toContain("234.300");
+      expect(preview).toContain("QRIS BRI");
+      expect(preview).toContain("Ketik *Ya* / *Simpan*");
+      expect(preview).toContain("Ketik *Pemasukan* / *Pengeluaran*");
+    });
+
+    it("should classify user decisions accurately (Confirm, Cancel, Modify)", async () => {
+      const { ConfirmationFlow } = await import("../../../src/meta-agent/confirmation-flow.js");
+      const confirmationFlow = new ConfirmationFlow({} as any, mockTrxRepo, mockUserRepo);
+
+      expect(confirmationFlow.classifyUserDecision("ya")).toEqual({ type: "CONFIRM" });
+      expect(confirmationFlow.classifyUserDecision("simpan")).toEqual({ type: "CONFIRM" });
+      expect(confirmationFlow.classifyUserDecision("ok")).toEqual({ type: "CONFIRM" });
+      expect(confirmationFlow.classifyUserDecision("batal")).toEqual({ type: "CANCEL" });
+      expect(confirmationFlow.classifyUserDecision("pemasukan")).toEqual({ type: "MODIFY", modificationText: "pemasukan" });
+      expect(confirmationFlow.classifyUserDecision("pengeluaran")).toEqual({ type: "MODIFY", modificationText: "pengeluaran" });
+    });
+  });
 });

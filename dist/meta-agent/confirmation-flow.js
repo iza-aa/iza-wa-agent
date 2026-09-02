@@ -31,10 +31,27 @@ export class ConfirmationFlow {
         // Cancel keywords
         const cancelKeywords = [
             "batal", "batalkan", "cancel", "tidak", "gak", "nggak", "ga jadi", "gak jadi", "nggak jadi", "ngga jadi",
-            "enggak jadi", "jangan", "salah", "bukan", "no", "cancel_action", "hapus draf", "buang"
+            "enggak jadi", "jangan", "cancel_action", "hapus draf", "buang"
         ];
         if (cancelKeywords.includes(clean) || clean === "cancel_action" || clean.startsWith("❌")) {
             return { type: "CANCEL" };
+        }
+        // Direct income / expense switch or clarification keywords
+        if (clean === "pemasukan" ||
+            clean === "1" ||
+            clean === "income" ||
+            clean === "masuk" ||
+            clean === "uang masuk" ||
+            clean === "penjualan") {
+            return { type: "MODIFY", modificationText: "pemasukan" };
+        }
+        if (clean === "pengeluaran" ||
+            clean === "2" ||
+            clean === "expense" ||
+            clean === "keluar" ||
+            clean === "uang keluar" ||
+            clean === "belanja") {
+            return { type: "MODIFY", modificationText: "pengeluaran" };
         }
         // Check if user is asking to modify specific attributes
         if (clean.includes("ganti") ||
@@ -43,7 +60,10 @@ export class ConfirmationFlow {
             clean.includes("tapi") ||
             clean.includes("pake") ||
             clean.includes("pakai") ||
-            clean.includes("revisi")) {
+            clean.includes("revisi") ||
+            clean.includes("metode") ||
+            clean.includes("nominal") ||
+            clean.includes("kategori")) {
             return { type: "MODIFY", modificationText: userText };
         }
         return { type: "NOT_A_DECISION" };
@@ -371,8 +391,9 @@ export class ConfirmationFlow {
      */
     formatDraftPreview(draft) {
         const isInc = draft.type === "income" || draft.category?.toLowerCase().startsWith("pemasukan");
-        let preview = `📝 *DRAF PENCATATAN KAS*\n`;
+        let preview = `📝 *DRAF TRANSAKSI BARU*\n`;
         preview += `━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+        preview += `📌 *Jenis:* ${isInc ? "🟢 *Pemasukan*" : "🔴 *Pengeluaran*"}\n`;
         preview += (isInc ? `💵 *Sumber / Penerimaan:* ` : `🏪 *Tempat / Toko:* `) + `*${draft.merchant}*\n`;
         preview += `💰 *Nominal Total:* *${isInc ? "+" : "-"}${formatRupiah(draft.total_amount)}*\n`;
         preview += `🏷️ *Kategori:* ${draft.category}\n`;
@@ -386,8 +407,11 @@ export class ConfirmationFlow {
             });
         }
         preview += `\n━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-        preview += `👉 *Apakah data di atas sudah benar untuk dicatat ke pembukuan?*\n`;
-        preview += `_(Ketik **Ya** untuk simpan, **Batal** untuk menghapus, atau sebutkan bagian yang ingin diubah)_`;
+        preview += `❓ *Apakah data di atas sudah benar untuk dicatat?*\n\n`;
+        preview += `• Ketik *Ya* / *Simpan* untuk mencatat ke pembukuan.\n`;
+        preview += `• Ketik *Pemasukan* / *Pengeluaran* jika ingin mengubah jenis transaksi.\n`;
+        preview += `• Ketik revisi (contoh: _"ubah ke cash"_ atau _"nominal 200rb"_).\n`;
+        preview += `• Ketik *Batal* untuk membatalkan draf.`;
         return preview;
     }
 }
