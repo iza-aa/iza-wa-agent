@@ -2,6 +2,12 @@ import * as Baileys from "@whiskeysockets/baileys";
 import { getExecutiveSocket } from "./executive-socket-holder.js";
 import { logger } from "../utils/logger.js";
 import { normalizePhoneNumber } from "../utils/phone.utils.js";
+// @ts-ignore
+import * as buttonHelperModule from "@ryuu-reinzz/button-helper";
+const sendButtonsHelper = buttonHelperModule.sendButtons ||
+    buttonHelperModule.default?.sendButtons;
+const sendInteractiveHelper = buttonHelperModule.sendInteractiveMessage ||
+    buttonHelperModule.default?.sendInteractiveMessage;
 const proto = Baileys.proto || Baileys.default?.proto;
 const generateWAMessageFromContent = Baileys.generateWAMessageFromContent ||
     Baileys.default?.generateWAMessageFromContent;
@@ -64,8 +70,8 @@ export class BaileysInteractiveClient {
         }
     }
     /**
-     * Sends real interactive buttons via NativeFlowMessage (viewOnceMessage wrapper)
-     * Rendered natively on Android & iOS mobile devices
+     * Sends real interactive buttons via NativeFlowMessage with proper binary nodes (biz + bot)
+     * Rendered natively as clickable buttons on Android, iOS, and WhatsApp Web (NO viewOnce wrapper)
      */
     async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText = "IZA Executive Assistant") {
         const jid = this.formatJid(to);
@@ -77,15 +83,35 @@ export class BaileysInteractiveClient {
         if (!buttons || buttons.length === 0) {
             return this.sendTextMessage(jid, bodyText);
         }
-        // Format Native Flow Quick Reply buttons
-        const formattedButtons = buttons.slice(0, 3).map((btn) => ({
-            name: "quick_reply",
-            buttonParamsJson: JSON.stringify({
-                display_text: btn.title.slice(0, 25),
-                id: btn.id,
-            }),
-        }));
+        // Attempt 1: Using button-helper with automatic binary node injection (bot + biz)
+        if (typeof sendButtonsHelper === "function") {
+            try {
+                const formattedButtons = buttons.slice(0, 3).map((b) => ({
+                    id: b.id,
+                    text: b.title.slice(0, 25),
+                }));
+                await sendButtonsHelper(sock, jid, {
+                    title: headerText || "",
+                    text: bodyText,
+                    footer: footerText || "",
+                    buttons: formattedButtons,
+                });
+                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Sent buttons via button-helper with bot node");
+                return true;
+            }
+            catch (helperErr) {
+                logger.warn({ helperErr, jid }, "BaileysInteractiveClient: button-helper dispatch failed, attempting direct relay");
+            }
+        }
+        // Attempt 2: Direct NativeFlowMessage with explicit additionalNodes ({ tag: 'bot', attrs: { biz_bot: '1' } })
         try {
+            const formattedButtons = buttons.slice(0, 3).map((btn) => ({
+                name: "quick_reply",
+                buttonParamsJson: JSON.stringify({
+                    display_text: btn.title.slice(0, 25),
+                    id: btn.id,
+                }),
+            }));
             const interactiveMessagePayload = {
                 body: proto?.Message?.InteractiveMessage?.Body?.create
                     ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
@@ -113,44 +139,53 @@ export class BaileysInteractiveClient {
                     };
             }
             const fullMessage = {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2,
-                        },
-                        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-                            ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-                            : interactiveMessagePayload,
-                    },
-                },
+                interactiveMessage: proto?.Message?.InteractiveMessage?.create
+                    ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+                    : interactiveMessagePayload,
             };
-            if (typeof generateWAMessageFromContent === "function") {
-                const msg = generateWAMessageFromContent(jid, fullMessage, {});
-                await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message");
-                return true;
-            }
-            else {
-                // Fallback to direct relay or sendMessage
-                await sock.sendMessage(jid, fullMessage);
-                logger.info({ jid }, "BaileysInteractiveClient: Sent direct interactive message");
+            const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const additionalNodes = [
+                {
+                    tag: "biz",
+                    attrs: {},
+                    content: [
+                        {
+                            tag: "interactive",
+                            attrs: { type: "native_flow", v: "1" },
+                            content: [
+                                {
+                                    tag: "native_flow",
+                                    attrs: { v: "9", name: "mixed" },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                { tag: "bot", attrs: { biz_bot: "1" } },
+            ];
+            if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
+                const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
+                await sock.relayMessage(jid, msg.message, {
+                    messageId: msg.key.id,
+                    additionalNodes,
+                });
+                logger.info({ jid, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed NativeFlow buttons message without viewOnce");
                 return true;
             }
         }
         catch (err) {
-            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, falling back to text");
-            // Fallback: send clean text with numbered choices
-            let fallbackText = bodyText;
-            if (headerText && !fallbackText.startsWith(headerText)) {
-                fallbackText = `*${headerText}*\n\n${fallbackText}`;
-            }
-            fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}. *${b.title}*`).join("\n");
-            if (footerText) {
-                fallbackText += `\n\n_${footerText}_`;
-            }
-            return this.sendTextMessage(jid, fallbackText);
+            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, falling back to clean text");
         }
+        // Fallback: send clean text with numbered choices
+        let fallbackText = bodyText;
+        if (headerText && !fallbackText.startsWith(headerText)) {
+            fallbackText = `*${headerText}*\n\n${fallbackText}`;
+        }
+        fallbackText += "\n\n" + buttons.map((b, i) => `${i + 1}. *${b.title}*`).join("\n");
+        if (footerText) {
+            fallbackText += `\n\n_${footerText}_`;
+        }
+        return this.sendTextMessage(jid, fallbackText);
     }
     /**
      * Sends interactive List (single_select) bottom-sheet menu via NativeFlowMessage
@@ -162,6 +197,41 @@ export class BaileysInteractiveClient {
             logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for list message");
             return false;
         }
+        // Attempt 1: Using button-helper with single_select
+        if (typeof sendInteractiveHelper === "function") {
+            try {
+                const listParams = {
+                    title: buttonText.slice(0, 20),
+                    sections: sections.map((sec) => ({
+                        title: sec.title,
+                        highlight_label: sec.highlight_label,
+                        rows: sec.rows.map((row) => ({
+                            header: row.header,
+                            title: row.title.slice(0, 24),
+                            description: row.description || this.getButtonDescription(row.id, row.title),
+                            id: row.id,
+                        })),
+                    })),
+                };
+                await sendInteractiveHelper(sock, jid, {
+                    title: title || "",
+                    text: description,
+                    footer: footerText || "",
+                    interactiveButtons: [
+                        {
+                            name: "single_select",
+                            buttonParamsJson: JSON.stringify(listParams),
+                        },
+                    ],
+                });
+                logger.info({ jid, title }, "BaileysInteractiveClient: Sent list menu via button-helper");
+                return true;
+            }
+            catch (helperErr) {
+                logger.warn({ helperErr, jid }, "BaileysInteractiveClient: sendInteractiveHelper failed, attempting direct relay");
+            }
+        }
+        // Attempt 2: Direct relay without viewOnce
         try {
             const listParams = {
                 title: buttonText.slice(0, 20),
@@ -213,40 +283,51 @@ export class BaileysInteractiveClient {
                     };
             }
             const fullMessage = {
-                viewOnceMessage: {
-                    message: {
-                        messageContextInfo: {
-                            deviceListMetadata: {},
-                            deviceListMetadataVersion: 2,
-                        },
-                        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-                            ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-                            : interactiveMessagePayload,
-                    },
-                },
+                interactiveMessage: proto?.Message?.InteractiveMessage?.create
+                    ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+                    : interactiveMessagePayload,
             };
-            if (typeof generateWAMessageFromContent === "function") {
-                const msg = generateWAMessageFromContent(jid, fullMessage, {});
-                await sock.relayMessage(jid, msg.message, { messageId: msg.key.id });
-                logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
-                return true;
-            }
-            else {
-                await sock.sendMessage(jid, fullMessage);
+            const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const additionalNodes = [
+                {
+                    tag: "biz",
+                    attrs: {},
+                    content: [
+                        {
+                            tag: "interactive",
+                            attrs: { type: "native_flow", v: "1" },
+                            content: [
+                                {
+                                    tag: "native_flow",
+                                    attrs: { v: "2", name: "single_select" },
+                                },
+                            ],
+                        },
+                    ],
+                },
+                { tag: "bot", attrs: { biz_bot: "1" } },
+            ];
+            if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
+                const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
+                await sock.relayMessage(jid, msg.message, {
+                    messageId: msg.key.id,
+                    additionalNodes,
+                });
+                logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message without viewOnce");
                 return true;
             }
         }
         catch (err) {
             logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive list, falling back to buttons");
-            // Flatten rows to buttons fallback
-            const flatButtons = [];
-            for (const sec of sections) {
-                for (const r of sec.rows) {
-                    flatButtons.push({ id: r.id, title: r.title });
-                }
-            }
-            return this.sendInteractiveButtons(jid, description, flatButtons.slice(0, 3), title, footerText);
         }
+        // Flatten rows to buttons fallback
+        const flatButtons = [];
+        for (const sec of sections) {
+            for (const r of sec.rows) {
+                flatButtons.push({ id: r.id, title: r.title });
+            }
+        }
+        return this.sendInteractiveButtons(jid, description, flatButtons.slice(0, 3), title, footerText);
     }
     /**
      * Emits presence typing state ("composing" = sedang mengetik...)
