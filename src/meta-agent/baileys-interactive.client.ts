@@ -150,9 +150,17 @@ export class BaileysInteractiveClient {
       }
 
       const fullMessage = {
-        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-          ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-          : interactiveMessagePayload,
+        viewOnceMessage: {
+          message: {
+            messageContextInfo: {
+              deviceListMetadata: {},
+              deviceListMetadataVersion: 2,
+            },
+            interactiveMessage: proto?.Message?.InteractiveMessage?.create
+              ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+              : interactiveMessagePayload,
+          },
+        },
       };
 
       const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
