@@ -100,9 +100,10 @@ export class EvolutionWebhookHandler {
     } else if (msgContent.buttonsResponseMessage) {
       interactiveButtonId = msgContent.buttonsResponseMessage.selectedButtonId;
       messageText = msgContent.buttonsResponseMessage.selectedDisplayText || interactiveButtonId || "";
-    } else if (msgContent.listResponseMessage) {
-      interactiveButtonId = msgContent.listResponseMessage.singleSelectReply?.selectedRowId;
-      messageText = msgContent.listResponseMessage.title || msgContent.listResponseMessage.singleSelectReply?.selectedRowId || "";
+    } else if (msgContent.listResponseMessage || rawData.listResponseMessage) {
+      const listResp = msgContent.listResponseMessage || rawData.listResponseMessage;
+      interactiveButtonId = listResp.singleSelectReply?.selectedRowId || listResp.selectedRowId;
+      messageText = listResp.title || listResp.singleSelectReply?.selectedRowId || interactiveButtonId || "";
     } else if (msgContent.templateButtonReplyMessage) {
       interactiveButtonId = msgContent.templateButtonReplyMessage.selectedId;
       messageText = msgContent.templateButtonReplyMessage.selectedDisplayText || interactiveButtonId || "";

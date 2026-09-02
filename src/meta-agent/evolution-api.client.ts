@@ -106,9 +106,69 @@ export class EvolutionApiClient {
   }
 
   /**
+   * Sends WhatsApp Native Interactive List Menu via Evolution API v2
+   * Renders as a single button (e.g. "[ 📋 Buka Menu Pilihan ]") opening a bottom-sheet menu
+   */
+  async sendList(
+    to: string,
+    title: string,
+    description: string,
+    buttonText: string,
+    sections: Array<{
+      title: string;
+      rows: Array<{ rowId: string; title: string; description?: string }>;
+    }>,
+    footerText: string = "IZA Executive Assistant"
+  ): Promise<boolean> {
+    const cleanTo = to.replace(/[^0-9]/g, "");
+    const url = `${this.apiUrl}/message/sendList/${this.instance}`;
+
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: this.headers,
+        body: JSON.stringify({
+          number: cleanTo,
+          title: title.slice(0, 60),
+          description: description,
+          buttonText: buttonText.slice(0, 20),
+          footerText: footerText.slice(0, 60),
+          sections: sections,
+        }),
+      });
+
+      const resData = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        logger.warn({ resData, status: response.status, to: cleanTo }, "Failed to send list menu via Evolution API");
+        return false;
+      }
+
+      logger.info({ to: cleanTo, title }, "Sent native List Menu via Evolution API");
+      return true;
+    } catch (err) {
+      logger.error({ err, to: cleanTo }, "Network error sending list menu via Evolution API");
+      return false;
+    }
+  }
+
+  /**
+   * Generates helpful short descriptions for list menu rows
+   */
+  private getButtonDescription(id: string, title: string): string {
+    const lower = (id + " " + title).toLowerCase();
+    if (lower.includes("saldo") || lower.includes("balance")) return "Cek saldo kas tunai & rekening";
+    if (lower.includes("rekap") || lower.includes("laporan")) return "Lihat rekapan transaksi kas";
+    if (lower.includes("audit") || lower.includes("selisih")) return "Periksa transaksi belum dirinci";
+    if (lower.includes("confirm") || lower.includes("simpan")) return "Konfirmasi & simpan transaksi";
+    if (lower.includes("cancel") || lower.includes("batal")) return "Batalkan draf transaksi";
+    if (lower.includes("drive") || lower.includes("gdrive")) return "Buka folder Google Drive nota";
+    if (lower.includes("sheet") || lower.includes("spreadsheet")) return "Buka Google Spreadsheet kas";
+    return "Pilih opsi ini";
+  }
+
+  /**
    * Sends interactive message to WhatsApp user via Evolution API:
-   * 1. Sends the response body text
-   * 2. Sends native 1-tap WhatsApp Poll for instant clicking/voting
+   * Uses WhatsApp Native List Menu for elegant 1-tap navigation (not polling)
    */
   async sendInteractiveButtons(
     to: string,
@@ -117,7 +177,28 @@ export class EvolutionApiClient {
     headerText?: string,
     footerText: string = "IZA Executive Assistant"
   ): Promise<boolean> {
-    // 1. Send the primary conversational text first
+    if (buttons.length >= 2) {
+      const title = headerText || "📋 Menu Pilihan";
+      const buttonText = "📋 Buka Menu";
+      const sections = [
+        {
+          title: "Pilihan Aksi",
+          rows: buttons.map((b, idx) => ({
+            rowId: b.id || `ROW_${idx}`,
+            title: b.title.slice(0, 24),
+            description: this.getButtonDescription(b.id, b.title),
+          })),
+        },
+      ];
+
+      const listSent = await this.sendList(to, title, bodyText, buttonText, sections, footerText);
+      if (listSent) {
+        return true;
+      }
+      logger.warn({ to }, "List menu dispatch failed, falling back to clean text dispatch");
+    }
+
+    // Fallback to standard text message if list menu failed or single button
     let message = bodyText;
     if (headerText && !bodyText.startsWith(headerText)) {
       message = `*${headerText}*\n\n${bodyText}`;
@@ -126,16 +207,7 @@ export class EvolutionApiClient {
       message += `\n\n_${footerText}_`;
     }
 
-    const textSent = await this.sendTextMessage(to, message);
-
-    // 2. If 2 or more buttons/choices exist, send Native 1-Tap WhatsApp Poll
-    if (buttons.length >= 2) {
-      const pollTitle = headerText || "📋 Pilih Menu Cepat:";
-      const pollValues = buttons.map((b) => b.title);
-      await this.sendPoll(to, pollTitle, pollValues, 1);
-    }
-
-    return textSent;
+    return await this.sendTextMessage(to, message);
   }
 
   /**
