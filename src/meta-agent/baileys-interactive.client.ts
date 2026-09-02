@@ -7,6 +7,10 @@ const proto = (Baileys as any).proto || (Baileys as any).default?.proto;
 const generateWAMessageFromContent =
   (Baileys as any).generateWAMessageFromContent ||
   (Baileys as any).default?.generateWAMessageFromContent;
+const jidNormalizedUser =
+  (Baileys as any).jidNormalizedUser ||
+  (Baileys as any).default?.jidNormalizedUser ||
+  ((jid: string) => jid ? jid.split(":")[0].split("@")[0] + "@s.whatsapp.net" : jid);
 
 export interface InteractiveButton {
   id: string;
@@ -151,7 +155,9 @@ export class BaileysInteractiveClient {
           : interactiveMessagePayload,
       };
 
-      const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
+      const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
+      const userJid = jidNormalizedUser(rawUserJid);
+
       const additionalNodes = [
         {
           tag: "biz",
@@ -163,7 +169,7 @@ export class BaileysInteractiveClient {
               content: [
                 {
                   tag: "native_flow",
-                  attrs: { v: "9", name: "mixed" },
+                  attrs: { v: "1", name: "quick_reply" },
                 },
               ],
             },
@@ -181,7 +187,8 @@ export class BaileysInteractiveClient {
         return true;
       }
     } catch (err) {
-      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons");
+      logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, fallback to text");
+      return this.sendTextMessage(jid, bodyText);
     }
 
     return this.sendTextMessage(jid, bodyText);

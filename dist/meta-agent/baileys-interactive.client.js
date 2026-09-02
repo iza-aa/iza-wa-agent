@@ -5,6 +5,9 @@ import { normalizePhoneNumber } from "../utils/phone.utils.js";
 const proto = Baileys.proto || Baileys.default?.proto;
 const generateWAMessageFromContent = Baileys.generateWAMessageFromContent ||
     Baileys.default?.generateWAMessageFromContent;
+const jidNormalizedUser = Baileys.jidNormalizedUser ||
+    Baileys.default?.jidNormalizedUser ||
+    ((jid) => jid ? jid.split(":")[0].split("@")[0] + "@s.whatsapp.net" : jid);
 export class BaileysInteractiveClient {
     /**
      * Normalize any phone/JID into a valid WhatsApp JID (e.g. 628123456789@s.whatsapp.net)
@@ -118,7 +121,8 @@ export class BaileysInteractiveClient {
                     ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
                     : interactiveMessagePayload,
             };
-            const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const userJid = jidNormalizedUser(rawUserJid);
             const additionalNodes = [
                 {
                     tag: "biz",
@@ -130,7 +134,7 @@ export class BaileysInteractiveClient {
                             content: [
                                 {
                                     tag: "native_flow",
-                                    attrs: { v: "9", name: "mixed" },
+                                    attrs: { v: "1", name: "quick_reply" },
                                 },
                             ],
                         },
@@ -148,7 +152,8 @@ export class BaileysInteractiveClient {
             }
         }
         catch (err) {
-            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons");
+            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, fallback to text");
+            return this.sendTextMessage(jid, bodyText);
         }
         return this.sendTextMessage(jid, bodyText);
     }
