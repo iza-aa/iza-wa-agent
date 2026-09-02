@@ -82,7 +82,18 @@ export class AgentEngine {
                     success: true,
                 };
             }
-            // CASE C: User Modifies ("Ganti jadi BCA", "Bukan 50rb tapi 40rb")
+            // CASE C: User clicks Edit Button or requests modification
+            if (decision.type === "EDIT_MENU") {
+                return {
+                    reply: `✏️ *PILIH BAGIAN YANG INGIN DIUBAH:*\n\nSilakan ketuk opsi di bawah atau ketik langsung perubahan Anda (contoh: _"ubah ke cash"_, _"nominal jadi 50rb"_, atau _"ubah ke divisi barista"_).`,
+                    buttons: [
+                        { id: "SWITCH_TYPE", title: "🔄 Ubah Jenis" },
+                        { id: "SWITCH_PAYMENT", title: "💳 Ubah Metode" },
+                        { id: "SWITCH_DEPT", title: "🏢 Ubah Divisi" },
+                    ],
+                    success: true,
+                };
+            }
             if (decision.type === "MODIFY" && activeDraft.action_type === "CREATE_TRANSACTION") {
                 logger.info({ userPhone, modification: decision.modificationText }, "User requested modification on pending draft");
                 const knowledgeText = await knowledgeLoader.loadAllKnowledge();
@@ -95,8 +106,9 @@ export class AgentEngine {
                     return {
                         reply: `✏️ *Draf Diperbarui!*\n\n${preview}`,
                         buttons: [
-                            { id: "CONFIRM_ACTION", title: "✅ Simpan Sekarang" },
-                            { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                            { id: "CONFIRM_ACTION", title: "✅ Simpan" },
+                            { id: "EDIT_DRAFT", title: "✏️ Edit" },
+                            { id: "CANCEL_ACTION", title: "❌ Hapus" },
                         ],
                         success: true,
                     };
@@ -134,8 +146,9 @@ export class AgentEngine {
                         return {
                             reply: `📸 *Foto Struk Terbaca!*\n\n${preview}`,
                             buttons: [
-                                { id: "CONFIRM_ACTION", title: "✅ Simpan Sekarang" },
-                                { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                                { id: "CONFIRM_ACTION", title: "✅ Simpan" },
+                                { id: "EDIT_DRAFT", title: "✏️ Edit" },
+                                { id: "CANCEL_ACTION", title: "❌ Hapus" },
                             ],
                             success: true,
                         };
@@ -180,8 +193,9 @@ export class AgentEngine {
                         return {
                             reply: `🎧 *Suara Terdeteksi:* _"${transcription}"_\n\n${preview}`,
                             buttons: [
-                                { id: "CONFIRM_ACTION", title: "✅ Simpan Sekarang" },
-                                { id: "CANCEL_ACTION", title: "❌ Batalkan" },
+                                { id: "CONFIRM_ACTION", title: "✅ Simpan" },
+                                { id: "EDIT_DRAFT", title: "✏️ Edit" },
+                                { id: "CANCEL_ACTION", title: "❌ Hapus" },
                             ],
                             success: true,
                         };

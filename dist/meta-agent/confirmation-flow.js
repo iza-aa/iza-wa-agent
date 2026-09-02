@@ -29,13 +29,17 @@ export class ConfirmationFlow {
         if (confirmKeywords.includes(clean) || clean === "confirm_action" || clean.startsWith("✅") || clean.startsWith("🆕")) {
             return { type: "CONFIRM" };
         }
-        // Cancel keywords
+        // Cancel / Delete keywords
         const cancelKeywords = [
             "batal", "batalkan", "cancel", "tidak", "gak", "nggak", "ga jadi", "gak jadi", "nggak jadi", "ngga jadi",
-            "enggak jadi", "jangan", "cancel_action", "hapus draf", "buang", "duplicate_drop", "duplikat"
+            "enggak jadi", "jangan", "cancel_action", "hapus draf", "buang", "duplicate_drop", "duplikat", "hapus transaksi", "hapus"
         ];
         if (cancelKeywords.includes(clean) || clean === "cancel_action" || clean.startsWith("❌") || clean.startsWith("🚫")) {
             return { type: "CANCEL" };
+        }
+        // Edit Menu Click
+        if (clean === "edit_draft" || clean.startsWith("✏️") || clean === "edit" || clean === "ubah draf") {
+            return { type: "EDIT_MENU" };
         }
         // Department allocation keywords (Disambiguation)
         if (clean.includes("dapur") ||
