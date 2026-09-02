@@ -116,6 +116,12 @@ export class BaileysInteractiveClient {
                         hasMediaAttachment: false,
                     };
             }
+            const interactiveMessageObj = proto?.Message?.InteractiveMessage?.create
+                ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
+                : interactiveMessagePayload;
+            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
+            const userJid = jidNormalizedUser(rawUserJid);
+            // Structure: viewOnceMessage wrapping interactiveMessage with messageContextInfo
             const fullMessage = {
                 viewOnceMessage: {
                     message: {
@@ -123,14 +129,10 @@ export class BaileysInteractiveClient {
                             deviceListMetadata: {},
                             deviceListMetadataVersion: 2,
                         },
-                        interactiveMessage: proto?.Message?.InteractiveMessage?.create
-                            ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-                            : interactiveMessagePayload,
+                        interactiveMessage: interactiveMessageObj,
                     },
                 },
             };
-            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
-            const userJid = jidNormalizedUser(rawUserJid);
             const additionalNodes = [
                 {
                     tag: "biz",
@@ -142,7 +144,7 @@ export class BaileysInteractiveClient {
                             content: [
                                 {
                                     tag: "native_flow",
-                                    attrs: { v: "1", name: "quick_reply" },
+                                    attrs: { v: "9", name: "mixed" },
                                 },
                             ],
                         },
