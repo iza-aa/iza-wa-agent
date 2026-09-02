@@ -67,8 +67,8 @@ export class BaileysInteractiveClient {
         }
     }
     /**
-     * Sends real interactive buttons via NativeFlowMessage
-     * Rendered natively as clickable buttons on WhatsApp
+     * Sends clean, beautifully formatted interactive message with quick numbered options
+     * (100% compatible across Android, iOS, and WhatsApp Desktop without triggering Error 463 NACK)
      */
     async sendInteractiveButtons(to, bodyText, buttons, headerText, footerText) {
         const jid = this.formatJid(to);
@@ -80,86 +80,23 @@ export class BaileysInteractiveClient {
         if (!buttons || buttons.length === 0) {
             return this.sendTextMessage(jid, bodyText);
         }
-        try {
-            const formattedButtons = buttons.slice(0, 3).map((btn) => ({
-                name: "quick_reply",
-                buttonParamsJson: JSON.stringify({
-                    display_text: btn.title.slice(0, 25),
-                    id: btn.id,
-                }),
-            }));
-            const interactiveMessagePayload = {
-                body: proto?.Message?.InteractiveMessage?.Body?.create
-                    ? proto.Message.InteractiveMessage.Body.create({ text: bodyText })
-                    : { text: bodyText },
-                nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
-                    ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                        buttons: formattedButtons,
-                    })
-                    : {
-                        buttons: formattedButtons,
-                    },
-            };
-            if (footerText) {
-                interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
-                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-                    : { text: footerText };
-            }
-            if (headerText) {
-                interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
-                    ? proto.Message.InteractiveMessage.Header.create({
-                        title: headerText,
-                        hasMediaAttachment: false,
-                    })
-                    : {
-                        title: headerText,
-                        hasMediaAttachment: false,
-                    };
-            }
-            // Direct template buttons message format: standard native buttons on all WhatsApp clients
-            const templateButtons = buttons.slice(0, 3).map((btn, index) => ({
-                index: index + 1,
-                quickReplyButton: {
-                    displayText: btn.title.slice(0, 25),
-                    id: btn.id,
-                },
-            }));
-            const templateMessagePayload = {
-                hydratedTemplate: {
-                    hydratedContentText: bodyText,
-                    hydratedButtons: templateButtons,
-                    hydratedFooterText: footerText || undefined,
-                },
-            };
-            const fullMessage = {
-                viewOnceMessage: {
-                    message: {
-                        templateMessage: proto?.Message?.TemplateMessage?.create
-                            ? proto.Message.TemplateMessage.create(templateMessagePayload)
-                            : templateMessagePayload,
-                    },
-                },
-            };
-            const rawUserJid = sock.authState?.creds?.me?.id || sock.user?.id;
-            const userJid = jidNormalizedUser(rawUserJid);
-            if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
-                const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
-                logger.info({ jid, fullMessage: JSON.stringify(fullMessage), userJid, msgKeyId: msg?.key?.id }, "DEBUG: Attempting relayMessage for buttons");
-                const responseId = await sock.relayMessage(jid, msg.message, {
-                    messageId: msg.key.id,
-                });
-                logger.info({ jid, responseId, buttonCount: buttons.length }, "BaileysInteractiveClient: Relayed Hydrated Template buttons message");
-                return true;
-            }
+        let message = bodyText;
+        if (headerText && !message.startsWith(headerText)) {
+            message = `*${headerText}*\n\n${message}`;
         }
-        catch (err) {
-            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive buttons, fallback to text");
-            return this.sendTextMessage(jid, bodyText);
+        if (buttons && buttons.length > 0) {
+            const buttonList = buttons
+                .map((b, i) => `👉 *[${i + 1}]* ${b.title}`)
+                .join("\n");
+            message += `\n\n${buttonList}`;
         }
-        return this.sendTextMessage(jid, bodyText);
+        if (footerText) {
+            message += `\n\n_${footerText}_`;
+        }
+        return this.sendTextMessage(jid, message);
     }
     /**
-     * Sends interactive List (single_select) bottom-sheet menu via NativeFlowMessage
+     * Sends interactive List formatted as clean text with numbered choices
      */
     async sendInteractiveList(to, title, description, buttonText, sections, footerText) {
         const jid = this.formatJid(to);
@@ -168,96 +105,26 @@ export class BaileysInteractiveClient {
             logger.error({ to, jid }, "BaileysInteractiveClient: Socket not available for list message");
             return false;
         }
-        try {
-            const listParams = {
-                title: buttonText.slice(0, 20),
-                sections: sections.map((sec) => ({
-                    title: sec.title,
-                    highlight_label: sec.highlight_label,
-                    rows: sec.rows.map((row) => ({
-                        header: row.header,
-                        title: row.title.slice(0, 24),
-                        description: row.description || this.getButtonDescription(row.id, row.title),
-                        id: row.id,
-                    })),
-                })),
-            };
-            const interactiveMessagePayload = {
-                body: proto?.Message?.InteractiveMessage?.Body?.create
-                    ? proto.Message.InteractiveMessage.Body.create({ text: description })
-                    : { text: description },
-                nativeFlowMessage: proto?.Message?.InteractiveMessage?.NativeFlowMessage?.create
-                    ? proto.Message.InteractiveMessage.NativeFlowMessage.create({
-                        buttons: [
-                            {
-                                name: "single_select",
-                                buttonParamsJson: JSON.stringify(listParams),
-                            },
-                        ],
-                    })
-                    : {
-                        buttons: [
-                            {
-                                name: "single_select",
-                                buttonParamsJson: JSON.stringify(listParams),
-                            },
-                        ],
-                    },
-            };
-            if (footerText) {
-                interactiveMessagePayload.footer = proto?.Message?.InteractiveMessage?.Footer?.create
-                    ? proto.Message.InteractiveMessage.Footer.create({ text: footerText })
-                    : { text: footerText };
+        let message = "";
+        if (title)
+            message += `*${title}*\n\n`;
+        message += description;
+        let index = 1;
+        for (const section of sections) {
+            if (section.title) {
+                message += `\n\n📌 *${section.title.toUpperCase()}*`;
             }
-            if (title) {
-                interactiveMessagePayload.header = proto?.Message?.InteractiveMessage?.Header?.create
-                    ? proto.Message.InteractiveMessage.Header.create({
-                        title: title,
-                        hasMediaAttachment: false,
-                    })
-                    : {
-                        title: title,
-                        hasMediaAttachment: false,
-                    };
-            }
-            const fullMessage = {
-                interactiveMessage: proto?.Message?.InteractiveMessage?.create
-                    ? proto.Message.InteractiveMessage.create(interactiveMessagePayload)
-                    : interactiveMessagePayload,
-            };
-            const userJid = sock.authState?.creds?.me?.id || sock.user?.id;
-            const additionalNodes = [
-                {
-                    tag: "biz",
-                    attrs: {},
-                    content: [
-                        {
-                            tag: "interactive",
-                            attrs: { type: "native_flow", v: "1" },
-                            content: [
-                                {
-                                    tag: "native_flow",
-                                    attrs: { v: "2", name: "single_select" },
-                                },
-                            ],
-                        },
-                    ],
-                },
-            ];
-            if (typeof generateWAMessageFromContent === "function" && typeof sock.relayMessage === "function") {
-                const msg = generateWAMessageFromContent(jid, fullMessage, { userJid });
-                await sock.relayMessage(jid, msg.message, {
-                    messageId: msg.key.id,
-                    additionalNodes,
-                });
-                logger.info({ jid, title }, "BaileysInteractiveClient: Relayed NativeFlow List message");
-                return true;
+            for (const row of section.rows) {
+                message += `\n👉 *[${index}]* ${row.title}`;
+                if (row.description)
+                    message += ` — _${row.description}_`;
+                index++;
             }
         }
-        catch (err) {
-            logger.error({ err, jid }, "BaileysInteractiveClient: Error sending interactive list");
+        if (footerText) {
+            message += `\n\n_${footerText}_`;
         }
-        return this.sendTextMessage(jid, description);
+        return this.sendTextMessage(jid, message);
     }
     /**
      * Emits presence typing state ("composing" = sedang mengetik...)
