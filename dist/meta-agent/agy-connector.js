@@ -64,13 +64,22 @@ export class AgyConnector {
     async executeViaAgy(systemPrompt, userMessage, userPhone) {
         const fullPrompt = `${systemPrompt}\n\n=======================================================\nPESAN PENGGUNA TERBARU:\n"${userMessage}"\n=======================================================\n\nIngat: Kembalikan HANYA format JSON valid sesuai skema yang diminta.`;
         // Dynamic Model Selection:
-        // Use high thinking for deep audit/reconciliation/financial analysis, low thinking for everyday chat & transactions
+        // Use high thinking for deep audit/reconciliation/financial analysis/investigation/anomalies, low thinking for everyday chat & transactions
         const cleanLower = userMessage.toLowerCase();
         const isDeepAudit = cleanLower.includes("audit") ||
             cleanLower.includes("selisih") ||
             cleanLower.includes("rekonsiliasi") ||
             cleanLower.includes("analisis") ||
-            cleanLower.includes("bandingkan");
+            cleanLower.includes("bandingkan") ||
+            cleanLower.includes("curiga") ||
+            cleanLower.includes("mencurigakan") ||
+            cleanLower.includes("janggal") ||
+            cleanLower.includes("aneh") ||
+            cleanLower.includes("tidak wajar") ||
+            cleanLower.includes("investigasi") ||
+            cleanLower.includes("evaluasi") ||
+            cleanLower.includes("anomali") ||
+            cleanLower.includes("periksa");
         const targetModel = isDeepAudit
             ? process.env.AGY_MODEL_HIGH || "gemini-3.7-flash-high"
             : process.env.AGY_MODEL_LOW || "gemini-3.7-flash-low";

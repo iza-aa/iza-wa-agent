@@ -23,7 +23,7 @@ export class ContextBuilder {
                 .order("date", { ascending: false });
             const { data: items } = await this.supabase
                 .from("receipt_items")
-                .select("transaction_id, total_price, category");
+                .select("transaction_id, total_price, category, department");
             const departmentTotals = {
                 Dapur: 0,
                 Barista: 0,
@@ -33,9 +33,9 @@ export class ContextBuilder {
             };
             const itemSums = {};
             for (const it of items || []) {
-                const cat = (it.category || "Kafe").trim();
+                const dept = (it.department || it.category || "Kafe").trim();
                 const price = Number(it.total_price) || 0;
-                departmentTotals[cat] = (departmentTotals[cat] || 0) + price;
+                departmentTotals[dept] = (departmentTotals[dept] || 0) + price;
                 if (it.transaction_id) {
                     itemSums[it.transaction_id] = (itemSums[it.transaction_id] || 0) + price;
                 }
