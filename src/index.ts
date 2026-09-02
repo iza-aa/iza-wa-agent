@@ -20,6 +20,7 @@ import { evolutionWebhookHandler } from "./meta-agent/evolution-webhook.handler.
 import { createExecutiveBot } from "./meta-agent/executive-baileys.client.js";
 import { getExecutiveQr, getExecutiveStatus } from "./meta-agent/executive-socket-holder.js";
 import { knowledgeLoader } from "./meta-agent/knowledge-loader.js";
+import { telegramAssistantBot } from "./telegram/telegram-bot.client.js";
 
 async function bootstrap() {
   console.log("=================================================");
@@ -200,14 +201,13 @@ async function bootstrap() {
     logger.warn({ sheetErr }, "Warning: Could not initialize Google Sheet automatically. Verify Service Account permissions.");
   }
 
-  // 4. Initialize WhatsApp Bot Clients (Main Kasir Bot & Executive Assistant Bot)
+  // 4. Initialize WhatsApp Main Kasir Bot & Telegram Executive AI Assistant Bot
   logger.info("Starting Main WhatsApp Bot Client (0881082854818)...");
   const bot = createWhatsAppBot();
   await bot.start();
 
-  logger.info("Starting Executive WhatsApp Assistant Bot (087864550486)...");
-  const executiveBot = createExecutiveBot();
-  await executiveBot.start();
+  logger.info("Starting Telegram Executive AI Assistant Bot (@IzaExecutiveBot)...");
+  await telegramAssistantBot.start();
 
   // 5. Initialize Background Scheduler Service (Nightly Recap & Reminders)
   try {

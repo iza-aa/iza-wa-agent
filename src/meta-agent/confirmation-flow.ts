@@ -43,10 +43,19 @@ export class ConfirmationFlow {
     const confirmKeywords = [
       "ya", "iya", "oke", "ok", "yes", "gas", "simpan", "benar", "betul", "lanjut", "setuju", "acc",
       "catat", "yup", "yoi", "sip", "mantap", "confirm", "sesuai", "bungkus", "sudah benar", "save", "hapus",
-      "duplicate_save", "tetap catat", "tetap simpan", "tetap catat baru", "simpan sekarang"
+      "duplicate_save", "tetap catat", "tetap simpan", "tetap catat baru", "simpan sekarang",
+      "sudah", "ya sudah", "ya /sudah", "ya/sudah", "udah", "ya udah", "siap", "cocok", "pas", "ok sudah", "oke sudah"
     ];
 
-    if (confirmKeywords.includes(clean) || clean === "confirm_action" || clean.startsWith("✅") || clean.startsWith("🆕")) {
+    if (
+      confirmKeywords.includes(clean) ||
+      clean === "confirm_action" ||
+      clean.startsWith("✅") ||
+      clean.startsWith("🆕") ||
+      clean.startsWith("ya ") ||
+      clean.startsWith("iya ") ||
+      clean.startsWith("oke ")
+    ) {
       return { type: "CONFIRM" };
     }
 
