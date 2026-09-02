@@ -19,6 +19,7 @@ import { evolutionApiClient } from "./meta-agent/evolution-api.client.js";
 import { evolutionWebhookHandler } from "./meta-agent/evolution-webhook.handler.js";
 import { createExecutiveBot } from "./meta-agent/executive-baileys.client.js";
 import { getExecutiveQr, getExecutiveStatus } from "./meta-agent/executive-socket-holder.js";
+import { knowledgeLoader } from "./meta-agent/knowledge-loader.js";
 
 async function bootstrap() {
   console.log("=================================================");
@@ -35,6 +36,9 @@ async function bootstrap() {
     },
     "App configuration validated"
   );
+
+  // 0. Preload Knowledge Base into RAM for Instant Retrieval (0ms Latency)
+  await knowledgeLoader.preload();
 
   // 1. Start Mini HTTP Server for Cloud Health Checks, Sheets Webhooks & Meta Webhook
   const port = process.env.PORT || config.PORT || 3000;

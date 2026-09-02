@@ -73,17 +73,37 @@ export class AgyConnector {
   async executeViaAgy(systemPrompt: string, userMessage: string, userPhone?: string): Promise<AgentDecisionResponse | null> {
     const fullPrompt = `${systemPrompt}\n\n=======================================================\nPESAN PENGGUNA TERBARU:\n"${userMessage}"\n=======================================================\n\nIngat: Kembalikan HANYA format JSON valid sesuai skema yang diminta.`;
 
-    try {
-      logger.info({ cli: this.agyCliPath, userPhone }, "Invoking agy CLI for AI reasoning...");
+    // Dynamic Model Selection:
+    // Use high thinking for deep audit/reconciliation/financial analysis, low thinking for everyday chat & transactions
+    const cleanLower = userMessage.toLowerCase();
+    const isDeepAudit =
+      cleanLower.includes("audit") ||
+      cleanLower.includes("selisih") ||
+      cleanLower.includes("rekonsiliasi") ||
+      cleanLower.includes("analisis") ||
+      cleanLower.includes("bandingkan");
 
-      // Execute agy CLI with -p flag (Prompts are read from -p/--print or stdin)
+    const targetModel = isDeepAudit
+      ? process.env.AGY_MODEL_HIGH || "gemini-3.7-flash-high"
+      : process.env.AGY_MODEL_LOW || "gemini-3.7-flash-low";
+
+    try {
+      logger.info({ cli: this.agyCliPath, userPhone, targetModel, isDeepAudit }, "Invoking agy CLI for AI reasoning...");
+
       const homeDir = process.env.HOME || "/home/heizaaa";
       const extendedPath = `${process.env.PATH || ""}:/usr/local/bin:/usr/bin:/bin:${homeDir}/.local/bin:${homeDir}/.gemini/antigravity/bin:${homeDir}/.cargo/bin:${homeDir}/.npm-global/bin`;
+
+      // Pass target model if configured, with fast failover timeout
+      const args = ["-p", fullPrompt];
+      if (targetModel) {
+        args.push("--model", targetModel);
+      }
+
       const { stdout, stderr } = await execFileAsync(
         this.agyCliPath,
-        ["-p", fullPrompt],
+        args,
         {
-          timeout: 45000,
+          timeout: isDeepAudit ? 60000 : 30000,
           env: {
             ...process.env,
             PATH: extendedPath,
@@ -97,10 +117,10 @@ export class AgyConnector {
 
       const cleanJson = this.cleanJsonResponse(stdout);
       const parsed = JSON.parse(cleanJson);
-      logger.info({ responseType: parsed.response_type }, "Successfully processed response via agy CLI");
+      logger.info({ responseType: parsed.response_type, targetModel }, "Successfully processed response via agy CLI");
       return parsed as AgentDecisionResponse;
     } catch (err: any) {
-      logger.warn({ err: err?.message || err }, "agy CLI execution failed or timed out, will fallback to Gemini API");
+      logger.warn({ err: err?.message || err, targetModel }, "agy CLI execution failed or timed out, will fallback to Gemini API");
       return null;
     }
   }
