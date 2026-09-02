@@ -53,7 +53,7 @@ export class ContextBuilder {
             const { data: trxs } = await query;
             const { data: items } = await this.supabase
                 .from("receipt_items")
-                .select("transaction_id, total_price, category, department");
+                .select("transaction_id, total_price, category");
             const departmentTotals = {
                 Dapur: 0,
                 Barista: 0,
@@ -63,7 +63,7 @@ export class ContextBuilder {
             };
             const itemSums = {};
             for (const it of items || []) {
-                const dept = (it.department || it.category || "Kafe").trim();
+                const dept = (it.category || "Kafe").trim();
                 const price = Number(it.total_price) || 0;
                 departmentTotals[dept] = (departmentTotals[dept] || 0) + price;
                 if (it.transaction_id) {
