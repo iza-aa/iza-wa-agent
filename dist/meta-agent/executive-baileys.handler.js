@@ -228,6 +228,11 @@ export class ExecutiveBaileysHandler {
         const hasImage = !!msgContent.imageMessage;
         const hasAudio = !!msgContent.audioMessage;
         const hasDoc = !!msgContent.documentMessage;
+        // If message is empty (e.g. undecrypted packet, status stub, reaction), ignore it
+        if (!effectiveText && !hasImage && !hasAudio && !hasDoc) {
+            logger.warn({ senderPhone, msgId, rawKeys: Object.keys(rawMsg.message || {}) }, "ExecutiveBaileysHandler: Ignoring empty or undecrypted message packet");
+            return;
+        }
         if (hasImage || hasAudio || hasDoc) {
             try {
                 if (typeof downloadMediaMessage === "function") {
