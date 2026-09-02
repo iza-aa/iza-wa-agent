@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard } from "grammy";
+import crypto from "crypto";
 import { getSupabaseClient } from "../db/supabase.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
 import { TransactionRepository } from "../db/repositories/transaction.repository.js";
@@ -9,6 +10,14 @@ import { config } from "../config/env.js";
 import { logger } from "../utils/logger.js";
 import { normalizePhoneNumber } from "../utils/phone.utils.js";
 
+interface InviteTokenRecord {
+  code: string;
+  phone: string;
+  name: string;
+  role: "super_admin" | "admin" | "member";
+  expiresAt: number;
+}
+
 export class TelegramAssistantBot {
   private bot: Bot;
   private userRepo: UserRepository;
@@ -17,6 +26,7 @@ export class TelegramAssistantBot {
   private pendingRepo: PendingActionRepository;
   private agentEngine: AgentEngine;
   private userPhoneMap: Map<number, string> = new Map(); // tgUserId -> phoneNumber
+  private activeInvites: Map<string, InviteTokenRecord> = new Map(); // inviteCode -> InviteTokenRecord
 
   constructor() {
     const token = config.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
@@ -57,7 +67,7 @@ export class TelegramAssistantBot {
     // 1. Check in-memory cache
     let phone: string = this.userPhoneMap.get(tgId) || "";
 
-    // 2. Check database users for linked Telegram ID
+    // 2. Check database users for linked Telegram ID (tg_<id> or <id>)
     if (!phone) {
       const { data: matchedUser } = await getSupabaseClient()
         .from("users")
@@ -72,7 +82,6 @@ export class TelegramAssistantBot {
       }
     }
 
-    // If still not found, check if only 1 single super admin exists and user matches first super admin
     if (!phone) {
       return { phone: "", name: rawName, isSuperAdmin: false, isAllowed: false };
     }
@@ -133,8 +142,7 @@ export class TelegramAssistantBot {
       await ctx.reply(
         `⛔ *AKSES DITOLAK (PRIVAT & TERBATAS)*\n\n` +
         `Akun Telegram Anda belum terhubung dengan staf/admin terdaftar di sistem *IZA Assistant*.\n\n` +
-        `👉 *Jika nomor Anda sudah didaftarkan oleh Super Admin, silakan hubungkan dengan mengetik:*\n` +
-        `\`/link [NomorHPAnda]\` (contoh: \`/link 08123456789\`)`,
+        `👉 *Hanya Super Admin yang dapat membuat link undangan resmi untuk menghubungkan akun Telegram.*`,
         { parse_mode: "Markdown" }
       );
       return false;
@@ -146,48 +154,144 @@ export class TelegramAssistantBot {
    * Sets up all event handlers for Telegram Bot
    */
   private setupHandlers(): void {
-    // 1. /link command: Link Telegram account with registered phone number
-    this.bot.command("link", async (ctx) => {
-      const args = ctx.match?.trim();
-      if (!args) {
+    // 1. /myid command: Displays Telegram User ID & Connection Status
+    this.bot.command("myid", async (ctx) => {
+      const user = await this.resolveUserIdentity(ctx.from);
+      const tgId = ctx.from?.id;
+      const tgName = [ctx.from?.first_name, ctx.from?.last_name].filter(Boolean).join(" ");
+      const tgUsername = ctx.from?.username ? `@${ctx.from.username}` : "(tanpa username)";
+
+      let statusDesc = "❌ Belum Terhubung (Tidak Ada Akses)";
+      if (user.isAllowed) {
+        statusDesc = `✅ Terhubung sebagai *${user.name}* (${user.isSuperAdmin ? "Super Admin" : "Member"}) — +${user.phone}`;
+      }
+
+      await ctx.reply(
+        `🆔 *INFORMASI IDENTITAS TELEGRAM ANDA:*\n\n` +
+        `• *Telegram ID:* \`${tgId}\`\n` +
+        `• *Nama Akun:* ${tgName}\n` +
+        `• *Username:* ${tgUsername}\n` +
+        `• *Status Sistem:* ${statusDesc}\n\n` +
+        (user.isSuperAdmin
+          ? `👑 *Anda adalah Super Admin.* Ketik \`/invite [NoHP] [Nama]\` untuk mengundang Ayah atau staf lain.`
+          : `_ID Telegram Anda bersifat unik dan digunakan untuk memverifikasi hak akses pembukuan kas._`),
+        { parse_mode: "Markdown" }
+      );
+    });
+
+    // 2. /invite command: Super Admin generates a single-use invite token (15 mins validity)
+    this.bot.command("invite", async (ctx) => {
+      const adminUser = await this.resolveUserIdentity(ctx.from);
+      if (!adminUser.isAllowed || !adminUser.isSuperAdmin) {
+        await ctx.reply("⛔ Perintah ini hanya dapat dijalankan oleh *Super Admin*.");
+        return;
+      }
+
+      const args = ctx.match?.trim().split(/\s+/) || [];
+      if (args.length === 0 || !args[0]) {
         await ctx.reply(
-          `📱 *CARA TAUTKAN NOMOR HP:*\n\nKetik: \`/link [NomorHPAnda]\`\nContoh: \`/link 08123456789\`\n\n_Pastikan nomor Anda sudah didaftarkan oleh Super Admin terlebih dahulu._`,
+          `🎟️ *CARA MEMBUAT UNDANGAN STAF/ADMIN:*\n\n` +
+          `Ketik: \`/invite [NomorHP] [Nama]\`\n` +
+          `Contoh: \`/invite 0811422404 Ayah\`\n` +
+          `Contoh: \`/invite 08123456789 Budi Kasir\`\n\n` +
+          `_Sistem akan menghasilkan link khusus yang hanya bisa dipakai 1x oleh orang tersebut._`,
           { parse_mode: "Markdown" }
         );
         return;
       }
 
-      const targetPhone = normalizePhoneNumber(args);
-      const user = await this.userRepo.getUser(targetPhone);
+      const rawPhone = args[0];
+      const targetPhone = normalizePhoneNumber(rawPhone);
+      const targetName = args.slice(1).join(" ") || "Anggota Tim";
 
-      if (user && user.status === "active") {
-        await getSupabaseClient()
-          .from("users")
-          .update({ target_sheet_id: `tg_${ctx.from?.id}`, updated_at: new Date().toISOString() })
-          .eq("phone_number", user.phone_number);
-
-        if (ctx.from?.id) {
-          this.userPhoneMap.set(ctx.from.id, user.phone_number);
-        }
-
-        const roleText = user.role === "super_admin" ? "Super Admin (Owner)" : "Staf Operasional";
-        await ctx.reply(
-          `🎉 *AKUN BERHASIL DIVERIFIKASI!*\n\n` +
-          `Halo *${user.name}*, akun Telegram Anda telah resmi terhubung dengan nomor \`+${user.phone_number}\` sebagai *${roleText}*.\n\n` +
-          `Sekarang Anda dapat langsung mencatat transaksi, kirim foto nota/struk, atau tanya kondisi kas. Ketik \`/menu\` untuk membuka menu bantuan.`,
-          { parse_mode: "Markdown" }
-        );
-      } else {
-        await ctx.reply(
-          `⚠️ Nomor \`+${targetPhone}\` belum terdaftar di sistem atau sedang nonaktif.\n\n` +
-          `Silakan hubungi *Super Admin* untuk mendaftarkan nomor Anda terlebih dahulu.`,
-          { parse_mode: "Markdown" }
-        );
+      // Upsert/ensure user exists in DB
+      let existingUser = await this.userRepo.getUser(targetPhone);
+      if (!existingUser) {
+        const isSuperAdminPhone = this.userRepo.isSuperAdmin(targetPhone);
+        existingUser = await this.userRepo.upsertUser({
+          phone_number: targetPhone,
+          name: targetName,
+          role: isSuperAdminPhone ? "super_admin" : "member",
+          status: "active",
+        });
       }
+
+      // Generate 6-char cryptographically random code
+      const inviteCode = "INV-" + crypto.randomBytes(3).toString("hex").toUpperCase();
+      const expiresAt = Date.now() + 15 * 60 * 1000; // 15 minutes
+
+      this.activeInvites.set(inviteCode, {
+        code: inviteCode,
+        phone: targetPhone,
+        name: existingUser ? existingUser.name : targetName,
+        role: existingUser ? existingUser.role : "member",
+        expiresAt,
+      });
+
+      const inviteLink = `https://t.me/${this.bot.botInfo.username || "izaassistantbot"}?start=${inviteCode}`;
+
+      await ctx.reply(
+        `🎟️ *LINK UNDANGAN BERHASIL DIBUAT!*\n\n` +
+        `• *Penerima:* ${targetName} (\`+${targetPhone}\`)\n` +
+        `• *Peran:* ${existingUser?.role === "super_admin" ? "Super Admin" : "Staf Operasional"}\n` +
+        `• *Masa Berlaku:* 15 Menit\n\n` +
+        `👉 *Kirimkan link ini langsung ke Telegram penerima:*\n` +
+        `${inviteLink}\n\n` +
+        `_Begitu penerima mengklik tombol START dari link di atas, akun Telegram mereka akan otomatis terkunci permanen ke nomor tersebut._`,
+        { parse_mode: "Markdown" }
+      );
     });
 
-    // 2. /start & /menu command
+    // 3. /start command: Handles both general start and invite claim token (?start=INV-XXXX)
     this.bot.command(["start", "menu", "help"], async (ctx) => {
+      const payload = ctx.match?.trim();
+
+      // Case A: User is claiming an invite token
+      if (payload && payload.startsWith("INV-")) {
+        const invite = this.activeInvites.get(payload);
+
+        if (!invite) {
+          await ctx.reply(
+            `⚠️ *Link undangan tidak valid atau sudah pernah digunakan.*\n\nSilakan minta Super Admin untuk membuat link undangan baru via \`/invite\`.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
+
+        if (Date.now() > invite.expiresAt) {
+          this.activeInvites.delete(payload);
+          await ctx.reply(
+            `⚠️ *Link undangan telah kedaluwarsa (lewat dari 15 menit).*\n\nSilakan minta Super Admin untuk membuat link undangan baru via \`/invite\`.`,
+            { parse_mode: "Markdown" }
+          );
+          return;
+        }
+
+        // Link Telegram ID permanently to database record
+        const tgId = ctx.from?.id;
+        await getSupabaseClient()
+          .from("users")
+          .update({ target_sheet_id: `tg_${tgId}`, updated_at: new Date().toISOString() })
+          .eq("phone_number", invite.phone);
+
+        if (tgId) {
+          this.userPhoneMap.set(tgId, invite.phone);
+        }
+
+        // Single-use: delete invite code
+        this.activeInvites.delete(payload);
+
+        const roleDesc = invite.role === "super_admin" ? "Super Admin / Owner" : "Staf Operasional";
+        await ctx.reply(
+          `🎉 *VERIFIKASI BERHASIL! SELAMAT DATANG!*\n\n` +
+          `Halo *${invite.name}*, akun Telegram Anda telah resmi terhubung dan diverifikasi dengan nomor \`+${invite.phone}\` sebagai *${roleDesc}*.\n\n` +
+          `Sekarang Anda dapat langsung mencatat transaksi, kirim foto struk/nota, atau tanya saldo kas.`,
+          { parse_mode: "Markdown" }
+        );
+        return;
+      }
+
+      // Case B: General /start or /menu
       const user = await this.resolveUserIdentity(ctx.from);
       if (!(await this.checkAccessOrDeny(ctx, user))) return;
 
@@ -217,14 +321,14 @@ export class TelegramAssistantBot {
       });
     });
 
-    // 3. Handle Inline Button Clicks (Callback Queries)
+    // 4. Handle Inline Button Clicks (Callback Queries)
     this.bot.on("callback_query:data", async (ctx) => {
       const buttonId = ctx.callbackQuery.data;
       await ctx.answerCallbackQuery();
 
       const user = await this.resolveUserIdentity(ctx.from);
       if (!user.isAllowed) {
-        await ctx.reply("⛔ Akses ditolak. Silakan tautkan nomor staf Anda via `/link [NomorHP]`.");
+        await ctx.reply("⛔ Akses ditolak. Anda belum memiliki izin akses.");
         return;
       }
 
@@ -265,7 +369,7 @@ export class TelegramAssistantBot {
       }
     });
 
-    // 4. Handle Photos (Receipt / Struk Belanja)
+    // 5. Handle Photos (Receipt / Struk Belanja)
     this.bot.on(":photo", async (ctx) => {
       const user = await this.resolveUserIdentity(ctx.from);
       if (!(await this.checkAccessOrDeny(ctx, user))) return;
@@ -305,7 +409,7 @@ export class TelegramAssistantBot {
       }
     });
 
-    // 5. Handle Voice Notes / Audio
+    // 6. Handle Voice Notes / Audio
     this.bot.on([":voice", ":audio"], async (ctx) => {
       const user = await this.resolveUserIdentity(ctx.from);
       if (!(await this.checkAccessOrDeny(ctx, user))) return;
@@ -344,7 +448,7 @@ export class TelegramAssistantBot {
       }
     });
 
-    // 6. Handle Document (PDF Invoices / Nota file)
+    // 7. Handle Document (PDF Invoices / Nota file)
     this.bot.on(":document", async (ctx) => {
       const user = await this.resolveUserIdentity(ctx.from);
       if (!(await this.checkAccessOrDeny(ctx, user))) return;
@@ -394,7 +498,7 @@ export class TelegramAssistantBot {
       }
     });
 
-    // 7. Handle Natural Text Messages
+    // 8. Handle Natural Text Messages
     this.bot.on(":text", async (ctx) => {
       const user = await this.resolveUserIdentity(ctx.from);
       if (!(await this.checkAccessOrDeny(ctx, user))) return;
