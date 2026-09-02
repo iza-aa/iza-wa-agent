@@ -58,23 +58,11 @@ export function createExecutiveBot(): { start: () => Promise<void> } {
 
     const sock = makeWASocket({
       version,
-      auth: {
-        creds: state.creds,
-        keys: makeCacheableSignalKeyStore
-          ? makeCacheableSignalKeyStore(state.keys, pino({ level: "silent" }) as any)
-          : state.keys,
-      },
+      auth: state, // Menggunakan state murni persis seperti Bot Kasir (tanpa cache wrapper yang memicu init queries timeout)
       printQRInTerminal: false,
-      logger: pino({ level: "info" }) as any, // Aktifkan level info untuk melihat log internal transmisi Baileys
-      browser: ["IZA Executive Assistant", "Chrome", "1.0.0"],
+      logger: pino({ level: "silent" }) as any,
+      browser: ["IZA WA Agent", "Chrome", "1.0.0"],
       generateHighQualityLinkPreview: true,
-      syncFullHistory: false,
-      getMessage: async (key: any) => {
-        if (key?.id && msgStore.has(key.id)) {
-          return msgStore.get(key.id);
-        }
-        return undefined;
-      },
     });
 
     setExecutiveSocket(sock);
