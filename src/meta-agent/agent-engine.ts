@@ -72,7 +72,6 @@ export class AgentEngine {
         const wallet = await this.trxRepo.getWalletBalance();
         return {
           reply: `🔄 *Sinkronisasi Berhasil!*\n\nData dari Google Spreadsheet telah berhasil ditarik dan diselaraskan dengan database Supabase.\n\n💵 *Saldo Kas Terkini:* *${formatRupiah(wallet.balance)}*`,
-          buttons: [{ id: "CHECK_BALANCE", title: "📊 Cek Saldo Kas" }],
           success: true,
         };
       } catch (syncErr: any) {
@@ -99,7 +98,6 @@ export class AgentEngine {
         );
         return {
           reply: execResult.replyText,
-          buttons: [{ id: "CHECK_REKAP", title: "📊 Lihat Rekap" }],
           success: execResult.success,
         };
       }
@@ -424,7 +422,6 @@ export class AgentEngine {
 
         return {
           reply: `📄 *Dokumen PDF Laporan Keuangan (${targetMonth}) Selesai Dibuat!*\n\n• Total Pemasukan: ${formatRupiah(summary.totalIncome || 0)}\n• Total Pengeluaran: ${formatRupiah(summary.totalExpense || summary.total)}\n• Arus Kas Bersih: ${formatRupiah(summary.netCashflow || 0)}\n• Jumlah Transaksi: ${summary.count} transaksi\n\n🔗 *Unduh & Buka Dokumen PDF:* \n${uploadRes.webViewLink}`,
-          buttons: [{ id: "CHECK_BALANCE", title: "📊 Cek Saldo Kas" }],
           success: true,
         };
       } catch (pdfErr) {
@@ -436,17 +433,11 @@ export class AgentEngine {
       }
     }
 
-    // Otherwise, return AI's natural conversational response with interactive quick actions
-    const defaultMenuButtons: InteractiveButton[] = [
-      { id: "CHECK_BALANCE", title: "💰 Cek Saldo" },
-      { id: "REKAP_KAS", title: "📊 Rekap Kas" },
-      { id: "AUDIT_KAS", title: "🔍 Audit Kas" },
-    ];
-
+    // Only include buttons if AI explicitly returned actionable suggested buttons (e.g. confirmation)
     const finalButtons =
-      aiResponse.suggested_buttons && aiResponse.suggested_buttons.length >= 2
+      aiResponse.suggested_buttons && aiResponse.suggested_buttons.length > 0
         ? aiResponse.suggested_buttons
-        : defaultMenuButtons;
+        : undefined;
 
     return {
       reply: aiResponse.reply_text || "Halo! Ada yang bisa saya bantu terkait pencatatan kas?",
