@@ -153,16 +153,18 @@ export class AgyConnector {
         if (agyResult && agyResult.response_type && agyResult.reply_text) {
             return agyResult;
         }
-        // 3. If explicit fallback is enabled in env, try Gemini SDK, otherwise return polite error
-        if (process.env.ENABLE_GEMINI_FALLBACK === "true") {
-            logger.info("Executing AI reasoning via Gemini SDK fallback (explicitly enabled)");
+        // 3. Fallback to Gemini SDK automatically with key rotation
+        logger.info("Executing AI reasoning via Gemini SDK fallback...");
+        try {
             return await this.executeViaGeminiSdk(systemPrompt, userMessage);
         }
-        logger.warn({ cli: this.agyCliPath }, "agy CLI returned empty or failed, Gemini Studio fallback is disabled");
-        return {
-            response_type: "GENERAL_CHAT",
-            reply_text: "⚠️ Maaf, terjadi kendala saat memproses penalaran di agy CLI. Mohon pastikan binary `agy` berjalan normal di server.",
-        };
+        catch (sdkErr) {
+            logger.error({ sdkErr: sdkErr?.message || sdkErr }, "Both agy CLI and Gemini SDK failed");
+            return {
+                response_type: "GENERAL_CHAT",
+                reply_text: "⚠️ Mohon maaf, terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi.",
+            };
+        }
     }
 }
 export const agyConnector = new AgyConnector();
