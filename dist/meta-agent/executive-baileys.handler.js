@@ -74,77 +74,101 @@ export class ExecutiveBaileysHandler {
         const isAllowed = user && user.status === "active";
         // 2. Extract Message Content & Interactive Buttons (Unwrap all nested wrappers)
         let msgContent = rawMsg.message || {};
-        while (msgContent?.ephemeralMessage?.message ||
-            msgContent?.viewOnceMessage?.message ||
-            msgContent?.viewOnceMessageV2?.message ||
-            msgContent?.documentWithCaptionMessage?.message) {
-            if (msgContent.ephemeralMessage?.message)
+        for (let depth = 0; depth < 5; depth++) {
+            if (msgContent?.ephemeralMessage?.message)
                 msgContent = msgContent.ephemeralMessage.message;
-            else if (msgContent.viewOnceMessage?.message)
+            else if (msgContent?.viewOnceMessage?.message)
                 msgContent = msgContent.viewOnceMessage.message;
-            else if (msgContent.viewOnceMessageV2?.message)
+            else if (msgContent?.viewOnceMessageV2?.message)
                 msgContent = msgContent.viewOnceMessageV2.message;
-            else if (msgContent.documentWithCaptionMessage?.message)
+            else if (msgContent?.documentWithCaptionMessage?.message)
                 msgContent = msgContent.documentWithCaptionMessage.message;
             else
                 break;
         }
         let messageText = "";
         let interactiveButtonId;
-        if (typeof msgContent === "string") {
-            messageText = msgContent;
-        }
-        else if (msgContent.conversation) {
-            messageText = msgContent.conversation;
-        }
-        else if (msgContent.extendedTextMessage?.text) {
-            messageText = msgContent.extendedTextMessage.text;
-        }
-        else if (msgContent.interactiveResponseMessage) {
-            const ir = msgContent.interactiveResponseMessage;
-            const nativeParams = ir.nativeFlowResponseMessage?.paramsJson;
-            if (nativeParams) {
+        const candidateSources = [msgContent, rawMsg.message].filter(Boolean);
+        for (const src of candidateSources) {
+            if (messageText)
+                break;
+            if (typeof src === "string") {
+                messageText = src;
+            }
+            else if (src.conversation) {
+                messageText = src.conversation;
+            }
+            else if (src.extendedTextMessage?.text) {
+                messageText = src.extendedTextMessage.text;
+            }
+            // Interactive / NativeFlow response
+            if (src.interactiveResponseMessage) {
+                const ir = src.interactiveResponseMessage;
+                const nativeParams = ir.nativeFlowResponseMessage?.paramsJson || ir.paramsJson;
+                if (nativeParams) {
+                    try {
+                        const parsed = typeof nativeParams === "string" ? JSON.parse(nativeParams) : nativeParams;
+                        interactiveButtonId = parsed.id || parsed.selectedId || parsed.rowId || parsed.buttonId;
+                        messageText = parsed.display_text || parsed.title || parsed.text || parsed.name || interactiveButtonId || "";
+                    }
+                    catch {
+                        messageText = String(nativeParams);
+                    }
+                }
+                if (!messageText && ir.body?.text) {
+                    messageText = ir.body.text;
+                }
+                if (!messageText && ir.title) {
+                    messageText = ir.title;
+                }
+            }
+            // Direct nativeFlowResponseMessage
+            if (src.nativeFlowResponseMessage?.paramsJson) {
                 try {
-                    const parsed = typeof nativeParams === "string" ? JSON.parse(nativeParams) : nativeParams;
+                    const parsed = JSON.parse(src.nativeFlowResponseMessage.paramsJson);
                     interactiveButtonId = parsed.id || parsed.selectedId || parsed.rowId;
                     messageText = parsed.display_text || parsed.title || parsed.text || parsed.name || interactiveButtonId || "";
                 }
-                catch {
-                    messageText = String(nativeParams);
+                catch { }
+            }
+            // Buttons / Templates / Lists
+            if (src.buttonsResponseMessage) {
+                interactiveButtonId = src.buttonsResponseMessage.selectedButtonId;
+                messageText = src.buttonsResponseMessage.selectedDisplayText || interactiveButtonId || "";
+            }
+            else if (src.listResponseMessage) {
+                interactiveButtonId = src.listResponseMessage.singleSelectReply?.selectedRowId || src.listResponseMessage.selectedRowId;
+                messageText = src.listResponseMessage.title || src.listResponseMessage.description || interactiveButtonId || "";
+            }
+            else if (src.templateButtonReplyMessage) {
+                interactiveButtonId = src.templateButtonReplyMessage.selectedId;
+                messageText = src.templateButtonReplyMessage.selectedDisplayText || interactiveButtonId || "";
+            }
+            else if (src.pollUpdateMessage) {
+                const poll = src.pollUpdateMessage;
+                const selected = poll.vote?.selectedOptions || poll.selectedOptions || poll.pollUpdates?.[0]?.vote?.selectedOptions;
+                if (Array.isArray(selected) && selected.length > 0) {
+                    messageText = typeof selected[0] === "string" ? selected[0] : (selected[0].name || selected[0].optionName || "");
+                }
+                else if (typeof selected === "string") {
+                    messageText = selected;
                 }
             }
-            if (!messageText && ir.body?.text) {
-                messageText = ir.body.text;
+            else if (src.imageMessage?.caption) {
+                messageText = src.imageMessage.caption;
+            }
+            else if (src.documentMessage?.caption) {
+                messageText = src.documentMessage.caption;
             }
         }
-        else if (msgContent.buttonsResponseMessage) {
-            interactiveButtonId = msgContent.buttonsResponseMessage.selectedButtonId;
-            messageText = msgContent.buttonsResponseMessage.selectedDisplayText || interactiveButtonId || "";
-        }
-        else if (msgContent.listResponseMessage) {
-            interactiveButtonId = msgContent.listResponseMessage.singleSelectReply?.selectedRowId || msgContent.listResponseMessage.selectedRowId;
-            messageText = msgContent.listResponseMessage.title || msgContent.listResponseMessage.description || interactiveButtonId || "";
-        }
-        else if (msgContent.templateButtonReplyMessage) {
-            interactiveButtonId = msgContent.templateButtonReplyMessage.selectedId;
-            messageText = msgContent.templateButtonReplyMessage.selectedDisplayText || interactiveButtonId || "";
-        }
-        else if (msgContent.pollUpdateMessage) {
-            const poll = msgContent.pollUpdateMessage;
-            const selected = poll.vote?.selectedOptions || poll.selectedOptions || poll.pollUpdates?.[0]?.vote?.selectedOptions;
-            if (Array.isArray(selected) && selected.length > 0) {
-                messageText = typeof selected[0] === "string" ? selected[0] : (selected[0].name || selected[0].optionName || "");
-            }
-            else if (typeof selected === "string") {
-                messageText = selected;
-            }
-        }
-        else if (msgContent.imageMessage) {
-            messageText = msgContent.imageMessage.caption || "";
-        }
-        else if (msgContent.documentMessage) {
-            messageText = msgContent.documentMessage.caption || "";
-        }
+        logger.info({
+            senderPhone,
+            rawSenderName,
+            msgId,
+            extractedText: messageText,
+            extractedButtonId: interactiveButtonId,
+            rawKeys: Object.keys(rawMsg.message || {}),
+        }, "ExecutiveBaileysHandler: Message extraction result");
         // 3. Handshake verification for unlinked/unregistered users
         if (!isAllowed) {
             const digitsOnly = messageText.replace(/[^0-9]/g, "");
