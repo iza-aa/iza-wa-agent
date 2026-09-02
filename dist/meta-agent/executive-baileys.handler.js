@@ -200,7 +200,7 @@ export class ExecutiveBaileysHandler {
             GOOGLE_DRIVE: "Minta link Google Drive folder nota",
             CONFIRM_ACTION: "Ya, simpan sekarang",
             CANCEL_ACTION: "Batal",
-            GENERATE_PDF: "Buat dokumen PDF laporan keuangan bulan ini",
+            GENERATE_PDF: "Buat dokumen PDF laporan keuangan periode yang baru saja dibahas",
             DEPT_DAPUR: "Alokasikan untuk divisi Dapur",
             DEPT_BARISTA: "Alokasikan untuk divisi Barista",
             DEPT_WAITERS: "Alokasikan untuk divisi Waiters",

@@ -384,11 +384,16 @@ export class TransactionRepository {
         if (parts.length === 2) {
             normalizedYearMonth = `${parts[0]}-${parts[1].padStart(2, "0")}`;
         }
+        const [yearStr, monthStr] = normalizedYearMonth.split("-");
+        const yearNum = parseInt(yearStr, 10) || new Date().getFullYear();
+        const monthNum = parseInt(monthStr, 10) || 1;
+        const lastDay = new Date(yearNum, monthNum, 0).getDate();
+        const endDate = `${normalizedYearMonth}-${lastDay.toString().padStart(2, "0")}`;
         const { data, error } = await this.supabase
             .from("transactions")
             .select("*")
             .gte("date", `${normalizedYearMonth}-01`)
-            .lte("date", `${normalizedYearMonth}-31`)
+            .lte("date", endDate)
             .order("total_amount", { ascending: false });
         if (error || !data) {
             logger.error({ error, yearMonth }, "Failed to fetch monthly transactions");
