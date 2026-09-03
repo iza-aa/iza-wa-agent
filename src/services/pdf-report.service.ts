@@ -23,7 +23,7 @@ export class PdfReportService {
           bufferPages: true,
           info: {
             Title: `Laporan Keuangan ${data.targetMonth}`,
-            Author: "IZA WhatsApp Assistant",
+            Author: "IZA AI Assistant",
             Subject: "Laporan Arus Kas Bulanan",
           },
         });
@@ -214,7 +214,7 @@ export class PdfReportService {
 
           // Left
           doc.fillColor("#94a3b8").font("Helvetica").fontSize(6.8).text(
-            `Digenerate oleh IZA WhatsApp Assistant • ${generatedTime} WITA`,
+            `Digenerate oleh IZA AI Assistant • Terakhir Diperbarui: ${generatedTime} WITA`,
             marginX,
             pageHeight - 24,
             { lineBreak: false }

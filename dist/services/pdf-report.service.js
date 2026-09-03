@@ -12,7 +12,7 @@ export class PdfReportService {
                     bufferPages: true,
                     info: {
                         Title: `Laporan Keuangan ${data.targetMonth}`,
-                        Author: "IZA WhatsApp Assistant",
+                        Author: "IZA AI Assistant",
                         Subject: "Laporan Arus Kas Bulanan",
                     },
                 });
@@ -172,7 +172,7 @@ export class PdfReportService {
                     // Footer separator line
                     doc.moveTo(marginX, pageHeight - 32).lineTo(marginX + contentWidth, pageHeight - 32).strokeColor("#e2e8f0").stroke();
                     // Left
-                    doc.fillColor("#94a3b8").font("Helvetica").fontSize(6.8).text(`Digenerate oleh IZA WhatsApp Assistant • ${generatedTime} WITA`, marginX, pageHeight - 24, { lineBreak: false });
+                    doc.fillColor("#94a3b8").font("Helvetica").fontSize(6.8).text(`Digenerate oleh IZA AI Assistant • Terakhir Diperbarui: ${generatedTime} WITA`, marginX, pageHeight - 24, { lineBreak: false });
                     // Right
                     doc.fillColor("#94a3b8").font("Helvetica-Bold").fontSize(6.8).text(`Halaman ${i + 1} dari ${totalPages}`, marginX, pageHeight - 24, { width: contentWidth, align: "right", lineBreak: false });
                 }
