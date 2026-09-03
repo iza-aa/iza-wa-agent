@@ -166,11 +166,27 @@ export class TelegramAssistantBot {
       ? { message_id: ctx.message.message_id }
       : undefined;
 
-    const sent = await ctx.reply(text, {
-      parse_mode: "Markdown",
-      reply_markup: keyboard,
-      reply_parameters: replyParams,
-    });
+    let sent: any;
+    try {
+      sent = await ctx.reply(text, {
+        parse_mode: "Markdown",
+        reply_markup: keyboard,
+        reply_parameters: replyParams,
+      });
+    } catch (parseErr: any) {
+      // If Telegram Markdown parsing fails (e.g. underscore in Google Drive URLs), fallback to plain text without parse_mode
+      if (
+        parseErr?.description?.includes("can't parse entities") ||
+        parseErr?.message?.includes("can't parse entities")
+      ) {
+        sent = await ctx.reply(text, {
+          reply_markup: keyboard,
+          reply_parameters: replyParams,
+        });
+      } else {
+        throw parseErr;
+      }
+    }
 
     if (buttons && buttons.length > 0 && chatId && sent?.message_id) {
       this.lastKeyboardMap.set(chatId, sent.message_id);
