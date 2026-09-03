@@ -74,6 +74,29 @@ export class AgyConnector {
   }
 
   /**
+   * Safely parses JSON even when raw unescaped newlines/tabs are present inside JSON strings
+   */
+  private safeParseJson(rawText: string): any {
+    const clean = this.cleanJsonResponse(rawText);
+    try {
+      return JSON.parse(clean);
+    } catch (firstErr) {
+      try {
+        // Fix unescaped raw newlines/tabs inside JSON string literals
+        const sanitized = clean.replace(/[\u0000-\u001F]+/g, (match: string) => {
+          if (match === "\n") return "\\n";
+          if (match === "\r") return "\\r";
+          if (match === "\t") return "\\t";
+          return "";
+        });
+        return JSON.parse(sanitized);
+      } catch (secondErr) {
+        throw firstErr;
+      }
+    }
+  }
+
+  /**
    * Normalizes keys in case model returned snake_case / camelCase variations (e.g. response_type, responsetype)
    */
   private normalizeResponsePayload(parsed: any): AgentDecisionResponse {
@@ -155,8 +178,7 @@ export class AgyConnector {
         logger.debug({ stderr }, "agy CLI stderr output note");
       }
 
-      const cleanJson = this.cleanJsonResponse(stdout);
-      const parsed = JSON.parse(cleanJson);
+      const parsed = this.safeParseJson(stdout);
       const normalized = this.normalizeResponsePayload(parsed);
       logger.info({ responseType: normalized.response_type, targetModel }, "Successfully processed response via agy CLI");
       return normalized;
@@ -183,10 +205,9 @@ export class AgyConnector {
       const prompt = `Pesan Pengguna:\n"${userMessage}"\n\nAnalisis pesan di atas dan kembalikan JSON sesuai format yang ditentukan.`;
       const result = await model.generateContent(prompt);
       const rawText = result.response.text();
-      const cleanJson = this.cleanJsonResponse(rawText);
 
       try {
-        const parsed = JSON.parse(cleanJson);
+        const parsed = this.safeParseJson(rawText);
         return this.normalizeResponsePayload(parsed);
       } catch (parseErr) {
         logger.error({ parseErr, rawText }, "Failed to parse JSON response from Gemini SDK fallback");
