@@ -51,11 +51,8 @@ export class AgyConnector {
    */
   private cleanJsonResponse(rawText: string): string {
     let clean = rawText.trim();
-    const firstBrace = clean.indexOf("{");
-    const lastBrace = clean.lastIndexOf("}");
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      return clean.slice(firstBrace, lastBrace + 1);
-    }
+
+    // 1. Remove markdown code blocks if wrapped
     if (clean.startsWith("```json")) {
       clean = clean.slice(7);
     } else if (clean.startsWith("```")) {
@@ -64,7 +61,41 @@ export class AgyConnector {
     if (clean.endsWith("```")) {
       clean = clean.slice(0, -3);
     }
-    return clean.trim();
+    clean = clean.trim();
+
+    // 2. Extract outermost matching braces
+    const firstBrace = clean.indexOf("{");
+    const lastBrace = clean.lastIndexOf("}");
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      return clean.slice(firstBrace, lastBrace + 1);
+    }
+
+    return clean;
+  }
+
+  /**
+   * Normalizes keys in case model returned snake_case / camelCase variations (e.g. response_type, responsetype)
+   */
+  private normalizeResponsePayload(parsed: any): AgentDecisionResponse {
+    if (!parsed || typeof parsed !== "object") {
+      return {
+        response_type: "GENERAL_CHAT",
+        reply_text: String(parsed || "Halo! Ada yang bisa saya bantu terkait kas hari ini?"),
+      };
+    }
+
+    const responseType = parsed.response_type || parsed.responsetype || parsed.responseType || "GENERAL_CHAT";
+    const replyText = parsed.reply_text || parsed.replytext || parsed.replyText || parsed.message || "";
+    const suggestedButtons = parsed.suggested_buttons || parsed.suggestedbuttons || parsed.suggestedButtons;
+    const exportYearMonth = parsed.export_year_month || parsed.exportyearmonth || parsed.exportYearMonth;
+
+    return {
+      ...parsed,
+      response_type: responseType,
+      reply_text: replyText,
+      suggested_buttons: Array.isArray(suggestedButtons) ? suggestedButtons : undefined,
+      export_year_month: exportYearMonth,
+    };
   }
 
   /**
@@ -126,8 +157,9 @@ export class AgyConnector {
 
       const cleanJson = this.cleanJsonResponse(stdout);
       const parsed = JSON.parse(cleanJson);
-      logger.info({ responseType: parsed.response_type, targetModel }, "Successfully processed response via agy CLI");
-      return parsed as AgentDecisionResponse;
+      const normalized = this.normalizeResponsePayload(parsed);
+      logger.info({ responseType: normalized.response_type, targetModel }, "Successfully processed response via agy CLI");
+      return normalized;
     } catch (err: any) {
       logger.warn({ err: err?.message || err, targetModel }, "agy CLI execution failed or timed out, will fallback to Gemini API");
       return null;
@@ -155,7 +187,7 @@ export class AgyConnector {
 
       try {
         const parsed = JSON.parse(cleanJson);
-        return parsed as AgentDecisionResponse;
+        return this.normalizeResponsePayload(parsed);
       } catch (parseErr) {
         logger.error({ parseErr, rawText }, "Failed to parse JSON response from Gemini SDK fallback");
         return {
