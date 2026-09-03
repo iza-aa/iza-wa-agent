@@ -23,6 +23,8 @@ export interface AgentProcessResult {
   reply: string;
   buttons?: InteractiveButton[];
   success: boolean;
+  pdfBuffer?: Buffer;
+  pdfFileName?: string;
 }
 
 export class AgentEngine {
@@ -471,16 +473,18 @@ export class AgentEngine {
           transactions,
         });
 
-        // Upload PDF to Google Drive so user can click and view immediately
+        // Upload or update PDF in Google Drive (Smart Upsert / Single file per month)
         const uploadRes = await googleDriveService.uploadReceipt(
           pdfBuffer,
           `Laporan_Keuangan_${targetMonth}`,
-          userName,
+          "Laporan",
           true
         );
 
         return {
-          reply: `📄 *Dokumen PDF Laporan Keuangan (${targetMonth}) Selesai Dibuat!*\n\n• Total Pemasukan: ${formatRupiah(summary.totalIncome || 0)}\n• Total Pengeluaran: ${formatRupiah(summary.totalExpense || summary.total)}\n• Arus Kas Bersih: ${formatRupiah(summary.netCashflow || 0)}\n• Jumlah Transaksi: ${summary.count} transaksi\n\n🔗 *Unduh & Buka Dokumen PDF:* \n${uploadRes.webViewLink}`,
+          reply: `📄 *Dokumen PDF Laporan Keuangan (${targetMonth}) Selesai Dibuat!*\n\n• Total Pemasukan: ${formatRupiah(summary.totalIncome || 0)}\n• Total Pengeluaran: ${formatRupiah(summary.totalExpense !== undefined ? summary.totalExpense : summary.total)}\n• Arus Kas Bersih: ${formatRupiah(summary.netCashflow !== undefined ? summary.netCashflow : (summary.totalIncome || 0) - (summary.totalExpense || summary.total))}\n• Jumlah Transaksi: ${summary.count} transaksi\n\n🔗 *Link Google Drive:* \n${uploadRes.webViewLink}`,
+          pdfBuffer,
+          pdfFileName: `Laporan_Keuangan_${targetMonth}.pdf`,
           success: true,
         };
       } catch (pdfErr) {

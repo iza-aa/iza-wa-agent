@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import crypto from "crypto";
 import { getSupabaseClient } from "../db/supabase.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
@@ -196,8 +196,29 @@ export class TelegramAssistantBot {
   }
 
   /**
-   * Downloads a Telegram file into a Buffer
+   * Sends a result reply and if a PDF document is generated, attaches the actual PDF file directly to Telegram chat
    */
+  private async sendResultReply(ctx: any, result: any): Promise<any> {
+    const replyParams = ctx.message?.message_id
+      ? { message_id: ctx.message.message_id }
+      : undefined;
+
+    // If PDF document buffer is present, send actual PDF document directly to Telegram chat
+    if (result.pdfBuffer) {
+      try {
+        const docFile = new InputFile(result.pdfBuffer, result.pdfFileName || "Laporan_Keuangan.pdf");
+        await ctx.replyWithDocument(docFile, {
+          caption: `📄 *Dokumen PDF Laporan Keuangan*\n\nFile resmi telah dilampirkan langsung di atas dan tersimpan di Google Drive.`,
+          parse_mode: "Markdown",
+          reply_parameters: replyParams,
+        });
+      } catch (docErr) {
+        logger.error({ docErr }, "TelegramAssistantBot: Error sending PDF document directly");
+      }
+    }
+
+    return await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+  }
   private async downloadFileBuffer(fileId: string): Promise<Buffer | null> {
     try {
       const file = await this.bot.api.getFile(fileId);
@@ -473,7 +494,7 @@ export class TelegramAssistantBot {
           content: result.reply,
         });
 
-        await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+        await this.sendResultReply(ctx, result);
       } catch (err: any) {
         logger.error({ err, buttonId }, "TelegramAssistantBot: Error processing callback query");
         await ctx.reply("⚠️ Terjadi kendala saat memproses pilihan Anda. Silakan coba lagi.");
@@ -526,7 +547,7 @@ export class TelegramAssistantBot {
           content: result.reply,
         });
 
-        await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+        await this.sendResultReply(ctx, result);
       } catch (err: any) {
         logger.error({ err }, "TelegramAssistantBot: Error processing photo");
         await ctx.reply("⚠️ Terjadi kendala saat menganalisis foto struk. Pastikan foto jelas dan tidak buram.");
@@ -578,7 +599,7 @@ export class TelegramAssistantBot {
           content: result.reply,
         });
 
-        await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+        await this.sendResultReply(ctx, result);
       } catch (err: any) {
         logger.error({ err }, "TelegramAssistantBot: Error processing voice message");
         await ctx.reply("⚠️ Terjadi kendala saat memproses rekaman suara. Silakan coba kembali.");
@@ -641,7 +662,7 @@ export class TelegramAssistantBot {
           content: result.reply,
         });
 
-        await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+        await this.sendResultReply(ctx, result);
       } catch (err: any) {
         logger.error({ err }, "TelegramAssistantBot: Error processing document");
         await ctx.reply("⚠️ Terjadi kendala saat memproses dokumen.");
@@ -684,7 +705,7 @@ export class TelegramAssistantBot {
           content: result.reply,
         });
 
-        await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+        await this.sendResultReply(ctx, result);
       } catch (err: any) {
         logger.error({ err, text }, "TelegramAssistantBot: Error processing text message");
         await ctx.reply("⚠️ Terjadi kendala teknis saat memproses pesan Anda. Silakan coba sesaat lagi.");

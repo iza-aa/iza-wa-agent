@@ -1,4 +1,4 @@
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import crypto from "crypto";
 import { getSupabaseClient } from "../db/supabase.js";
 import { UserRepository } from "../db/repositories/user.repository.js";
@@ -155,8 +155,28 @@ export class TelegramAssistantBot {
         return sent;
     }
     /**
-     * Downloads a Telegram file into a Buffer
+     * Sends a result reply and if a PDF document is generated, attaches the actual PDF file directly to Telegram chat
      */
+    async sendResultReply(ctx, result) {
+        const replyParams = ctx.message?.message_id
+            ? { message_id: ctx.message.message_id }
+            : undefined;
+        // If PDF document buffer is present, send actual PDF document directly to Telegram chat
+        if (result.pdfBuffer) {
+            try {
+                const docFile = new InputFile(result.pdfBuffer, result.pdfFileName || "Laporan_Keuangan.pdf");
+                await ctx.replyWithDocument(docFile, {
+                    caption: `📄 *Dokumen PDF Laporan Keuangan*\n\nFile resmi telah dilampirkan langsung di atas dan tersimpan di Google Drive.`,
+                    parse_mode: "Markdown",
+                    reply_parameters: replyParams,
+                });
+            }
+            catch (docErr) {
+                logger.error({ docErr }, "TelegramAssistantBot: Error sending PDF document directly");
+            }
+        }
+        return await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+    }
     async downloadFileBuffer(fileId) {
         try {
             const file = await this.bot.api.getFile(fileId);
@@ -366,7 +386,7 @@ export class TelegramAssistantBot {
                     direction: "outbound",
                     content: result.reply,
                 });
-                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+                await this.sendResultReply(ctx, result);
             }
             catch (err) {
                 logger.error({ err, buttonId }, "TelegramAssistantBot: Error processing callback query");
@@ -413,7 +433,7 @@ export class TelegramAssistantBot {
                     direction: "outbound",
                     content: result.reply,
                 });
-                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+                await this.sendResultReply(ctx, result);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing photo");
@@ -459,7 +479,7 @@ export class TelegramAssistantBot {
                     direction: "outbound",
                     content: result.reply,
                 });
-                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+                await this.sendResultReply(ctx, result);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing voice message");
@@ -512,7 +532,7 @@ export class TelegramAssistantBot {
                     direction: "outbound",
                     content: result.reply,
                 });
-                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+                await this.sendResultReply(ctx, result);
             }
             catch (err) {
                 logger.error({ err }, "TelegramAssistantBot: Error processing document");
@@ -551,7 +571,7 @@ export class TelegramAssistantBot {
                     direction: "outbound",
                     content: result.reply,
                 });
-                await this.replyWithTrackedKeyboard(ctx, result.reply, result.buttons);
+                await this.sendResultReply(ctx, result);
             }
             catch (err) {
                 logger.error({ err, text }, "TelegramAssistantBot: Error processing text message");

@@ -128,45 +128,76 @@ export class GoogleDriveService {
                 logger.warn({ err: scriptErr.message }, "Apps Script upload failed, trying standard Drive API");
             }
         }
-        // 3. Upload to Google Drive via Service Account (Standard)
+        // 3. Upload to Google Drive via Service Account (Standard with Smart Upsert)
         try {
             const rootFolderId = config.GOOGLE_DRIVE_FOLDER_ID;
             const yearFolderId = await this.getOrCreateFolder(year, rootFolderId);
             const monthFolderId = await this.getOrCreateFolder(month, yearFolderId);
             const targetFolderId = await this.getOrCreateFolder(userName, monthFolderId);
             const fileStream = Readable.from(bufferToUpload);
-            const res = await this.driveClient.files.create({
-                requestBody: {
-                    name: finalFileName,
-                    parents: [targetFolderId],
-                },
-                media: {
-                    mimeType: finalMimeType,
-                    body: fileStream,
-                },
-                fields: "id, name, webViewLink, webContentLink",
+            // Check if file with same name already exists in target folder to prevent duplicates
+            const checkQuery = `name = "${finalFileName}" and "${targetFolderId}" in parents and trashed = false`;
+            const existingList = await this.driveClient.files.list({
+                q: checkQuery,
+                fields: "files(id, name, webViewLink, webContentLink)",
+                spaces: "drive",
                 supportsAllDrives: true,
+                includeItemsFromAllDrives: true,
             });
-            const fileId = res.data.id;
-            try {
-                await this.driveClient.permissions.create({
+            let fileId;
+            let webViewLink;
+            let downloadLink;
+            if (existingList.data.files && existingList.data.files.length > 0) {
+                const existing = existingList.data.files[0];
+                fileId = existing.id;
+                logger.info({ fileId, fileName: finalFileName }, "File already exists in Drive, updating content in-place without duplicate...");
+                const updateRes = await this.driveClient.files.update({
                     fileId: fileId,
-                    requestBody: {
-                        role: "reader",
-                        type: "anyone",
+                    media: {
+                        mimeType: finalMimeType,
+                        body: fileStream,
                     },
+                    fields: "id, name, webViewLink, webContentLink",
                     supportsAllDrives: true,
                 });
+                webViewLink = updateRes.data.webViewLink || existing.webViewLink || `https://drive.google.com/file/d/${fileId}/view`;
+                downloadLink = updateRes.data.webContentLink || existing.webContentLink || "";
             }
-            catch (permErr) {
-                logger.warn({ permErr, fileId }, "Could not set public permission on Drive file");
+            else {
+                const res = await this.driveClient.files.create({
+                    requestBody: {
+                        name: finalFileName,
+                        parents: [targetFolderId],
+                    },
+                    media: {
+                        mimeType: finalMimeType,
+                        body: fileStream,
+                    },
+                    fields: "id, name, webViewLink, webContentLink",
+                    supportsAllDrives: true,
+                });
+                fileId = res.data.id;
+                webViewLink = res.data.webViewLink || "https://drive.google.com/file/d/" + fileId + "/view";
+                downloadLink = res.data.webContentLink || "";
+                try {
+                    await this.driveClient.permissions.create({
+                        fileId: fileId,
+                        requestBody: {
+                            role: "reader",
+                            type: "anyone",
+                        },
+                        supportsAllDrives: true,
+                    });
+                }
+                catch (permErr) {
+                    logger.warn({ permErr, fileId }, "Could not set public permission on Drive file");
+                }
             }
-            const webViewLink = res.data.webViewLink || "https://drive.google.com/file/d/" + fileId + "/view";
-            logger.info({ fileId, webViewLink, targetFolder: userName }, "Receipt successfully uploaded to Google Drive");
+            logger.info({ fileId, webViewLink, targetFolder: userName }, "Receipt/Report successfully saved to Google Drive");
             return {
                 fileId,
                 webViewLink,
-                downloadLink: res.data.webContentLink || "",
+                downloadLink,
             };
         }
         catch (driveError) {
