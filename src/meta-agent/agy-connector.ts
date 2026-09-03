@@ -75,14 +75,17 @@ export class AgyConnector {
 
   /**
    * Safely parses JSON even when raw unescaped newlines/tabs are present inside JSON strings
+   * or falls back to robust regex extraction if syntax was cut off by LLM
    */
   private safeParseJson(rawText: string): any {
     const clean = this.cleanJsonResponse(rawText);
+
+    // 1. Try standard JSON.parse first
     try {
       return JSON.parse(clean);
-    } catch (firstErr) {
+    } catch {
+      // 2. Try sanitizing unescaped control characters (newlines/tabs)
       try {
-        // Fix unescaped raw newlines/tabs inside JSON string literals
         const sanitized = clean.replace(/[\u0000-\u001F]+/g, (match: string) => {
           if (match === "\n") return "\\n";
           if (match === "\r") return "\\r";
@@ -90,10 +93,42 @@ export class AgyConnector {
           return "";
         });
         return JSON.parse(sanitized);
-      } catch (secondErr) {
-        throw firstErr;
+      } catch {
+        // 3. Robust Regex Fallback: Extract fields directly even if JSON syntax is damaged or trailing brackets missing
+        const extractedReply = this.extractFieldWithRegex(clean, ["reply_text", "replytext", "replyText", "message"]);
+        const extractedType = this.extractFieldWithRegex(clean, ["response_type", "responsetype", "responseType"]) || "ANSWER_QUERY";
+
+        if (extractedReply) {
+          return {
+            response_type: extractedType,
+            reply_text: extractedReply,
+          };
+        }
+
+        // If regex also cannot find reply_text, throw to outer fallback
+        throw new Error("Could not parse or extract fields from LLM response");
       }
     }
+  }
+
+  /**
+   * Extracts specific string value from raw LLM output using boundary-safe regex
+   */
+  private extractFieldWithRegex(text: string, keys: string[]): string | null {
+    for (const key of keys) {
+      // Matches "key": "value" up to next field key or ending brace
+      const regex = new RegExp(`"${key}"\\s*:\\s*"([\\s\\S]*?)"\\s*(?:,\\s*"|}\\s*$)`, "i");
+      const match = text.match(regex);
+      if (match && match[1]) {
+        return match[1]
+          .replace(/\\n/g, "\n")
+          .replace(/\\r/g, "\r")
+          .replace(/\\t/g, "\t")
+          .replace(/\\"/g, '"')
+          .trim();
+      }
+    }
+    return null;
   }
 
   /**
@@ -211,9 +246,13 @@ export class AgyConnector {
         return this.normalizeResponsePayload(parsed);
       } catch (parseErr) {
         logger.error({ parseErr, rawText }, "Failed to parse JSON response from Gemini SDK fallback");
+        // Final ultimate safety: if rawText contains markdown or any words, extract text cleanly without JSON brackets
+        const cleanFallback = this.extractFieldWithRegex(rawText, ["reply_text", "replytext", "message"]) ||
+          rawText.replace(/\{[\s\S]*?"reply_?text"\s*:\s*"/i, "").replace(/"[\s\S]*\}$/i, "").trim();
+
         return {
           response_type: "GENERAL_CHAT",
-          reply_text: rawText || "Halo! Ada yang bisa saya bantu terkait pencatatan kas hari ini?",
+          reply_text: cleanFallback || "Halo! Ada yang bisa saya bantu terkait pencatatan kas hari ini?",
         };
       }
     });
