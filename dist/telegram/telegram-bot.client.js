@@ -353,11 +353,11 @@ export class TelegramAssistantBot {
                 await ctx.reply("⛔ Akses ditolak. Anda belum memiliki izin akses.");
                 return;
             }
-            if (buttonId === "SPREADSHEET") {
+            if (buttonId === "SPREADSHEET" || buttonId === "SHEET") {
                 await ctx.reply(`📊 *LINK GOOGLE SPREADSHEET KAS:*\nhttps://docs.google.com/spreadsheets/d/${config.GOOGLE_SHEET_ID}/edit`, { parse_mode: "Markdown" });
                 return;
             }
-            if (buttonId === "GOOGLE_DRIVE") {
+            if (buttonId === "GOOGLE_DRIVE" || buttonId === "GDRIVE") {
                 await ctx.reply(`📁 *LINK FOLDER GOOGLE DRIVE NOTA:*\nhttps://drive.google.com/drive/folders/${config.GOOGLE_DRIVE_FOLDER_ID}`, { parse_mode: "Markdown" });
                 return;
             }
