@@ -9,9 +9,45 @@ export interface MonthlyPdfData {
   totalExpense: number;
   netCashflow: number;
   count: number;
-  byCategory: { [cat: string]: number };
+  byCategory: { [cat: string]: number }; // This carries the department breakdown (Dapur, Barista, Kafe, Kasir, Waiters)
   transactions: TransactionRecord[];
 }
+
+type PDFKitDocument = InstanceType<typeof PDFDocument>;
+
+// ---------------------------------------------------------------------------
+// Design tokens.
+// A financial report should read like a bank statement or ledger, not a
+// marketing dashboard: one accent color, a neutral gray scale, hairline
+// rules instead of filled colored cards, and every number right-aligned
+// on the same grid. This is the entire "house style" for the document.
+// ---------------------------------------------------------------------------
+const COLOR = {
+  ink: "#111827", // primary text
+  subtle: "#6b7280", // secondary text / column labels
+  faint: "#9ca3af", // tertiary text (footer, row numbers)
+  line: "#e5e7eb", // hairline rules between rows
+  lineStrong: "#cbd5e1", // section dividers
+  accent: "#0f172a", // single brand accent — used sparingly
+  negative: "#b91c1c", // expense / outflow amounts only
+  zebra: "#fafafa", // near-invisible row shading, not a colored fill
+};
+
+const FONT = {
+  regular: "Helvetica",
+  bold: "Helvetica-Bold",
+};
+
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+const MARGIN = 42;
+const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
+const FOOTER_SAFE_Y = PAGE_HEIGHT - 58; // reserve room for the footer rule + text
+
+const MONTH_NAMES = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+];
 
 export class PdfReportService {
   async generateMonthlyReportPdf(data: MonthlyPdfData): Promise<Buffer> {
@@ -19,7 +55,7 @@ export class PdfReportService {
       try {
         const doc = new PDFDocument({
           size: "A4",
-          margin: 36,
+          margin: MARGIN,
           bufferPages: true,
           info: {
             Title: `Laporan Keuangan ${data.targetMonth}`,
@@ -30,204 +66,15 @@ export class PdfReportService {
 
         const buffers: Buffer[] = [];
         doc.on("data", buffers.push.bind(buffers));
-        doc.on("end", () => {
-          const pdfBuffer = Buffer.concat(buffers);
-          resolve(pdfBuffer);
-        });
+        doc.on("end", () => resolve(Buffer.concat(buffers)));
 
-        const pageWidth = 595.28;
-        const pageHeight = 841.89;
-        const marginX = 36;
-        const contentWidth = pageWidth - marginX * 2; // 523.28
+        const monthLabel = this.formatMonthLabel(data.targetMonth);
 
-        // Format Month Label (e.g., "Agustus 2026")
-        const [yearStr, monthStr] = data.targetMonth.split("-");
-        const monthNames = [
-          "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-          "Juli", "Agustus", "September", "Oktober", "November", "Desember"
-        ];
-        const monthIdx = parseInt(monthStr, 10) - 1;
-        const monthLabel = `${monthNames[monthIdx] || monthStr} ${yearStr}`;
-
-        // 1. TOP HEADER BANNER
-        doc.roundedRect(marginX, 32, contentWidth, 68, 6).fill("#0f172a");
-
-        // Title Left
-        doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(16).text("LAPORAN ARUS KAS BULANAN", marginX + 18, 45);
-        doc.fillColor("#94a3b8").font("Helvetica").fontSize(9).text("Sistem Pembukuan & Manajemen Kas Digital", marginX + 18, 65);
-        doc.fillColor("#38bdf8").font("Helvetica-Bold").fontSize(9).text(`Periode: ${monthLabel.toUpperCase()}`, marginX + 18, 79);
-
-        // Metadata Right Badge
-        const metaBoxWidth = 145;
-        const metaBoxX = marginX + contentWidth - metaBoxWidth - 14;
-        doc.roundedRect(metaBoxX, 42, metaBoxWidth, 48, 4).fill("#1e293b");
-        doc.fillColor("#94a3b8").font("Helvetica").fontSize(7.5).text("TOTAL TRANSAKSI", metaBoxX + 10, 49);
-        doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(10).text(`${data.count} Transaksi`, metaBoxX + 10, 60);
-        doc.fillColor("#64748b").font("Helvetica").fontSize(7).text(`Status: Terverifikasi`, metaBoxX + 10, 75);
-
-        // 2. EXECUTIVE SUMMARY CARDS (3 Columns)
-        const cardY = 112;
-        const cardGap = 12;
-        const cardWidth = (contentWidth - cardGap * 2) / 3; // ~166
-        const cardHeight = 64;
-
-        // Card 1: Pemasukan (Green)
-        doc.roundedRect(marginX, cardY, cardWidth, cardHeight, 6).fillAndStroke("#f0fdf4", "#86efac");
-        doc.fillColor("#166534").font("Helvetica-Bold").fontSize(8).text("TOTAL PEMASUKAN", marginX + 12, cardY + 12);
-        doc.fillColor("#15803d").font("Helvetica-Bold").fontSize(13).text(formatRupiah(data.totalIncome), marginX + 12, cardY + 27);
-        doc.fillColor("#16a34a").font("Helvetica").fontSize(7.5).text("Arus kas masuk", marginX + 12, cardY + 46);
-
-        // Card 2: Pengeluaran (Rose/Red)
-        const card2X = marginX + cardWidth + cardGap;
-        doc.roundedRect(card2X, cardY, cardWidth, cardHeight, 6).fillAndStroke("#fff1f2", "#fca5a5");
-        doc.fillColor("#9f1239").font("Helvetica-Bold").fontSize(8).text("TOTAL PENGELUARAN", card2X + 12, cardY + 12);
-        doc.fillColor("#be123c").font("Helvetica-Bold").fontSize(13).text(formatRupiah(data.totalExpense), card2X + 12, cardY + 27);
-        doc.fillColor("#e11d48").font("Helvetica").fontSize(7.5).text("Arus kas keluar", card2X + 12, cardY + 46);
-
-        // Card 3: Saldo Bersih (Blue)
-        const card3X = card2X + cardWidth + cardGap;
-        doc.roundedRect(card3X, cardY, cardWidth, cardHeight, 6).fillAndStroke("#eff6ff", "#93c5fd");
-        doc.fillColor("#1e40af").font("Helvetica-Bold").fontSize(8).text("ARUS KAS BERSIH (NET)", card3X + 12, cardY + 12);
-        const netSign = data.netCashflow >= 0 ? "+" : "";
-        doc.fillColor("#1d4ed8").font("Helvetica-Bold").fontSize(13).text(`${netSign}${formatRupiah(data.netCashflow)}`, card3X + 12, cardY + 27);
-        const netLabel = data.netCashflow >= 0 ? "Surplus kas bulan ini" : "Defisit kas bulan ini";
-        doc.fillColor("#2563eb").font("Helvetica").fontSize(7.5).text(netLabel, card3X + 12, cardY + 46);
-
-        // 3. CATEGORY BREAKDOWN SECTION
-        let curY = 188;
-        doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(11).text("Rincian Pengeluaran per Kategori", marginX, curY);
-        curY += 16;
-
-        const categories = Object.entries(data.byCategory).sort((a, b) => b[1] - a[1]);
-        if (categories.length === 0) {
-          doc.fillColor("#64748b").font("Helvetica").fontSize(8.5).text("- Tidak ada pengeluaran tercatat pada periode ini.", marginX, curY);
-          curY += 15;
-        } else {
-          // Render categories in neat 2-column or clean bar layout
-          const colWidth = (contentWidth - 14) / 2;
-          for (let i = 0; i < categories.length; i++) {
-            const [cat, amt] = categories[i];
-            const col = i % 2;
-            const row = Math.floor(i / 2);
-            const itemX = marginX + col * (colWidth + 14);
-            const itemY = curY + row * 22;
-
-            const percent = data.totalExpense > 0 ? (amt / data.totalExpense) * 100 : 0;
-
-            // Background pill
-            doc.roundedRect(itemX, itemY, colWidth, 18, 3).fill("#f8fafc");
-
-            // Category Name
-            doc.fillColor("#334155").font("Helvetica-Bold").fontSize(8).text(cat, itemX + 6, itemY + 5, {
-              width: colWidth * 0.55,
-              ellipsis: true,
-            });
-
-            // Amount & Percentage
-            doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(8).text(formatRupiah(amt), itemX + colWidth * 0.55, itemY + 5, {
-              width: colWidth * 0.3,
-              align: "right",
-            });
-            doc.fillColor("#64748b").font("Helvetica").fontSize(7).text(`(${percent.toFixed(1)}%)`, itemX + colWidth * 0.86, itemY + 5.5, {
-              width: colWidth * 0.12,
-              align: "right",
-            });
-          }
-
-          const totalRows = Math.ceil(categories.length / 2);
-          curY += totalRows * 22 + 8;
-        }
-
-        // 4. TRANSACTION LIST TABLE
-        curY += 4;
-        doc.fillColor("#0f172a").font("Helvetica-Bold").fontSize(11).text(`Daftar Rincian Transaksi (${data.transactions.length} baris)`, marginX, curY);
-        curY += 15;
-
-        // Function to render table header
-        const renderTableHeader = (yPos: number) => {
-          doc.roundedRect(marginX, yPos, contentWidth, 18, 3).fill("#1e293b");
-          doc.fillColor("#ffffff").font("Helvetica-Bold").fontSize(7.5);
-          doc.text("Tanggal", marginX + 6, yPos + 5, { width: 50 });
-          doc.text("ID", marginX + 60, yPos + 5, { width: 65 });
-          doc.text("Tempat / Toko / Sumber", marginX + 130, yPos + 5, { width: 145 });
-          doc.text("Kategori", marginX + 280, yPos + 5, { width: 105 });
-          doc.text("Nominal", marginX + 390, yPos + 5, { width: 75, align: "right" });
-          doc.text("Metode", marginX + 470, yPos + 5, { width: 45, align: "right" });
-        };
-
-        renderTableHeader(curY);
-        curY += 20;
-
-        // Render Transaction Rows
-        for (let i = 0; i < data.transactions.length; i++) {
-          const t = data.transactions[i];
-          const isInc = isIncome(t);
-
-          // Pagination check: create new page if row exceeds page height (leave space for footer)
-          if (curY > pageHeight - 55) {
-            doc.addPage();
-            curY = 36;
-            renderTableHeader(curY);
-            curY += 20;
-          }
-
-          // Alternating row background
-          if (i % 2 === 1) {
-            doc.roundedRect(marginX, curY, contentWidth, 16, 2).fill("#f8fafc");
-          }
-
-          doc.fillColor("#1e293b").font("Helvetica").fontSize(7.2);
-          doc.text(t.date || "-", marginX + 6, curY + 4, { width: 50 });
-          doc.text(t.id || "-", marginX + 60, curY + 4, { width: 65 });
-          doc.text(t.merchant || "-", marginX + 130, curY + 4, { width: 145, ellipsis: true });
-          doc.text(t.category || "-", marginX + 280, curY + 4, { width: 105, ellipsis: true });
-
-          const color = isInc ? "#15803d" : "#be123c";
-          const sign = isInc ? "+" : "-";
-          doc.fillColor(color).font("Helvetica-Bold").text(`${sign}${formatRupiah(t.total_amount)}`, marginX + 390, curY + 4, {
-            width: 75,
-            align: "right",
-          });
-
-          doc.fillColor("#64748b").font("Helvetica").text(t.payment_method || "Cash", marginX + 470, curY + 4, {
-            width: 45,
-            align: "right",
-          });
-
-          curY += 16;
-        }
-
-        // 5. GLOBAL PAGE NUMBERING & FOOTER (on every page)
-        const totalPages = doc.bufferedPageRange().count;
-        const generatedTime = new Intl.DateTimeFormat("id-ID", {
-          dateStyle: "full",
-          timeStyle: "medium",
-          timeZone: "Asia/Makassar",
-        }).format(new Date());
-
-        for (let i = 0; i < totalPages; i++) {
-          doc.switchToPage(i);
-          doc.page.margins.bottom = 0; // Prevent PDFKit from auto-spawning blank pages on footer text
-
-          // Footer separator line
-          doc.moveTo(marginX, pageHeight - 32).lineTo(marginX + contentWidth, pageHeight - 32).strokeColor("#e2e8f0").stroke();
-
-          // Left
-          doc.fillColor("#94a3b8").font("Helvetica").fontSize(6.8).text(
-            `Digenerate oleh IZA AI Assistant • Terakhir Diperbarui: ${generatedTime} WITA`,
-            marginX,
-            pageHeight - 24,
-            { lineBreak: false }
-          );
-
-          // Right
-          doc.fillColor("#94a3b8").font("Helvetica-Bold").fontSize(6.8).text(
-            `Halaman ${i + 1} dari ${totalPages}`,
-            marginX,
-            pageHeight - 24,
-            { width: contentWidth, align: "right", lineBreak: false }
-          );
-        }
+        let y = this.drawHeader(doc, monthLabel, data.count);
+        y = this.drawSummary(doc, y, data);
+        y = this.drawDepartmentBreakdown(doc, y, data);
+        this.drawTransactionTable(doc, y, data);
+        this.drawFooterOnEveryPage(doc);
 
         doc.end();
       } catch (err) {
@@ -235,6 +82,242 @@ export class PdfReportService {
         reject(err);
       }
     });
+  }
+
+  private formatMonthLabel(targetMonth: string): string {
+    const [yearStr, monthStr] = targetMonth.split("-");
+    const monthIdx = parseInt(monthStr, 10) - 1;
+    return `${MONTH_NAMES[monthIdx] || monthStr} ${yearStr}`;
+  }
+
+  // -------------------------------------------------------------------
+  // 1. Header — a letterhead, not a gradient banner.
+  // -------------------------------------------------------------------
+  private drawHeader(doc: PDFKitDocument, monthLabel: string, count: number): number {
+    let y = MARGIN;
+
+    doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(8)
+      .text("LAPORAN KEUANGAN", MARGIN, y, { characterSpacing: 1.2 });
+
+    y += 14;
+    doc.fillColor(COLOR.ink).font(FONT.bold).fontSize(19)
+      .text("Laporan Arus Kas Bulanan", MARGIN, y);
+
+    y += 26;
+    doc.fillColor(COLOR.accent).font(FONT.bold).fontSize(10)
+      .text(`Periode ${monthLabel}`, MARGIN, y);
+    doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(9)
+      .text(`${count} transaksi tercatat`, MARGIN, y + 1, { width: CONTENT_WIDTH, align: "right" });
+
+    y += 18;
+    // A short accent underline
+    doc.rect(MARGIN, y, 34, 2.5).fill(COLOR.accent);
+    doc.moveTo(MARGIN + 42, y + 1.25).lineTo(MARGIN + CONTENT_WIDTH, y + 1.25)
+      .strokeColor(COLOR.line).lineWidth(1).stroke();
+
+    return y + 22;
+  }
+
+  // -------------------------------------------------------------------
+  // 2. Summary strip — three flat columns divided by hairlines.
+  // -------------------------------------------------------------------
+  private drawSummary(doc: PDFKitDocument, startY: number, data: MonthlyPdfData): number {
+    const top = startY;
+    const colWidth = CONTENT_WIDTH / 3;
+    const items = [
+      { label: "PEMASUKAN", value: data.totalIncome, sign: "+", color: COLOR.ink, helper: "Total arus kas masuk" },
+      { label: "PENGELUARAN", value: data.totalExpense, sign: "-", color: COLOR.negative, helper: "Total arus kas keluar" },
+      {
+        label: "ARUS KAS BERSIH",
+        value: Math.abs(data.netCashflow),
+        sign: data.netCashflow >= 0 ? "+" : "-",
+        color: data.netCashflow >= 0 ? COLOR.ink : COLOR.negative,
+        helper: data.netCashflow >= 0 ? "Surplus kas bulan ini" : "Defisit kas bulan ini",
+      },
+    ];
+
+    doc.moveTo(MARGIN, top).lineTo(MARGIN + CONTENT_WIDTH, top).strokeColor(COLOR.lineStrong).lineWidth(1).stroke();
+
+    const y = top + 12;
+    items.forEach((item, i) => {
+      const x = MARGIN + i * colWidth;
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(7.5)
+        .text(item.label, x, y, { characterSpacing: 0.8 });
+      doc.fillColor(item.color).font(FONT.bold).fontSize(15)
+        .text(`${item.sign} ${formatRupiah(item.value)}`, x, y + 13);
+      doc.fillColor(COLOR.faint).font(FONT.regular).fontSize(7.5)
+        .text(item.helper, x, y + 32);
+
+      if (i < items.length - 1) {
+        doc.moveTo(x + colWidth - 16, y - 2).lineTo(x + colWidth - 16, y + 40)
+          .strokeColor(COLOR.line).lineWidth(1).stroke();
+      }
+    });
+
+    const bottom = y + 50;
+    doc.moveTo(MARGIN, bottom).lineTo(MARGIN + CONTENT_WIDTH, bottom).strokeColor(COLOR.lineStrong).lineWidth(1).stroke();
+
+    return bottom + 20;
+  }
+
+  // -------------------------------------------------------------------
+  // 3. Department breakdown — Division totals (Dapur, Barista, Kafe, Kasir, Waiters)
+  // -------------------------------------------------------------------
+  private drawDepartmentBreakdown(doc: PDFKitDocument, startY: number, data: MonthlyPdfData): number {
+    let y = startY;
+    doc.fillColor(COLOR.ink).font(FONT.bold).fontSize(11)
+      .text("Rincian Pengeluaran per Divisi", MARGIN, y);
+    y += 18;
+
+    const departments = Object.entries(data.byCategory || {})
+      .filter(([_, amt]) => amt > 0)
+      .sort((a, b) => b[1] - a[1]);
+
+    if (departments.length === 0) {
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(8.5)
+        .text("Tidak ada pengeluaran operasional divisi tercatat pada periode ini.", MARGIN, y);
+      return y + 20;
+    }
+
+    const nameColX = MARGIN;
+    const barColX = MARGIN + 220;
+    const barWidth = 140;
+    const amountColX = MARGIN + CONTENT_WIDTH - 150;
+    const percentColX = MARGIN + CONTENT_WIDTH - 40;
+    const rowHeight = 20;
+    const maxAmount = departments[0][1] || 1;
+
+    doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(7.5);
+    doc.text("DIVISI OPERASIONAL", nameColX, y, { characterSpacing: 0.6 });
+    doc.text("TOTAL BELANJA", amountColX, y, { width: 110, align: "right", characterSpacing: 0.6 });
+    doc.text("%", percentColX, y, { width: 40, align: "right", characterSpacing: 0.6 });
+    y += 12;
+    doc.moveTo(MARGIN, y).lineTo(MARGIN + CONTENT_WIDTH, y).strokeColor(COLOR.line).lineWidth(1).stroke();
+    y += 6;
+
+    for (const [dept, amt] of departments) {
+      if (y > FOOTER_SAFE_Y) {
+        doc.addPage();
+        y = MARGIN;
+      }
+      const percent = data.totalExpense > 0 ? (amt / data.totalExpense) * 100 : 0;
+
+      doc.fillColor(COLOR.ink).font(FONT.bold).fontSize(8.5)
+        .text(`Divisi ${dept}`, nameColX, y + 4, { width: 210, ellipsis: true });
+
+      // Thin proportional bar indicator
+      const w = Math.max(2, (amt / maxAmount) * barWidth);
+      doc.rect(barColX, y + 8, barWidth, 3).fill(COLOR.line);
+      doc.rect(barColX, y + 8, w, 3).fill(COLOR.accent);
+
+      doc.fillColor(COLOR.ink).font(FONT.bold).fontSize(8.5)
+        .text(formatRupiah(amt), amountColX, y + 4, { width: 110, align: "right" });
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(8)
+        .text(`${percent.toFixed(1)}%`, percentColX, y + 4, { width: 40, align: "right" });
+
+      y += rowHeight;
+      doc.moveTo(MARGIN, y - 4).lineTo(MARGIN + CONTENT_WIDTH, y - 4)
+        .strokeColor(COLOR.line).lineWidth(0.75).stroke();
+    }
+
+    return y + 16;
+  }
+
+  // -------------------------------------------------------------------
+  // 4. Transaction ledger — ruled table like a bank statement.
+  // -------------------------------------------------------------------
+  private drawTransactionTable(doc: PDFKitDocument, startY: number, data: MonthlyPdfData): void {
+    let y = startY;
+
+    doc.fillColor(COLOR.ink).font(FONT.bold).fontSize(11)
+      .text(`Daftar Transaksi (${data.transactions.length} baris)`, MARGIN, y);
+    y += 18;
+
+    const cols = {
+      no: { x: MARGIN, w: 24 },
+      date: { x: MARGIN + 24, w: 52 },
+      merchant: { x: MARGIN + 84, w: 175 },
+      category: { x: MARGIN + 267, w: 100 },
+      method: { x: MARGIN + 375, w: 60 },
+      amount: { x: MARGIN + 443, w: CONTENT_WIDTH - 443 },
+    };
+
+    const renderHeader = (yPos: number): number => {
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(7.5);
+      doc.text("NO.", cols.no.x, yPos, { width: cols.no.w, characterSpacing: 0.5 });
+      doc.text("TANGGAL", cols.date.x, yPos, { width: cols.date.w, characterSpacing: 0.5 });
+      doc.text("TEMPAT / SUMBER", cols.merchant.x, yPos, { width: cols.merchant.w, characterSpacing: 0.5 });
+      doc.text("KATEGORI", cols.category.x, yPos, { width: cols.category.w, characterSpacing: 0.5 });
+      doc.text("METODE", cols.method.x, yPos, { width: cols.method.w, characterSpacing: 0.5 });
+      doc.text("NOMINAL", cols.amount.x, yPos, { width: cols.amount.w, align: "right", characterSpacing: 0.5 });
+      const lineY = yPos + 12;
+      doc.moveTo(MARGIN, lineY).lineTo(MARGIN + CONTENT_WIDTH, lineY)
+        .strokeColor(COLOR.lineStrong).lineWidth(1).stroke();
+      return lineY + 6;
+    };
+
+    y = renderHeader(y);
+
+    data.transactions.forEach((t, i) => {
+      if (y > FOOTER_SAFE_Y) {
+        doc.addPage();
+        y = renderHeader(MARGIN);
+      }
+
+      if (i % 2 === 1) {
+        doc.rect(MARGIN, y - 3, CONTENT_WIDTH, 16).fill(COLOR.zebra);
+      }
+
+      const isInc = isIncome(t);
+      doc.fillColor(COLOR.faint).font(FONT.regular).fontSize(7.5)
+        .text(String(i + 1), cols.no.x, y, { width: cols.no.w });
+      doc.fillColor(COLOR.ink).font(FONT.regular).fontSize(7.5)
+        .text(t.date || "-", cols.date.x, y, { width: cols.date.w });
+      doc.fillColor(COLOR.ink).font(FONT.regular).fontSize(7.5)
+        .text(t.merchant || "-", cols.merchant.x, y, { width: cols.merchant.w, ellipsis: true });
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(7.5)
+        .text(t.category || "-", cols.category.x, y, { width: cols.category.w, ellipsis: true });
+      doc.fillColor(COLOR.subtle).font(FONT.regular).fontSize(7.5)
+        .text(t.payment_method || "Cash", cols.method.x, y, { width: cols.method.w });
+
+      const sign = isInc ? "+" : "-";
+      doc.fillColor(isInc ? COLOR.ink : COLOR.negative).font(FONT.bold).fontSize(7.5)
+        .text(`${sign} ${formatRupiah(t.total_amount)}`, cols.amount.x, y, { width: cols.amount.w, align: "right" });
+
+      y += 16;
+      doc.moveTo(MARGIN, y - 4).lineTo(MARGIN + CONTENT_WIDTH, y - 4)
+        .strokeColor(COLOR.line).lineWidth(0.5).stroke();
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // 5. Footer — one hairline, timestamp left, page count right.
+  // -------------------------------------------------------------------
+  private drawFooterOnEveryPage(doc: PDFKitDocument): void {
+    const range = doc.bufferedPageRange();
+    const generatedTime = new Intl.DateTimeFormat("id-ID", {
+      dateStyle: "long",
+      timeStyle: "short",
+      timeZone: "Asia/Makassar",
+    }).format(new Date());
+
+    for (let i = range.start; i < range.start + range.count; i++) {
+      doc.switchToPage(i);
+      const footerY = PAGE_HEIGHT - 40;
+
+      doc.moveTo(MARGIN, footerY).lineTo(MARGIN + CONTENT_WIDTH, footerY)
+        .strokeColor(COLOR.line).lineWidth(1).stroke();
+
+      doc.fillColor(COLOR.faint).font(FONT.regular).fontSize(7)
+        .text(`Digenerate oleh IZA AI Assistant • Terakhir Diperbarui: ${generatedTime} WITA`, MARGIN, footerY + 8, { lineBreak: false });
+
+      doc.fillColor(COLOR.faint).font(FONT.regular).fontSize(7)
+        .text(`Halaman ${i + 1} dari ${range.count}`, MARGIN, footerY + 8, {
+          width: CONTENT_WIDTH,
+          align: "right",
+          lineBreak: false,
+        });
+    }
   }
 }
 

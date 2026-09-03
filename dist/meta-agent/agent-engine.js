@@ -380,6 +380,32 @@ export class AgentEngine {
                 const [year, month] = targetMonth.split("-");
                 const lastDay = new Date(parseInt(year, 10), parseInt(month, 10), 0).getDate();
                 const transactions = await this.trxRepo.getTransactionsByDateRange(`${targetMonth}-01`, `${targetMonth}-${lastDay.toString().padStart(2, "0")}`);
+                // Fetch exact department division totals (Dapur, Barista, Kafe, Kasir, Waiters) for the PDF
+                const { data: deptItems } = await this.supabase
+                    .from("receipt_items")
+                    .select("total_price, category");
+                const departmentTotals = {
+                    Kafe: 0,
+                    Dapur: 0,
+                    Barista: 0,
+                    Kasir: 0,
+                    Waiters: 0,
+                };
+                const monthTrxIds = new Set(transactions.map((t) => t.id));
+                for (const it of deptItems || []) {
+                    const dept = (it.category || "Kafe").trim();
+                    const price = Number(it.total_price) || 0;
+                    if (it.transaction_id && monthTrxIds.has(it.transaction_id)) {
+                        departmentTotals[dept] = (departmentTotals[dept] || 0) + price;
+                    }
+                    else if (!it.transaction_id) {
+                        departmentTotals[dept] = (departmentTotals[dept] || 0) + price;
+                    }
+                }
+                // If department items are empty, fallback to category breakdown
+                const finalDivisionTotals = Object.values(departmentTotals).some((v) => v > 0)
+                    ? departmentTotals
+                    : summary.byCategory || {};
                 const pdfBuffer = await pdfReportService.generateMonthlyReportPdf({
                     targetMonth,
                     totalIncome: summary.totalIncome || 0,
@@ -388,7 +414,7 @@ export class AgentEngine {
                         ? summary.netCashflow
                         : (summary.totalIncome || 0) - (summary.totalExpense || summary.total),
                     count: summary.count,
-                    byCategory: summary.byCategory || {},
+                    byCategory: finalDivisionTotals,
                     transactions,
                 });
                 // Upload or update PDF in Google Drive (Smart Upsert / Single file per month)
