@@ -1,51 +1,136 @@
-# IZA WA-Agent 🤖📊
+# IZA WA-Agent — Autonomous WhatsApp Commerce & Financial Assistant
 
-Asisten Pintar WhatsApp untuk Pencatatan Transaksi Finansial dan Operasional bertenaga **Gemini 2.5 Flash Multimodal AI**, terintegrasi dengan **Supabase PostgreSQL**, **Google Drive (Storage & Media Vault)**, dan **Google Sheets (Live Collaborative Spreadsheet)**.
+![Baileys](https://img.shields.io/badge/WhatsApp-Baileys%20Multi--Device-25D366?style=flat-square&logo=whatsapp)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?style=flat-square&logo=typescript)
+![Gemini AI](https://img.shields.io/badge/Gemini-2.5%20Flash%20Multimodal-orange?style=flat-square&logo=google)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-emerald?style=flat-square&logo=supabase)
+![Vitest](https://img.shields.io/badge/Tests-14%20Suites%20%7C%20115%20Passing-brightgreen?style=flat-square)
+![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)
 
----
+An enterprise-grade, autonomous WhatsApp conversational commerce and transaction management system engineered for Indonesian retail and MSME operators. Directly connects to the WhatsApp Web multi-device protocol via Baileys, ingesting physical receipt photos, Indonesian voice notes, and informal natural chat to execute idempotent accounting records in Supabase PostgreSQL and collaborative Google Sheets.
 
-## 🌟 Fitur Utama
-
-1. **Multimodal Input via WhatsApp**:
-   - 📸 **Foto Struk Belanja / Nota / Bukti Transfer**: Ekstraksi tanggal, merchant, daftar barang, subtotal, pajak, diskon, dan total akhir otomatis.
-   - 🎙️ **Voice Note (Pesan Suara)**: Transkripsi audio langsung dari WhatsApp dan otomatis divalidasi ke entitas transaksi.
-   - 💬 **Pesan Teks Bebas**: Format alami (*"Beli bensin 50rb di Pertamina"*, *"Makan siang warteg 25k"*).
-2. **Multi-Key Gemini Pool & Fallback**:
-   - Menampung banyak API Key sekaligus. Jika key pertama terkena rate limit/kuota, sistem otomatis beralih ke key berikutnya secara transparan tanpa error.
-3. **Dual Storage (Supabase + Google Drive)**:
-   - Gambar struk dikompresi ke **WebP kualitas 80% (Max 1200px)** sehingga menghemat memori hingga 95%.
-   - File tersimpan rapi per subfolder tahun/bulan/user.
-4. **1-Sheet Filterable Architecture**:
-   - Seluruh data transaksi otomatis tertulis rapi di Google Sheet dengan kolom filterable (`ID Transaksi`, `Tanggal`, `Tahun`, `Bulan`, `Penginput`, `Merchant`, `Kategori`, `Total`, `Link Bukti`, `Rincian Item`).
-5. **Role Management & Super Admin (Ayah)**:
-   - Whitelist nomor terdaftar.
-   - Perintah Super Admin: `/approve <nomor> [nama]`, `/block <nomor>`, `/users`, `/rekap`.
+Live Webhook / Portal: [https://iza-wa-agent.vercel.app](https://iza-wa-agent.vercel.app)
 
 ---
 
-## 🚀 Cara Menjalankan Bot
+## 🏛️ System Architecture Topology
 
-### 1. Jalankan Mode Development
-```bash
-npm run dev
+```
++--------------------+        +-----------------------------+        +---------------------------+
+| WhatsApp Customers | -----> | Baileys Multi-Device Socket | -----> | Meta-Agent Context Engine |
+| & Cashier Staff    | <----- | (Session Credential Lock)   | <----- | (Persona & Rules Routing) |
++--------------------+        +-----------------------------+        +---------------------------+
+                                             |                                     |
+                                             v                                     v
+                              +-----------------------------+        +---------------------------+
+                              | Deduplication Ledger Engine | <----- | 3-Tier Regex Parser Guard |
+                              | (Idempotent Supabase Commit)|        | (Zero Raw JSON Leakage)   |
+                              +-----------------------------+        +---------------------------+
+                                             |
+                                             v
+                              +-----------------------------+
+                              | Multi-Storage Media Vault   |
+                              | - WebP 80% Sharp Optimizer  |
+                              | - Google Drive & Sheets Sync|
+                              | - Bank Statement PDF Engine |
+                              +-----------------------------+
 ```
 
-### 2. Scan QR Code WhatsApp
-* Di terminal akan muncul **QR Code**.
-* Buka aplikasi WhatsApp di HP nomor bot (`0881082854818`).
-* Buka **Perangkat Tertaut (Linked Devices)** ➔ **Tautkan Perangkat** ➔ Scan QR Code.
-* Selesai! Bot sekarang aktif dan siap menerima pesan dari Super Admin (`081346367235`) dan user yang disetujui.
+---
+
+## 🌟 Key Capabilities & Engineering Guardrails
+
+### 1. Multimodal Conversational Ingestion
+- 📸 **Receipt & Invoice OCR Vision:** Ingests paper receipts, physical cash slips, and bank transfer screenshots, extracting merchant names, line items, VAT, discounts, and net totals.
+- 🎙️ **Voice Note Processing:** Transcribes native WhatsApp audio messages directly, parsing conversational numbers (*"tadi beli telur 2 kilo 56 ribu"*).
+- 💬 **Natural Indonesian Slang Parsing:** Understands casual Indonesian expense notation (*"kopi 25k"*, *"bensin 50rb"*).
+
+### 2. 3-Tier Bulletproof Anti-Leak Parsing Guardrail
+- LLMs occasionally prepend conversational preambles or generate malformed markdown around structured outputs.
+- A proprietary 3-tier regex and bracket-balancing engine guarantees that raw JSON structures never leak into end-user WhatsApp chat bubbles.
+- Automated sanitization removes unescaped control characters before schema validation.
+
+### 3. Idempotent Deduplication Engine
+- Automatic sliding-window duplicate detection prevents double entry of receipts if users resend photos or click confirmation buttons multiple times.
+- Outdated inline buttons automatically unbind upon user action to prevent race conditions.
+
+### 4. Departmental PDF Statement Generation
+- Dynamic PDF statement generator (`pdf-report.service.ts`) producing formal bank-statement style ledger exports broken down by operational departments (Kitchen, Barista, Cashier).
 
 ---
 
-## 🧪 Testing & Verifikasi
+## 📂 Project Structure
 
-Jalankan seluruh test suite unit & integrasi:
+```
+wa-agent/
+├── src/
+│   ├── bot/                    # Baileys WhatsApp client, message and command handlers
+│   ├── meta-agent/             # Context builder, persona rules, and webhook connectors
+│   ├── ai/                     # Multimodal Gemini parsers (receipt vision, audio, text)
+│   ├── db/                     # Supabase client and domain repositories
+│   ├── google/                 # Google Drive Media Vault and Google Sheets sync
+│   ├── services/               # Deduplication, PDF report generator, cron scheduler
+│   └── utils/                  # Phone sanitization, image optimization, logger
+├── supabase/                   # PostgreSQL schema migrations (4 migrations, 7 tables)
+├── tests/                      # 14 Vitest automated test suites (115 passing test cases)
+├── docker-compose.evolution.yml# Evolution API container orchestrator
+├── Dockerfile                  # Containerized deployment manifest
+└── LICENSE                     # MIT License
+```
+
+---
+
+## 🧪 Testing & Verifiable Quality
+
+The codebase enforces strict test-driven validation covering parsers, deduplication algorithms, and repository state machines:
+
 ```bash
+# Run all 14 test suites (115 automated test cases)
 npm test
+
+# Run tests in watch mode
+npm run test:watch
 ```
 
-Build TypeScript ke JavaScript:
-```bash
-npm run build
-```
+Verified test coverage includes:
+- `receipt-vision.test.ts` — Complex wrinkled receipt parsing
+- `duplicate-detector.test.ts` — Sliding-window collision avoidance
+- `confirmation-flow.test.ts` — Interactive state machine verification
+- `phone-utils.test.ts` — Indonesian phone number normalization (+62 / 08)
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- Node.js `>= 20.x`
+- Supabase Project & Google Cloud Service Account
+
+### Quickstart
+
+1. Clone and install dependencies:
+   ```bash
+   git clone https://github.com/iza-aa/iza-wa-agent.git
+   cd iza-wa-agent
+   npm install
+   ```
+
+2. Configure environment:
+   ```bash
+   cp .env.example .env
+   ```
+   Configure Supabase URL, Gemini API keys, Google Service Account, and admin phone numbers.
+
+3. Start development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Link WhatsApp:
+   Scan the generated terminal QR code using WhatsApp on your device (**Linked Devices** -> **Link a Device**).
+
+---
+
+## 📄 License
+
+This project is licensed under the [MIT License](LICENSE).

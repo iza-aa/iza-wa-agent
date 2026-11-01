@@ -722,6 +722,11 @@ export class TelegramAssistantBot {
    * Starts Telegram Bot polling
    */
   async start(): Promise<void> {
+    const token = config.TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN || "";
+    if (!token || token === "dummy_token") {
+      logger.warn("TelegramAssistantBot: TELEGRAM_BOT_TOKEN is not configured in .env. Skipping Telegram bot polling.");
+      return;
+    }
     logger.info("Starting Telegram Executive AI Assistant Bot (@izaassistantbot)...");
     this.bot.start({
       onStart: (botInfo) => {
